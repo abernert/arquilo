@@ -25,6 +25,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Verify and apply the exact plaintext code changes
         run: python -B .maintenance/apply_hardening.py
+      - name: Apply the Windows parent-lease correction
+        run: python -B .maintenance/windows_parent_lease.py
       - name: Run existing and new offline regressions
         run: python -B -m unittest discover -s tests -v
       - name: Validate runtime package
@@ -45,6 +47,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -B .maintenance/apply_hardening.py
+      - run: python -B .maintenance/windows_parent_lease.py
       - name: Create the tested source commit on a new branch, leaving protected main unchanged
         shell: python
         run: |
