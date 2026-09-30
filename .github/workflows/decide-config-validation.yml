@@ -1,0 +1,24 @@
+name: Decide configuration validation
+on:
+  push:
+    branches: [validation/decide-config-inheritance]
+    paths: [.github/workflows/decide-config-validation.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 45efd35fabea5aea00a20b373cf70339d5747c0c
+          persist-credentials: false
+      - name: Archive only tracked public source at the reviewed commit
+        run: git archive --format=zip --output=source.zip HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: decide-config-source
+          path: source.zip
+          retention-days: 1
+          if-no-files-found: error
