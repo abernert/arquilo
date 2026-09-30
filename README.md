@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.3.0.** Suitable for supervised evaluation in disposable
+**Public preview: 0.3.1.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
