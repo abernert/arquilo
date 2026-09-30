@@ -6,18 +6,79 @@ on:
 permissions:
   contents: read
 jobs:
-  source:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+  offline:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12', '3.13']
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 45efd35fabea5aea00a20b373cf70339d5747c0c
+          fetch-depth: 0
           persist-credentials: false
-      - run: git archive --format=zip --output=arquilo-source-031.zip HEAD
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
-          name: public-source-031
-          path: arquilo-source-031.zip
-          retention-days: 1
-          if-no-files-found: error
+          python-version: ${{ matrix.python }}
+      - run: python -B .maintenance/provider/apply.py
+      - run: python -B -m unittest discover -s tests -v
+      - run: python -B scripts/check_release.py
+      - run: python -B scripts/build_runtime_zip.py
+  native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        codex: ['0.154.0', '0.159.1']
+    env:
+      PYTHONUTF8: '1'
+      TEST_CODEX_VERSION: ${{ matrix.codex }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python -B .maintenance/provider/apply.py
+      - name: Install exact test-only Codex binary
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import os, pathlib, subprocess, sys
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'codex-compat-binary'
+          subprocess.run([sys.executable, 'scripts/install_test_codex.py', os.environ['TEST_CODEX_VERSION'], str(target)], check=True)
+      - name: Verify real CLI metadata and local fake gateway (no model service)
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          binary = pathlib.Path(os.environ['RUNNER_TEMP']) / 'codex-compat-binary' / ('codex.exe' if os.name == 'nt' else 'codex')
+          expected = 'absent' if os.environ['TEST_CODEX_VERSION'] == '0.154.0' else 'present'
+          subprocess.run([sys.executable, '-B', 'scripts/check_codex_features.py', '--codex', str(binary), '--expect-daemon', expected], check=True)
+          subprocess.run([sys.executable, '-B', 'scripts/check_codex_provider.py', '--codex', str(binary)], check=True)
+  candidate:
+    needs: [offline, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Create clean feature branch only, never update main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -B .maintenance/provider/apply.py --publish-candidate
