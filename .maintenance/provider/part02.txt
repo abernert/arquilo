@@ -1,0 +1,172 @@
+@@ -151,0 +156 @@ def evaluate(
++    model_provider: Optional[str] = None,
+@@ -168,2 +173,2 @@ def evaluate(
+-        task_id=task_id, attempt_id=attempt_id, model=model, reasoning_effort=reasoning_effort,
+-        system_prompt=system_prompt, max_input_bytes=max_input_bytes)
++        task_id=task_id, attempt_id=attempt_id, model=model, model_provider=model_provider,
++        reasoning_effort=reasoning_effort, system_prompt=system_prompt, max_input_bytes=max_input_bytes)
+diff --git a/decision_archive.py b/decision_archive.py
+index a3e7f69..a9d4315 100644
+--- a/decision_archive.py
++++ b/decision_archive.py
+@@ -59 +59,4 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
+-            "model": request.model, "reasoning_effort": request.reasoning_effort,
++            "model": request.model, "model_provider": request.model_provider,
++            "reasoning_effort": request.reasoning_effort,
++            "model_selection": "explicit" if request.model else "codex_config",
++            "provider_selection": "explicit" if request.model_provider else "codex_config",
+@@ -62 +65 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
+-            "sandbox": "workspace-write", "network_access": False,
++            "sandbox": "read-only", "network_access": False,
+@@ -65 +68 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
+-                codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
++                codex_policy.decision_sandbox_arguments()
+@@ -67,2 +70,2 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
+-            "environment": "OS allowlist only; values and credentials are not archived",
+-            "auth": "explicit trusted Codex home; credentials are not read or copied",
++            "environment": "trusted host environment; values and credentials are not archived",
++            "auth": "Codex-owned provider configuration; no ARQUILO credential parsing or fallback",
+@@ -126 +129 @@ def finish_manifest(manifest: dict, *, directory: Path, result: DecisionResult,
+-            codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
++            codex_policy.decision_sandbox_arguments()
+diff --git a/decision_exec.py b/decision_exec.py
+index 30b0361..6287bfd 100644
+--- a/decision_exec.py
++++ b/decision_exec.py
+@@ -8,2 +8,2 @@ logs; the working directory is deliberately retained until explicitly cleaned
+-after archiving. No credentials, global configuration or project files are read
+-or copied by this module. An empty cwd is NOT an absolute read sandbox.
++after archiving. No credential values or configuration contents are read or copied by this module;
++Codex loads its trusted configuration itself. An empty cwd is NOT an absolute read sandbox.
+@@ -34,7 +34,3 @@ from runtime_files import atomic_write_text, native_path, safe_component, unique
+-# No provider URL/key, shell injection, Codex session/config override, inherited
+-# agent identity or project .env. Authentication uses an explicitly trusted
+-# Codex home. Keep the OS user's identity for native credential-store access.
+-_OS_ENV = frozenset({
+-    "PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
+-    "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE",
+-})
++# Host-owned configuration is trusted just as for a direct Codex invocation.
++# Keep provider tokens, proxy/CA variables, and arbitrary custom env_key names;
++# ARQUILO neither interprets nor archives their values. Task text cannot add env.
+@@ -58 +54,5 @@ def decision_environment(source: Mapping[str, str], *, project_root: Path,
+-    """Copy an OS allowlist; never mutate os.environ or load a .env file."""
++    """Copy host environment without stripping corporate routing/auth settings.
++
++    Keep OS/path isolation checks. Do not load a project .env, dump env values,
++    or grant shell networking. The explicitly trusted home wins over source env.
++    """
+@@ -62 +62 @@ def decision_environment(source: Mapping[str, str], *, project_root: Path,
+-        raise CodexPolicyError("The trusted Codex auth home must already exist; authenticate using Codex first")
++        raise CodexPolicyError("The trusted Codex config home must exist; configure Codex for this account/provider first")
+@@ -69,3 +69 @@ def decision_environment(source: Mapping[str, str], *, project_root: Path,
+-        canonical = key.upper()
+-        if canonical not in _OS_ENV:
+-            continue
++        canonical = key.upper() if os.name == "nt" else key
+@@ -132 +130 @@ def execute_attempt(
+-        # explicitly trusted auth home is covered by --ignore-user-config, and
++        # explicitly trusted home supplies the owner's routing configuration;
+@@ -164,2 +162,3 @@ def execute_attempt(
+-            model=request.model, reasoning_effort=request.reasoning_effort,
+-            network_access=False, sandbox="workspace-write", decision_only=True,
++            model=request.model, model_provider=request.model_provider,
++            reasoning_effort=request.reasoning_effort,
++            network_access=False, sandbox="read-only", decision_only=True,
+diff --git a/decision_request.py b/decision_request.py
+index 53d854a..0015b76 100644
+--- a/decision_request.py
++++ b/decision_request.py
+@@ -160,0 +161 @@ class DecisionRequest:
++    model_provider: str | None = None
+@@ -170 +171 @@ class DecisionRequest:
+-        for name in ("model", "reasoning_effort", "system_prompt"):
++        for name in ("model", "model_provider", "reasoning_effort", "system_prompt"):
+@@ -224 +225,2 @@ class DecisionRequest:
+-                "model": self.model, "reasoning_effort": self.reasoning_effort,
++                "model": self.model, "model_provider": self.model_provider,
++                "reasoning_effort": self.reasoning_effort,
+@@ -300 +302,2 @@ def completion_request(snapshot: TaskSnapshot, *, latest_answer: str, review_fin
+-                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES) -> DecisionRequest:
++                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
++                       model_provider: str | None = None) -> DecisionRequest:
+@@ -317 +320,2 @@ def completion_request(snapshot: TaskSnapshot, *, latest_answer: str, review_fin
+-        model=model, reasoning_effort=reasoning_effort, system_prompt=system_prompt,
++        model=model, model_provider=model_provider,
++        reasoning_effort=reasoning_effort, system_prompt=system_prompt,
+@@ -349 +353,2 @@ def evaluation_request(context: dict[str, Any], *, stage: str, plan_id: str | No
+-                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES) -> tuple[DecisionRequest, str, str | None]:
++                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
++                       model_provider: str | None = None) -> tuple[DecisionRequest, str, str | None]:
+@@ -414 +419,2 @@ def evaluation_request(context: dict[str, Any], *, stage: str, plan_id: str | No
+-        model=model, reasoning_effort=reasoning_effort, system_prompt=system_prompt,
++        model=model, model_provider=model_provider,
++        reasoning_effort=reasoning_effort, system_prompt=system_prompt,
+diff --git a/docs/compatibility.md b/docs/compatibility.md
+index 7e6aa4f..1683200 100644
+--- a/docs/compatibility.md
++++ b/docs/compatibility.md
+@@ -3 +3 @@
+-## Current names (ARQUILO 0.3.1)
++## Current names (ARQUILO 0.3.2)
+@@ -7 +7 @@ ARQUILO is the only active project name. Use `arquilo.py` and
+-identifiers. The public package version is 0.3.1. Individual schema version
++identifiers. The public package version is 0.3.2. Individual schema version
+@@ -90,2 +90,3 @@ nonzero metadata exits and interrupted/timed-out probes stop before a model
+-process starts. `--strict-config`, `--ignore-user-config`, the sandbox and the
+-closed Decide event policy remain enforced. Negotiation runs against each call's
++process starts. The read-only sandbox and closed Decide event policy remain
++enforced. From 0.3.2, user config/rules are no longer suppressed and strict-config
++is no longer forced; tool-only overrides do not replace provider provisioning. Negotiation runs against each call's
+@@ -98,0 +100,2 @@ unsupported, with specific diagnostics instead of a blanket update instruction.
++
++See [provider-neutral Decide](decide-configuration.md) for the 0.3.2 config/env trust change.
+diff --git a/docs/decide-configuration.md b/docs/decide-configuration.md
+new file mode 100644
+index 0000000..2ef2177
+--- /dev/null
++++ b/docs/decide-configuration.md
+@@ -0,0 +1,79 @@
++# Decide: use the owner's Codex configuration (0.3.2)
++
++## Routing is not ARQUILO policy
++
++Decide, including `arquilo_doctor.py --check-decide`, does not choose a model,
++provider, endpoint, credential scheme or reasoning effort by default. With no
++explicit override, Codex loads the configured values in its normal user/managed
++configuration. An existing `CODEX_HOME` is honored, otherwise the user's `.codex`
++is used. ARQUILO does not parse/copy that configuration or create a replacement.
++
++This matters for corporate gateways such as Databricks: deployment names,
++provider IDs, base URLs, headers, arbitrary `env_key` names, proxy variables and
++CA/certificate settings must remain under the existing Codex/IT configuration.
++ARQUILO preserves the host process environment, without loading a project `.env`
++or dumping its values. Authentication is Codex's responsibility; no `auth.json`
++is required merely to use a provider configured with environment credentials.
++
++```powershell
++# Existing Codex config, including its configured provider/model:
++python arquilo_doctor.py --check-decide
++
++# Change only the model, leaving the configured provider unchanged:
++python arquilo_doctor.py --check-decide --model "approved-deployment"
++
++# Only when explicitly desired: select a provider ID already defined in Codex:
++python arquilo_doctor.py --check-decide --model-provider "company-gateway"
++```
++
++The Python `decide`, `decide_bool`, `evaluate` and `DecisionRequest` APIs accept
++optional `model` and `model_provider`. Unspecified values remain `None`, not a
++hard-coded product/model name. The runner continues to forward explicitly
++selected task/Decide models. A provider error does not trigger an alternate
++model, alternate provider, new login or automatic configuration edit.
++
++An archive's `model: null`/`model_provider: null` means **no override**; it does
++not pretend that ARQUILO knows which model Codex resolved internally. Archives
++record selection origin and the actual argv. Treat raw CLI streams as sensitive.
++
++## Remaining arguments have a purpose
++
++Decide needs JSON events, an output schema, an output file and stdin for its
++structured request. A fresh temporary cwd avoids task-repository configuration;
++`--skip-git-repo-check` permits it and `--ephemeral` avoids a reusable session.
