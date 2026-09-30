@@ -4,7 +4,7 @@
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.3.0. Individual schema version
+identifiers. The public package version is 0.3.1. Individual schema version
 suffixes still describe their unchanged payload contracts, not the package version.
 
 ## Historical project name — DORA Lean
