@@ -1,0 +1,183 @@
+@@ -298,0 +308,28 @@ def sandbox_arguments(*, sandbox: str, network_access: bool) -> list[str]:
++
++
++def decision_sandbox_arguments() -> list[str]:
++    """No writes or approval escalation, without workspace-write-only settings."""
++    return ["--sandbox", "read-only", "-c", 'approval_policy="never"']
++
++
++def decision_mcp_config(names: Sequence[str]) -> tuple[str, ...]:
++    """Disable configured MCP servers, without copying URLs/commands/secrets.
++
++    An empty table would only merge with (not clear) the user's configured map.
++    Server names come from Codex's own metadata resolver, not a second TOML
++    configuration loader. Quoted TOML keys keep names literal.
++    """
++    if isinstance(names, str) or len(names) > 1024:
++        raise CodexPolicyError("Invalid Decide MCP selection")
++    for name in names:
++        if (not isinstance(name, str) or not name or len(name) > 256
++                or any(ord(c) < 32 for c in name)):
++            raise CodexPolicyError("Invalid Decide MCP name")
++    if len(set(names)) != len(names):
++        raise CodexPolicyError("Duplicate Decide MCP name")
++    if not names:
++        return ()
++    return ("mcp_servers={" + ", ".join(
++        json.dumps(name, ensure_ascii=False) + "={enabled=false}"
++        for name in sorted(names)
++    ) + "}",)
+diff --git a/codex_transport.py b/codex_transport.py
+index 248f9e1..e45f1e9 100644
+--- a/codex_transport.py
++++ b/codex_transport.py
+@@ -17 +17 @@ import safe_io
+-from dataclasses import dataclass, field
++from dataclasses import replace, dataclass, field
+@@ -64,0 +65 @@ class CodexExecRequest:
++    model_provider: str | None = None
+@@ -81,0 +83 @@ class CodexExecRequest:
++    disabled_mcp_servers: tuple[str, ...] = ()
+@@ -103,0 +106,6 @@ class CodexExecRequest:
++        for name in ("model", "model_provider"):
++            value = getattr(self, name)
++            if value is not None and (not isinstance(value, str) or not value.strip()
++                                      or any(ord(c) < 32 for c in value)):
++                raise ValueError(f"{name} must be a non-empty single-line string or None")
++        codex_policy.decision_mcp_config(self.disabled_mcp_servers)
+@@ -104,0 +113,2 @@ class CodexExecRequest:
++            # The decision cwd contains no user artifacts and requires no writes.
++            object.__setattr__(self, "sandbox", "read-only")
+@@ -143 +153 @@ def build_command(request: CodexExecRequest, *,
+-    if request.model:
++    if request.model is not None:
+@@ -144,0 +155,2 @@ def build_command(request: CodexExecRequest, *,
++    if request.model_provider is not None:
++        cmd += ["-c", "model_provider=" + json.dumps(request.model_provider, ensure_ascii=False)]
+@@ -146 +158 @@ def build_command(request: CodexExecRequest, *,
+-        cmd += ["-c", f"model_reasoning_effort={request.reasoning_effort}"]
++        cmd += ["-c", "model_reasoning_effort=" + json.dumps(request.reasoning_effort)]
+@@ -156 +168,4 @@ def build_command(request: CodexExecRequest, *,
+-    cmd += codex_policy.sandbox_arguments(sandbox=request.sandbox, network_access=request.network_access)
++    if request.decision_only:
++        cmd += codex_policy.decision_sandbox_arguments()
++    else:
++        cmd += codex_policy.sandbox_arguments(sandbox=request.sandbox, network_access=request.network_access)
+@@ -160,0 +176,2 @@ def build_command(request: CodexExecRequest, *,
++        for value in codex_policy.decision_mcp_config(request.disabled_mcp_servers):
++            cmd += ["-c", value]
+@@ -195 +212,2 @@ def metadata_probe_arguments(probe: str, *,
+-                             decision_features: Sequence[str] | None = None) -> list[str]:
++                             decision_features: Sequence[str] | None = None,
++                             disabled_mcp_servers: Sequence[str] = ()) -> list[str]:
+@@ -204 +222 @@ def metadata_probe_arguments(probe: str, *,
+-        # ignore-user-config/strict-config/ephemeral are Exec-only switches.
++        # Model/provider/config-home selection is left to normal Codex config.
+@@ -208 +226,5 @@ def metadata_probe_arguments(probe: str, *,
+-    raise ValueError("Unknown metadata probe; allowed: version, help, feature_catalog, features")
++    if probe == "mcp_catalog":
++        values = (codex_policy.decision_config_for_features(decision_features)
++                  + codex_policy.decision_mcp_config(disabled_mcp_servers))
++        return [*(arg for value in values for arg in ("-c", value)), "mcp", "list", "--json"]
++    raise ValueError("Unknown metadata probe")
+@@ -213,2 +235,3 @@ def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
+-                       decision_features: Sequence[str] | None = None) -> subprocess.CompletedProcess:
+-    """Cost-free introspection using the same launcher and owned process tree."""
++                       decision_features: Sequence[str] | None = None,
++                       disabled_mcp_servers: Sequence[str] = ()) -> subprocess.CompletedProcess:
++    """No model request; Codex may inspect configured auth metadata endpoints."""
+@@ -216 +239,2 @@ def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
+-    command = [*launcher, *metadata_probe_arguments(probe, decision_features=decision_features)]
++    command = [*launcher, *metadata_probe_arguments(probe, decision_features=decision_features,
++                                                   disabled_mcp_servers=disabled_mcp_servers)]
+@@ -687,0 +712,44 @@ _INVALID_UTF8 = re.compile("[\udc80-\udcff]")
++def inspect_decision_mcp(*, request: CodexExecRequest,
++                         decision_features: Sequence[str]) -> tuple[str, ...]:
++    """Resolve MCP through Codex, never load/copy its provider config ourselves.
++
++    Listing may inspect configured MCP auth metadata; no model/exec task runs.
++    Do not archive the raw list: it can contain server headers and env values.
++    An empty table is not sufficient to clear inherited MCP config (deep merge).
++    """
++    names: tuple[str, ...] = ()
++    for verification in (False, True):
++        if _cancellation_reason(request):
++            raise InterruptedError("Decide MCP metadata verification cancelled")
++        try:
++            result = probe_cli_metadata(probe="mcp_catalog", launcher=request.launcher,
++                cwd=request.cwd, env=request.env, timeout=10,
++                decision_features=decision_features, disabled_mcp_servers=names)
++        except (OSError, UnicodeError, subprocess.TimeoutExpired, RuntimeError):
++            raise codex_policy.CodexPolicyError(
++                "Cannot inspect Decide MCP configuration; no model process started") from None
++        if result.returncode != 0:
++            raise codex_policy.CodexPolicyError("Cannot verify Decide MCP configuration; no model process started")
++        try:
++            rows = codex_policy.parse_decision_event(result.stdout)
++            if not isinstance(rows, list) or len(rows) > 1024:
++                raise ValueError()
++            state = {}
++            for row in rows:
++                if (not isinstance(row, dict) or not isinstance(row.get("name"), str)
++                        or type(row.get("enabled")) is not bool or row["name"] in state):
++                    raise ValueError()
++                state[row["name"]] = row["enabled"]
++            codex_policy.decision_mcp_config(tuple(state))
++        except (ValueError, TypeError):
++            raise codex_policy.CodexPolicyError("Malformed Decide MCP metadata; no model process started") from None
++        if verification:
++            if set(state) != set(names) or any(state.values()):
++                raise codex_policy.CodexPolicyError("Decide MCP disable controls were not effective; no model process started")
++        else:
++            names = tuple(sorted(state))
++            if not names:
++                break
++    return names
++
++
+@@ -1232,0 +1301,11 @@ def execute(request: CodexExecRequest) -> TransportResult:
++                try:
++                    mcp_names = inspect_decision_mcp(request=request, decision_features=decision_features)
++                except InterruptedError:
++                    trace.process_stop_triggered = True
++                    trace.process_stop_details = "Decide metadata verification cancelled"
++                    mcp_names = ()
++                except codex_policy.CodexPolicyError as exc:
++                    raise CodexExecutionError(trace, execution_error(str(exc),
++                        code="codex_decision_mcp_failed", phase=request.phase)) from exc
++                request = replace(request, disabled_mcp_servers=mcp_names)
++                trace.capture["disabled_mcp_server_count"] = len(mcp_names)
+diff --git a/decide.py b/decide.py
+index 10d492d..d385c15 100644
+--- a/decide.py
++++ b/decide.py
+@@ -8,0 +9 @@ from pathlib import Path
++from runtime_config import resolve_codex_home
+@@ -40,3 +41,3 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
+-    Standalone defaults use the current project and the OS user's ~/.codex.
+-    A custom auth home must be explicitly trusted through settings; inherited
+-    CODEX_HOME, API keys and .env files cannot select it implicitly.
++    No implicit model/provider selection. Codex loads the owner's config from
++    CODEX_HOME (or ~/.codex), including provider auth and proxy settings.
++    Explicit settings.trusted_codex_home overrides that host default.
+@@ -53 +54 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
+-        settings = DecisionExecSettings(project_root=project, trusted_codex_home=Path.home() / ".codex",
++        settings = DecisionExecSettings(project_root=project, trusted_codex_home=resolve_codex_home(),
+@@ -82,0 +84 @@ def _request(
++    model_provider: Optional[str] = None,
+@@ -89 +91 @@ def _request(
+-        for name, override in (("model", model), ("reasoning_effort", reasoning_effort), ("system_prompt", system_prompt)):
++        for name, override in (("model", model), ("model_provider", model_provider), ("reasoning_effort", reasoning_effort), ("system_prompt", system_prompt)):
+@@ -99 +101 @@ def _request(
+-        phase=phase, attempt_id=attempt_id, model=model,
++        phase=phase, attempt_id=attempt_id, model=model, model_provider=model_provider,
+@@ -106,0 +109 @@ def decide(
++    model_provider: Optional[str] = None,
+@@ -121 +124 @@ def decide(
+-    prepared = _request(question, options, model=model, system_prompt=system_prompt,
++    prepared = _request(question, options, model=model, model_provider=model_provider, system_prompt=system_prompt,
+@@ -130,0 +134 @@ def decide_bool(
++    model_provider: Optional[str] = None,
+@@ -141 +145 @@ def decide_bool(
+-    prepared = _request(question, boolean_mapping.options, model=model, system_prompt=system_prompt,
++    prepared = _request(question, boolean_mapping.options, model=model, model_provider=model_provider, system_prompt=system_prompt,
