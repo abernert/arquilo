@@ -37,10 +37,9 @@ jobs:
           import os, pathlib, subprocess, sys
           target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'codex-compat-binary'
           subprocess.run([sys.executable, 'scripts/install_test_codex.py', os.environ['TEST_CODEX_VERSION'], str(target)], check=True)
-      - name: Verify capabilities in an empty home; no login or model calls
+      - name: Verify minimal Exec contract and synthetic provider config; no model calls
         shell: python
         run: |
           import os, pathlib, subprocess, sys
           binary = pathlib.Path(os.environ['RUNNER_TEMP']) / 'codex-compat-binary' / ('codex.exe' if os.name == 'nt' else 'codex')
-          expected = 'absent' if os.environ['TEST_CODEX_VERSION'] == '0.154.0' else 'present'
-          subprocess.run([sys.executable, '-B', 'scripts/check_codex_features.py', '--codex', str(binary), '--expect-daemon', expected], check=True)
+          subprocess.run([sys.executable, '-B', 'scripts/check_codex_configuration.py', '--codex', str(binary)], check=True)
