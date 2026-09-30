@@ -59,7 +59,9 @@ def main() -> int:
                 capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
             outcomes.append({'profile':bool(selectors),'returncode':result.returncode})
             if result.returncode:
-                print(json.dumps({'status':'FAIL','stage':'synthetic-config-load','results':outcomes}));return 1
+                print(json.dumps({'status':'FAIL','stage':'synthetic-config-load','results':outcomes,
+                    'fixture_error':result.stderr.replace('synthetic-not-a-real-token','<synthetic>')
+                    .replace(str(root),'<fixture>')[-1500:]}));return 1
         assert config.read_text(encoding='utf-8') == text
         print(json.dumps({'status':'PASS','python':sys.version.split()[0],
             'codex':report['codex_version'],'configuration_policy':report['configuration_policy'],
