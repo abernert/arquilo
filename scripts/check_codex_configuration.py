@@ -44,24 +44,34 @@ def main() -> int:
         assert not any(arg.startswith(('model_provider=', 'features.')) for arg in argv)
         assert decision_exec.decision_environment(env,project_root=work) == env
         # Use a loopback-only synthetic endpoint and no actual authentication.
-        # features list loads configuration, not a model prompt. Never print its
-        # output/config or inherit the runner's real provider keys.
+        # features list and mcp list load configuration, not a model prompt.
+        # No MCP servers are configured. Never inherit real provider keys or
+        # dump configuration. Failure diagnostics are synthetic and bounded.
         text = ('model = "fixture-deployment"\nmodel_provider = "databricks_fixture"\n'
                 '[model_providers.databricks_fixture]\nname = "Synthetic fixture"\n'
                 'base_url = "http://127.0.0.1:9/v1"\nwire_api = "responses"\n'
                 'env_key = "ARQUILO_SYNTHETIC_PROVIDER_TOKEN"\n')
         config = config_home/'config.toml';config.write_text(text,encoding='utf-8')
         profile = config_home/'fixture.config.toml'
-        profile.write_text('model = "profile-deployment"\n',encoding='utf-8')
+        profile_text = text.replace('fixture-deployment', 'profile-deployment')
+        profile.write_text(profile_text,encoding='utf-8')
         outcomes=[]
-        for selectors in ([],['--profile','fixture']):
-            result = subprocess.run([str(binary),*selectors,'features','list'],cwd=work,env=env,
+        for selectors, command in (([], ['features','list']),
+                                   (['--profile','fixture'], ['mcp','list','--json'])):
+            result = subprocess.run([str(binary),*selectors,*command],cwd=work,env=env,
                 capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
             outcomes.append({'profile':bool(selectors),'returncode':result.returncode})
             if result.returncode:
                 print(json.dumps({'status':'FAIL','stage':'synthetic-config-load','results':outcomes,
                     'fixture_error':result.stderr.replace('synthetic-not-a-real-token','<synthetic>')
                     .replace(str(root),'<fixture>')[-1500:]}));return 1
+        # Prove the CLI really loads the selected profile, not just that it
+        # accepts a flag. A malformed fixture must fail without any inference.
+        profile.write_text('model = [',encoding='utf-8')
+        invalid = subprocess.run([str(binary),'--profile','fixture','mcp','list','--json'],
+            cwd=work,env=env,capture_output=True,text=True,encoding='utf-8',timeout=30,check=False)
+        assert invalid.returncode != 0, 'Malformed selected profile was ignored'
+        profile.write_text(profile_text,encoding='utf-8')
         assert config.read_text(encoding='utf-8') == text
         print(json.dumps({'status':'PASS','python':sys.version.split()[0],
             'codex':report['codex_version'],'configuration_policy':report['configuration_policy'],

@@ -209,6 +209,16 @@ class ApiAndArchiveTests(Base):
         self.assertIsNone(run.call_args.args[0].model_provider)
         self.assertEqual(config.read_text(encoding='utf-8'), text)
 
+    def test_custom_config_home_with_default_home_codex_and_nested_temp(self):
+        user_home = self.base/'user'
+        (user_home/'.codex').mkdir(parents=True)
+        nested_temp = user_home/'AppData'/'Local'/'Temp'
+        nested_temp.mkdir(parents=True)
+        env = dict(self.env, HOME=str(user_home), USERPROFILE=str(user_home))
+        call, run = self.call(settings=replace(self.settings, env=env, temp_root=nested_temp))
+        self.assertTrue(call.result.valid, call.result)
+        self.assertEqual(run.call_args.args[0].env['CODEX_HOME'], str(self.home))
+
     def test_explicit_selectors_pass_through_and_settings_stay_immutable(self):
         call, run = self.call(request=request('explicit-model', 'low'),
                               model_provider='named-provider', config_profile='named-profile')

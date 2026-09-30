@@ -131,10 +131,15 @@ def execute_attempt(
                     project, "Decide temporary root")
     if not base.is_dir():
         raise CodexPolicyError("Decide temporary root must exist")
+    host_env = {k.upper(): v for k, v in child_env.items()} if os.name == "nt" else child_env
+    home_value = host_env.get("USERPROFILE" if os.name == "nt" else "HOME")
+    host_home = Path(home_value).resolve() if home_value else Path.home().resolve()
+    config_home = configured_codex_home(child_env, trusted_codex_home)
     for parent in (base, *base.parents):
-        # User configuration is intentionally inherited; unrelated project
-        # layers must not be picked up merely through the temporary directory.
-        trusted_user_parent = (parent / ".codex").resolve() == configured_codex_home(child_env, trusted_codex_home)
+        # A user's normal home can still contain .codex when CODEX_HOME selects
+        # another trusted configuration. Windows TEMP normally descends from
+        # that home. Do not mistake it for an unrelated project configuration.
+        trusted_user_parent = parent == host_home or (parent / ".codex").resolve() == config_home
         if ((parent / ".git").exists() or (not trusted_user_parent and (
                 (parent / ".codex").exists() or (parent / ".agents").exists()))):
             raise CodexPolicyError(f"Decide temporary root inherits repository/configuration context from {parent}")

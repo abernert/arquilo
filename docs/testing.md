@@ -60,8 +60,9 @@ The `Codex metadata compatibility` workflow checks actual upstream 0.154.0 and
 0.159.1 on Linux, Windows and macOS with Python 3.12 and temporary homes. CI
 verifies the release digest before extracting the executable. It verifies the
 minimal Exec contract and parses synthetic custom-provider/named-profile
-configuration with `features list`, without overrides, real credentials or a
-model prompt. This metadata-only fixture is not the runtime Decide path.
+configuration with `features list` and `mcp list` (no MCP servers), without
+overrides, real credentials or a model prompt. A malformed selected profile must
+fail. This metadata-only fixture is not the runtime Decide path.
 
 See `scripts/install_test_codex.py` and `scripts/check_codex_configuration.py`.
 The standard offline test command downloads/executes no upstream binaries.
