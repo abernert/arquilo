@@ -1,0 +1,5 @@
+# DORA Lean core: Python >=3.11, standard library only. No pip install required.
+# External runtime: verified Codex CLI; Git only with explicit --git.
+# No optional add-on dependencies or installable feature groups (scope 1028/1035).
+# Development-only: requirements-dev.txt in the source checkout (not shipped).
+# Package instructions: documents/DISTRIBUTION.md.

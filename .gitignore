@@ -1,0 +1,57 @@
+# Byte-compiled / cache
+__pycache__/
+.pycache/
+*.py[cod]
+*$py.class
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment and secrets
+.env
+.envrc
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Coverage and testing
+.coverage*
+htmlcov/
+.tox/
+qa_reports/
+
+# Logs and run artifacts
+*.log
+*.jsonl
+error_*.txt
+mypy.stderr
+.codex_runs/
+codex_jobs/
+runs/
+work_*/
+tmp*/
+qa_reports/
+var/
+autobuild_runs/
+smoke_test_output/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
