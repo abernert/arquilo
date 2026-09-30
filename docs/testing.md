@@ -53,3 +53,18 @@ input-compatibility tests are allowlisted; rejected predecessor options remain
 rejection-only. Tests cover the doctor entry point and output, canonical
 configuration precedence, same-version schema aliases, budget preservation and
 package contents. These are offline checks, not live model or sandbox claims.
+
+## Real Codex metadata compatibility (opt-in; no model calls)
+
+The additional compatibility check runs upstream 0.154.0 (without the daemon
+flag) and 0.159.1 (with it) in isolated temporary homes. CI downloads an exact
+upstream release asset and verifies its SHA-256 digest before extracting only
+the CLI executable. It does not update a user's installation, load personal
+credentials, or send model prompts. See `scripts/install_test_codex.py` and
+`scripts/check_codex_features.py`; run these only when intentionally testing
+external executables. Outcomes must be read from the exact CI run.
+
+Offline tests separately simulate wrong values, ignored overrides, malformed and
+duplicate catalogs, missing mandatory controls, interruptions, no-model failures,
+independent per-call negotiation and the full decision archive path. These tests
+cannot prove live model access or native sandbox behavior.

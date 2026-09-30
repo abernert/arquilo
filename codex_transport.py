@@ -125,7 +125,8 @@ class CodexExecRequest:
             raise ValueError("Log, schema and final response paths must be distinct")
 
 
-def build_command(request: CodexExecRequest) -> list[str]:
+def build_command(request: CodexExecRequest, *,
+                  decision_features: Sequence[str] | None = None) -> list[str]:
     """Build argv without reading ambient configuration or invoking a shell."""
     codex_policy.validate_launcher(request.launcher)
     extras = codex_policy.validate_extra_args(request.extra_args)
@@ -150,7 +151,8 @@ def build_command(request: CodexExecRequest) -> list[str]:
     cmd += codex_policy.sandbox_arguments(sandbox=request.sandbox, network_access=request.network_access)
     if request.decision_only:
         cmd += codex_policy.decision_arguments(network_access=request.network_access,
-                                              config_profile=request.config_profile, extra_args=extras)
+                                              config_profile=request.config_profile, extra_args=extras,
+                                              features=decision_features)
     cmd.append("-")
     return cmd
 
@@ -184,24 +186,29 @@ def probe_version(*, launcher: Sequence[str], cwd: Path, env: Mapping[str, str],
     return probe_cli_metadata(probe="version", launcher=launcher, cwd=cwd, env=env, timeout=timeout)
 
 
-def metadata_probe_arguments(probe: str) -> list[str]:
+def metadata_probe_arguments(probe: str, *,
+                             decision_features: Sequence[str] | None = None) -> list[str]:
     """Closed, non-model commands only; callers cannot add a prompt or login."""
     if probe == "version":
         return ["--version"]
     if probe == "help":
         return ["exec", "--help"]
+    if probe == "feature_catalog":
+        return ["features", "list"]
     if probe == "features":
         # ignore-user-config/strict-config/ephemeral are Exec-only switches.
-        return [*(arg for value in codex_policy.DECISION_CONFIG for arg in ("-c", value)),
+        return [*(arg for value in codex_policy.decision_config_for_features(decision_features)
+                 for arg in ("-c", value)),
                 "features", "list"]
-    raise ValueError("Unknown metadata probe; allowed: version, help, features")
+    raise ValueError("Unknown metadata probe; allowed: version, help, feature_catalog, features")
 
 
 def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
-                       env: Mapping[str, str], timeout: float) -> subprocess.CompletedProcess:
+                       env: Mapping[str, str], timeout: float,
+                       decision_features: Sequence[str] | None = None) -> subprocess.CompletedProcess:
     """Cost-free introspection using the same launcher and owned process tree."""
     codex_policy.validate_launcher(launcher)
-    command = [*launcher, *metadata_probe_arguments(probe)]
+    command = [*launcher, *metadata_probe_arguments(probe, decision_features=decision_features)]
     proc = _start_process(command, cwd=cwd, env=env)
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
@@ -217,6 +224,69 @@ def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
     return subprocess.CompletedProcess(getattr(proc, "arquilo_argv", command), proc.returncode,
                                        stdout.decode("utf-8"), stderr.decode("utf-8"))
 
+
+
+def inspect_decision_features(*, launcher: Sequence[str], cwd: Path, env: Mapping[str, str],
+                              timeout: float = 10,
+                              cancel_requested: Callable[[], str | None] | None = None) -> dict:
+    """Discover, select and verify restrictions with two non-model CLI probes.
+
+    Both probes use the same launcher/cwd/environment as the impending call.
+    No global cache, config edits or model requests. A failed/truncated/ambiguous
+    table never authorizes a call. Diagnostics expose fixed control names only.
+    """
+    report = {"status": "FAIL", "selected_features": [], "unavailable_optional": [],
+              "features": {}, "probes": [], "interrupted": False,
+              "detail": "Decide feature verification did not complete."}
+    catalog = {}
+    for name in ("feature_catalog", "features"):
+        if cancel_requested is not None and cancel_requested():
+            report.update(interrupted=True, detail="Decide feature verification cancelled.")
+            return report
+        selected = tuple(report["selected_features"]) if name == "features" else None
+        record = {"name": name, "status": "FAIL", "exit_code": None,
+                  "timeout_seconds": timeout,
+                  "argv": [*launcher, *metadata_probe_arguments(name, decision_features=selected)]}
+        report["probes"].append(record)
+        try:
+            result = probe_cli_metadata(probe=name, launcher=launcher, cwd=cwd, env=env,
+                                        timeout=timeout, decision_features=selected)
+            record.update(exit_code=result.returncode, stderr_present=bool(result.stderr))
+            if result.returncode != 0:
+                record["error"] = "CLI feature probe failed; inspect local installation/configuration."
+                report["detail"] = record["error"]
+                return report
+            values = codex_policy.parse_feature_catalog(result.stdout)
+            record["status"] = "PASS"
+            if name == "feature_catalog":
+                catalog = values
+                report["features"] = codex_policy.decision_feature_details(catalog)
+                report["selected_features"] = list(codex_policy.select_decision_features(catalog))
+                report["unavailable_optional"] = sorted(codex_policy.DECISION_OPTIONAL_FEATURES - set(catalog))
+            else:
+                report["features"] = codex_policy.decision_feature_details(catalog, values)
+        except codex_policy.CodexPolicyError as exc:
+            # These diagnostics contain only ARQUILO-owned text, fixed control
+            # names and line numbers, never CLI output or credential contents.
+            report["detail"] = str(exc)
+            if record["status"] != "PASS":
+                record["error"] = str(exc)
+            return report
+        except (OSError, UnicodeError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            record["error"] = f"CLI feature probe could not complete ({type(exc).__name__})."
+            report["detail"] = record["error"]
+            return report
+        except KeyboardInterrupt:
+            record.update(error="CLI feature probe interrupted.", interrupted=True)
+            report.update(interrupted=True, detail=record["error"])
+            return report
+    failed = [name for name, row in report["features"].items()
+              if row["status"] not in {"verified", "unavailable_optional"}]
+    if failed:
+        report["detail"] = "Decide controls not verified: " + ", ".join(failed)
+    else:
+        report.update(status="PASS", detail="Supported Decide controls verified; required controls present.")
+    return report
 
 def ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -651,21 +721,27 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
     return prompt
 
 
-def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes) -> RunResult:
+
+def _cancellation_reason(request: CodexExecRequest) -> str | None:
+    reason = request.cancel_requested() if request.cancel_requested is not None else None
+    if request.process_stop_path is not None and request.process_stop_path.exists():
+        reason = request.process_stop_path.read_text(encoding="utf-8").strip() or "process_stop active"
+    return reason
+
+def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes, *,
+         decision_features: Sequence[str] | None = None) -> RunResult:
     cwd = request.cwd
     raw_log, pretty_log = request.raw_log, request.pretty_log
     verbose, console_todo_id = request.verbose, request.console_todo_id
     kill_grace = request.timeouts.kill_grace
-    cmd = build_command(request)
+    cmd = build_command(request, decision_features=decision_features)
     safe_command = json.dumps(cmd, ensure_ascii=False)
     header = (f"[{ts()}] ARGV (JSON): {safe_command}\nCWD: {cwd}\nPHASE: {request.phase}\n"
               f"STDIN: {request.prompt_display}\nCAPTURE: {acc.capture_dir}\n\n")
     append(pretty_log, header)
     if verbose:
         sys.stdout.write(_inject_console_todo_prefix(header, console_todo_id))
-    cancellation = request.cancel_requested() if request.cancel_requested is not None else None
-    if request.process_stop_path is not None and request.process_stop_path.exists():
-        cancellation = request.process_stop_path.read_text(encoding="utf-8").strip() or "process_stop active"
+    cancellation = _cancellation_reason(request)
     if cancellation:
         acc.process_stop_triggered = True
         acc.process_stop_details = cancellation
@@ -1118,14 +1194,37 @@ def execute(request: CodexExecRequest) -> TransportResult:
     trace = RunResult()
     try:
         prompt_bytes = _prepare_capture(request, trace)
-        if request.decision_only:
+        decision_features = None
+        cancellation = _cancellation_reason(request)
+        if cancellation:
+            trace.process_stop_triggered = True
+            trace.process_stop_details = cancellation
+        elif request.decision_only:
             version = probe_version(launcher=request.launcher, cwd=request.cwd, env=request.env, timeout=10)
-            trace.capture["decision_cli_version"] = version.stdout.strip()
+            banner = version.stdout.strip()
+            trace.capture["decision_cli_version"] = banner if re.fullmatch(
+                r"codex-cli [0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?", banner) else None
             if version.returncode != 0:
                 raise CodexExecutionError(trace, execution_error(
                     "Cannot read Codex CLI metadata (--version failed). "
                     "No model call was started.", code="codex_decision_version_probe_failed", phase=request.phase))
-        trace = _run(request, trace, prompt_bytes)
+            compatibility = inspect_decision_features(
+                launcher=request.launcher, cwd=request.cwd, env=request.env,
+                cancel_requested=lambda: _cancellation_reason(request),
+            )
+            trace.capture["decision_feature_compatibility"] = compatibility
+            if compatibility["interrupted"]:
+                trace.process_stop_triggered = True
+                trace.process_stop_details = "Decide metadata verification cancelled"
+            elif compatibility["status"] != "PASS":
+                raise CodexExecutionError(trace, execution_error(
+                    compatibility["detail"] + " No model call was started.",
+                    code="codex_decision_features_failed", phase=request.phase))
+            else:
+                decision_features = tuple(compatibility["selected_features"])
+                trace.capture["argv"] = build_command(request, decision_features=decision_features)
+        if not trace.process_stop_triggered:
+            trace = _run(request, trace, prompt_bytes, decision_features=decision_features)
     except CodexExecutionError as exc:
         trace = exc.result
     except (OSError, UnicodeError) as exc:

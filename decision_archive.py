@@ -60,7 +60,8 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
             "max_input_bytes": request.max_input_bytes,
             "timeouts": asdict(settings.timeouts or TransportTimeouts(total=120)),
             "sandbox": "workspace-write", "network_access": False,
-            "enforced_cli_arguments": (
+            "enforced_cli_arguments": None,  # Set only after verified negotiation.
+            "requested_policy_arguments": (
                 codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
                 + codex_policy.decision_arguments(network_access=False, config_profile=None, extra_args=())),
             "environment": "OS allowlist only; values and credentials are not archived",
@@ -118,7 +119,15 @@ def finish_manifest(manifest: dict, *, directory: Path, result: DecisionResult,
             raise OSError("Terminal transport capture was not fully committed")
     status = ("succeeded" if result.valid else "invalid_response" if result.failure
               else result.execution.status.value)
+    settings = dict(manifest["settings"])
+    compatibility = capture.get("decision_feature_compatibility", {})
+    if compatibility.get("status") == "PASS":
+        settings["enforced_cli_arguments"] = (
+            codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
+            + codex_policy.decision_arguments(network_access=False, config_profile=None,
+                                             extra_args=(), features=compatibility["selected_features"]))
     return manifest | {
+        "settings": settings, "feature_compatibility": compatibility,
         "finished_at": timestamp(), "status": status, "archive_complete": True,
         "result": asdict(result), "artifacts": artifacts,
         "retry": manifest["retry"] | {"scheduled": retry_scheduled},

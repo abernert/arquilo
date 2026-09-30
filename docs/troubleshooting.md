@@ -69,3 +69,19 @@ sensitive raw evidence, not safe public attachments. Never upload a complete
 Correct the documented cause first. Preserve the marker as a timestamped file
 outside the active marker path, then rerun consciously. A fresh test is often
 best done in a new disposable workspace rather than by deleting evidence.
+
+## Doctor reports `decision_features` with an older Codex CLI
+
+Update ARQUILO to 0.2.1 or later; updating Codex is not required merely because
+`daemon_auto_start` is absent. The Doctor reports this as an optional unavailable
+control and omits that override. On newer CLIs the same control must be disabled.
+
+Run `python3 arquilo_doctor.py --json` for `decision_feature_details` (expected,
+observed, availability and per-control status). `unavailable_optional` is an
+accepted absence, not proof of a disabled feature. `missing_required`,
+`not_confirmed`, `wrong_value` and `catalog_changed` prevent Decide execution.
+Do not remove mandatory controls or `--strict-config` to make a test pass.
+
+The actual Decide transport independently repeats this verification. A
+`codex_decision_features_failed` result means no model process was started;
+its archive retains bounded capability diagnostics, not a user config dump.
