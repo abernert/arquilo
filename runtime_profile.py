@@ -11,6 +11,7 @@ change the fixed sandbox, network grant or mandatory review.
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -24,7 +25,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
-ARQUILO_RUNTIME_VERSION = "0.2.1"
+ARQUILO_RUNTIME_VERSION = "0.3.0"
 ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION = "arquilo.runtime_profile.v1"
 ARQUILO_RUNTIME_PROFILE_ENV = "ARQUILO_RUNTIME_PROFILE"
 ARQUILO_RUNTIME_PROFILE_CONTRACT_VERSION = 1
@@ -161,7 +162,12 @@ def _parse_preflight(raw: Any) -> Optional[PreflightSpec]:
         check_removed_fields(raw, source="Runtime-Profil preflight")
     except ValueError as exc:
         raise RuntimeProfileError(str(exc)) from exc
-    command = _as_string_tuple(raw.get("command"), label="preflight.command")
+    argv = raw.get("command")
+    if not isinstance(argv, list) or not argv or any(
+        not isinstance(token, str) or "\0" in token for token in argv
+    ) or not argv[0].strip():
+        raise RuntimeProfileError("preflight.command must be a nonempty argv of NUL-free strings")
+    command = tuple(argv)  # argv is ordered data, not a normalized/deduplicated set.
     if not command:
         raise RuntimeProfileError("preflight.command must not be empty")
     timeout_raw = raw.get("timeout_seconds", 30)
@@ -169,7 +175,7 @@ def _parse_preflight(raw: Any) -> Optional[PreflightSpec]:
         timeout_seconds = float(timeout_raw)
     except (TypeError, ValueError) as exc:
         raise RuntimeProfileError("preflight.timeout_seconds must be numeric") from exc
-    if timeout_seconds <= 0 or timeout_seconds > 3600:
+    if isinstance(timeout_raw, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > 3600:
         raise RuntimeProfileError(
             "preflight.timeout_seconds must be > 0 and <= 3600"
         )

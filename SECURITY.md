@@ -1,6 +1,6 @@
 # Security policy
 
-ARQUILO 0.1.0 is an experimental public preview. Evaluate it under supervision
+ARQUILO is an experimental public preview. Evaluate it under supervision
 in disposable, least-privilege workspaces. No production security certification
 or support SLA is implied.
 
@@ -32,6 +32,33 @@ not have a separate maintenance commitment.
   Archives are not encrypted, tamper-proof storage or full workspace backups.
 - Call budgets are not spending caps. The preliminary Codex probe is outside the
   per-task call budget. Provider limits and billing are separate controls.
+
+## Controller records and local trust
+
+The task runner stores plan authority, call counters and run evidence outside
+its production workspaces. Ordinary model output cannot authorize task status
+changes. Only validated open child additions and controller-approved completions
+change the persisted plan; owner adoption is an explicit, auditable override.
+Controller file operations reject links/reparse points and hardlinked files.
+POSIX writes use directory-relative descriptors; Windows holds parent-directory
+handles without delete sharing while reading or writing. These are not a new OS
+sandbox or protection against arbitrary code with the user's credentials.
+
+Use local, user-owned state storage. POSIX state roots require user ownership and
+mode 0700; on Windows use the default private LocalAppData or an equivalently
+restricted, user-owned directory with appropriate ACLs. Do not grant Codex,
+external tools or other users extra access to the state root. Profiles with
+`preflight.command` are **trusted executable code with host permissions**, not
+untrusted configuration; do not run downloaded profiles without inspection.
+
+`--git` requires literal owner-selected files; selected files must initially be
+clean or absent. A local commit does not imply authorization to publish it.
+Only `--git-push` enables a push, and unrelated unpushed commits are refused.
+Do not edit the selected files, Git index or branch concurrently with a run.
+The allowlist is not a content/secret scanner or proof that every output is
+correct. Inspect sensitive deliverables before publishing.
+
+See [controller safety](docs/controller-safety.md) for migration and recovery.
 
 ## Operational baseline
 

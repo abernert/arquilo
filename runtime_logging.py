@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import json
 import shutil
+import safe_io
 from typing import Any, Iterable
 
 from runtime_files import atomic_write_text, safe_component
@@ -62,9 +63,9 @@ def copy_log_files(log_dir: Path, stage: str, sources: Iterable[Path],
     records = []
     seen = set()
     base = workspace.resolve()
-    log_root = log_dir.resolve()
+    log_root = safe_io.lexical_path(log_dir)
     for source in sources:
-        source = source.resolve()
+        source = safe_io.check_path(source)
         if source in seen:
             continue
         seen.add(source)
@@ -80,8 +81,7 @@ def copy_log_files(log_dir: Path, stage: str, sources: Iterable[Path],
                         else Path("external") / str(len(records)) / safe_component(source.name))
             target = log_dir / stage / relative
             try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
+                safe_io.write_bytes(target, safe_io.read_bytes(source))
             except OSError as exc:
                 raise LogWriteError(f"I/O-Protokoll {source} -> {target} fehlgeschlagen: {exc}") from exc
             row.update(status="copied", path=str(target), bytes=target.stat().st_size)

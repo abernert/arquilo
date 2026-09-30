@@ -3,7 +3,7 @@
   "python_requires": ">=3.11",
   "runtime_dependencies": [],
   "build_dependencies": [],
-  "runtime_file_count": 69,
+  "runtime_file_count": 73,
   "external_runtime": {
     "codex_cli": "Codex CLI with the required Exec contract; verify using arquilo_doctor.py --check-decide (one model call, may incur costs); no version pin",
     "git": "Only for explicitly enabled --git functions",
@@ -32,6 +32,7 @@
     "codex_policy.py",
     "codex_transport.py",
     "config/policy.md",
+    "controller_state.py",
     "decide.py",
     "decision_archive.py",
     "decision_exec.py",
@@ -39,6 +40,7 @@
     "decision_response.py",
     "docs/architecture.md",
     "docs/compatibility.md",
+    "docs/controller-safety.md",
     "docs/quickstart.md",
     "docs/testing.md",
     "docs/troubleshooting.md",
@@ -64,6 +66,7 @@
     "removed_features.py",
     "requirements.txt",
     "review_contract.py",
+    "reviewed_git.py",
     "run_todos.py",
     "runtime_config.py",
     "runtime_contracts.py",
@@ -71,6 +74,7 @@
     "runtime_files.py",
     "runtime_logging.py",
     "runtime_profile.py",
+    "safe_io.py",
     "scripts/build_runtime_zip.py",
     "scripts/check_naming.py",
     "scripts/check_release.py",
@@ -83,7 +87,7 @@
   "retained_core_options": {
     "parallel": "CFG parallel mit echten Python-Workern in getrennten Unterworkspaces",
     "runtime_profiles": "--runtime-profile / ARQUILO_RUNTIME_PROFILE mit bestehenden Grenzen",
-    "git": "--git explizit; unveränderter Commit-/Push-Pfad, standardmäßig aus"
+    "git": "--git with literal --git-path selections; --git-push separately opts into publishing; default off"
   },
   "excluded_data": [
     "audit/**",

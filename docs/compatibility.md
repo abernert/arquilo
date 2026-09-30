@@ -1,10 +1,10 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.2.1)
+## Current names (ARQUILO 0.3.0)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.2.1. Individual schema version
+identifiers. The public package version is 0.3.0. Individual schema version
 suffixes still describe their unchanged payload contracts, not the package version.
 
 ## Historical project name — DORA Lean
@@ -53,7 +53,9 @@ Historical schema acceptance does not disable any content or policy validation.
 This is a versioned migration, not a promise that every old JSON consumer can
 read new output unchanged. Update readers that match schema strings, the doctor
 version key, direct Python imports or old prompt markers. Existing `run_todos.py`,
-`autobuild.py`, `decide.py`, `.codex_runs` and Markdown task syntax stay intact.
+`autobuild.py`, `decide.py` and Markdown task syntax stay intact.
+Runner control records/logs moved outside the workspace in 0.3.0; see
+[controller state and migration](controller-safety.md).
 Doctor logs now use `.codex_runs/arquilo_doctor`; old diagnostic folders remain.
 
 Removed predecessor features are still rejected, including both old and renamed

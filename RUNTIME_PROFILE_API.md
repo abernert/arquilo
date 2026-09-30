@@ -49,3 +49,9 @@ Konstanten zu untersuchen.
 `features` enthält die bestehenden versionierten Kernverträge;
 `retained_core_options` nennt `CFG parallel`, `runtime_profile` und `--git`.
 Es gibt keine Felder für installierbare Zusatzgruppen mehr.
+
+## Trust boundary
+
+`preflight.command` is executable owner-trusted host code, not sandboxed model
+configuration. Inspect profiles before execution. Argument order, repeats, empty
+values and whitespace are preserved; only a finite positive timeout is valid.

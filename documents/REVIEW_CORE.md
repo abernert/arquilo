@@ -98,7 +98,7 @@ simulierte Codex-Ergebnisse. Sie prüfen unter anderem die Übergabe des
 Originalvertrags, begrenzte Korrekturen und Archivierungsfehler. Das Runtime-ZIP
 enthält die Tests nicht; dort bleiben die Paketprüfung und CLI-Hilfe verfügbar.
 
-Die CI-Matrix in `.github/workflows/ci.yml` prüft Python 3.11 und 3.13 auf Linux,
+Die CI-Matrix in `.github/workflows/ci.yml` prüft Python 3.11, 3.12 und 3.13 auf Linux,
 Windows und macOS. Maßgeblich ist das tatsächliche Ergebnis des jeweiligen Runs.
 Fakes belegen nicht die Urteilskraft eines realen Modells oder die native
 Codex-Sandbox. Siehe [Testanleitung](../docs/testing.md) und
