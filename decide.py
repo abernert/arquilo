@@ -45,8 +45,9 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
         raise DecisionInputError("decision_invalid_input", "request", "Expected DecisionRequest")
     if max_attempts is not None and (type(max_attempts) is not int or not 1 <= max_attempts <= 2):
         raise DecisionInputError("decision_invalid_input", "max_attempts", "Expected 1 or 2 total attempts")
-    if request.model is None:
-        request = replace(request, model=_DEFAULT_DECISION_MODEL)
+    # model=None is intentional: let Codex/provider configuration select its
+    # effective default. Only an explicit request/CLI/config override should
+    # add --model to the Codex invocation.
     if settings is None:
         project = Path.cwd().resolve()
         settings = DecisionExecSettings(project_root=project, trusted_codex_home=Path.home() / ".codex",
