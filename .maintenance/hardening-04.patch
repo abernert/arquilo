@@ -1,0 +1,117 @@
+diff --git a/runtime_files.py b/runtime_files.py
+index 0a21c53..b22369c 100644
+--- a/runtime_files.py
++++ b/runtime_files.py
+@@ -15,2 +15,3 @@ import stat
+ import tempfile
++import safe_io
+ 
+@@ -91,3 +92,3 @@ def read_utf8(path: Path, *, preserve_newlines: bool = False,
+     """Text inputs accept one BOM at byte zero; misplaced BOMs fail explicitly."""
+-    with path.open("r", encoding="utf-8", newline="" if preserve_newlines else None) as handle:
++    with safe_io.open_file(path, "r", encoding="utf-8", newline="" if preserve_newlines else None) as handle:
+         text = handle.read()
+@@ -115,37 +116,12 @@ def atomic_write_text(path: Path, text: str) -> None:
+     """
+-    path = native_path(path, label="output file")
+-    data = text.encode("utf-8")  # Validate before creating anything.
+-    temporary = None
+-    staged = False
++    validate_path(path, label="output file")
+     try:
+-        path.parent.mkdir(parents=True, exist_ok=True)
+-        with tempfile.NamedTemporaryFile(mode="wb", dir=path.parent,
+-                                         prefix=".arquilo-write-", suffix=".pending", delete=False) as handle:
+-            temporary = Path(handle.name)
+-            if handle.write(data) != len(data):
+-                raise OSError("Incomplete UTF-8 staging write")
+-            handle.flush()
+-            os.fsync(handle.fileno())
+-        if path.exists():
+-            os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+-        staged = True
+-        os.replace(temporary, path)
++        safe_io.atomic_write(path, text.encode("utf-8"))
+     except OSError as exc:
+-        detail = io_error_message("Cannot atomically write", path, exc)
+-        if temporary is not None:
+-            if staged:
+-                detail += f"; original destination retained; complete recovery file: {temporary}"
+-            else:
+-                try:
+-                    temporary.unlink(missing_ok=True)
+-                except OSError as cleanup_error:
+-                    detail += f"; partial staging file {temporary} could not be removed: {cleanup_error}"
+-        error = AtomicWriteError(detail)
++        error = AtomicWriteError(io_error_message("Cannot atomically write", path, exc))
+         error.destination = path
+-        error.recovery_path = temporary if staged else None
++        error.recovery_path = getattr(exc, "recovery_path", None)
++        if error.recovery_path is not None:
++            error.add_note(f"Complete recovery file: {error.recovery_path}")
+         raise error from exc
+-    except BaseException:
+-        if temporary is not None and not staged:
+-            temporary.unlink(missing_ok=True)
+-        raise
+ 
+@@ -154,7 +130,3 @@ def unique_directory(parent: Path, *, prefix: str) -> Path:
+     """Atomically reserve a new directory; safe under concurrent allocations."""
+-    parent = native_path(parent, label="directory root")
+-    try:
+-        parent.mkdir(parents=True, exist_ok=True)
+-        return Path(tempfile.mkdtemp(prefix=safe_component(prefix) + "-", dir=parent))
+-    except OSError as exc:
+-        raise OSError(io_error_message("Cannot allocate directory under", parent, exc)) from exc
++    validate_path(parent, label="directory root")
++    return safe_io.unique_directory(parent, safe_component(prefix))
+diff --git a/runtime_logging.py b/runtime_logging.py
+index 82185e5..30678be 100644
+--- a/runtime_logging.py
++++ b/runtime_logging.py
+@@ -13,2 +13,3 @@ import json
+ import shutil
++import safe_io
+ from typing import Any, Iterable
+@@ -64,5 +65,5 @@ def copy_log_files(log_dir: Path, stage: str, sources: Iterable[Path],
+     base = workspace.resolve()
+-    log_root = log_dir.resolve()
++    log_root = safe_io.lexical_path(log_dir)
+     for source in sources:
+-        source = source.resolve()
++        source = safe_io.check_path(source)
+         if source in seen:
+@@ -82,4 +83,3 @@ def copy_log_files(log_dir: Path, stage: str, sources: Iterable[Path],
+             try:
+-                target.parent.mkdir(parents=True, exist_ok=True)
+-                shutil.copyfile(source, target)
++                safe_io.write_bytes(target, safe_io.read_bytes(source))
+             except OSError as exc:
+diff --git a/runtime_profile.py b/runtime_profile.py
+index 52e149f..f0b77fd 100644
+--- a/runtime_profile.py
++++ b/runtime_profile.py
+@@ -13,2 +13,3 @@ from __future__ import annotations
+ import json
++import math
+ import os
+@@ -26,3 +27,3 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
+ 
+-ARQUILO_RUNTIME_VERSION = "0.2.1"
++ARQUILO_RUNTIME_VERSION = "0.3.0"
+ ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION = "arquilo.runtime_profile.v1"
+@@ -163,3 +164,8 @@ def _parse_preflight(raw: Any) -> Optional[PreflightSpec]:
+         raise RuntimeProfileError(str(exc)) from exc
+-    command = _as_string_tuple(raw.get("command"), label="preflight.command")
++    argv = raw.get("command")
++    if not isinstance(argv, list) or not argv or any(
++        not isinstance(token, str) or "\0" in token for token in argv
++    ) or not argv[0].strip():
++        raise RuntimeProfileError("preflight.command must be a nonempty argv of NUL-free strings")
++    command = tuple(argv)  # argv is ordered data, not a normalized/deduplicated set.
+     if not command:
+@@ -171,3 +177,3 @@ def _parse_preflight(raw: Any) -> Optional[PreflightSpec]:
+         raise RuntimeProfileError("preflight.timeout_seconds must be numeric") from exc
+-    if timeout_seconds <= 0 or timeout_seconds > 3600:
++    if isinstance(timeout_raw, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or timeout_seconds > 3600:
+         raise RuntimeProfileError(
