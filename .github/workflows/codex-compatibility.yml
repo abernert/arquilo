@@ -43,3 +43,9 @@ jobs:
           import os, pathlib, subprocess, sys
           binary = pathlib.Path(os.environ['RUNNER_TEMP']) / 'codex-compat-binary' / ('codex.exe' if os.name == 'nt' else 'codex')
           subprocess.run([sys.executable, '-B', 'scripts/check_codex_configuration.py', '--codex', str(binary)], check=True)
+      - name: Verify model, provider and profile selection with a loopback fake gateway
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          binary = pathlib.Path(os.environ['RUNNER_TEMP']) / 'codex-compat-binary' / ('codex.exe' if os.name == 'nt' else 'codex')
+          subprocess.run([sys.executable, '-B', 'scripts/check_codex_provider.py', '--codex', str(binary)], check=True)
