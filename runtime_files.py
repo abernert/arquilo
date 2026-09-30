@@ -13,6 +13,7 @@ from pathlib import Path, PureWindowsPath
 import re
 import stat
 import tempfile
+import safe_io
 
 
 class PathValidationError(ValueError):
@@ -89,7 +90,7 @@ def native_path(value: str | os.PathLike[str], *, base: Path | None = None,
 def read_utf8(path: Path, *, preserve_newlines: bool = False,
               preserve_bom: bool = False) -> str:
     """Text inputs accept one BOM at byte zero; misplaced BOMs fail explicitly."""
-    with path.open("r", encoding="utf-8", newline="" if preserve_newlines else None) as handle:
+    with safe_io.open_file(path, "r", encoding="utf-8", newline="" if preserve_newlines else None) as handle:
         text = handle.read()
     body = text.removeprefix("\ufeff")
     if "\ufeff" in body:
@@ -113,48 +114,19 @@ def atomic_write_text(path: Path, text: str) -> None:
     path. Failed staging removes the partial file. No truncate/copy fallback,
     implicit retry, lock stealing or claim of multi-writer transaction isolation.
     """
-    path = native_path(path, label="output file")
-    data = text.encode("utf-8")  # Validate before creating anything.
-    temporary = None
-    staged = False
+    validate_path(path, label="output file")
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(mode="wb", dir=path.parent,
-                                         prefix=".arquilo-write-", suffix=".pending", delete=False) as handle:
-            temporary = Path(handle.name)
-            if handle.write(data) != len(data):
-                raise OSError("Incomplete UTF-8 staging write")
-            handle.flush()
-            os.fsync(handle.fileno())
-        if path.exists():
-            os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
-        staged = True
-        os.replace(temporary, path)
+        safe_io.atomic_write(path, text.encode("utf-8"))
     except OSError as exc:
-        detail = io_error_message("Cannot atomically write", path, exc)
-        if temporary is not None:
-            if staged:
-                detail += f"; original destination retained; complete recovery file: {temporary}"
-            else:
-                try:
-                    temporary.unlink(missing_ok=True)
-                except OSError as cleanup_error:
-                    detail += f"; partial staging file {temporary} could not be removed: {cleanup_error}"
-        error = AtomicWriteError(detail)
+        error = AtomicWriteError(io_error_message("Cannot atomically write", path, exc))
         error.destination = path
-        error.recovery_path = temporary if staged else None
+        error.recovery_path = getattr(exc, "recovery_path", None)
+        if error.recovery_path is not None:
+            error.add_note(f"Complete recovery file: {error.recovery_path}")
         raise error from exc
-    except BaseException:
-        if temporary is not None and not staged:
-            temporary.unlink(missing_ok=True)
-        raise
 
 
 def unique_directory(parent: Path, *, prefix: str) -> Path:
     """Atomically reserve a new directory; safe under concurrent allocations."""
-    parent = native_path(parent, label="directory root")
-    try:
-        parent.mkdir(parents=True, exist_ok=True)
-        return Path(tempfile.mkdtemp(prefix=safe_component(prefix) + "-", dir=parent))
-    except OSError as exc:
-        raise OSError(io_error_message("Cannot allocate directory under", parent, exc)) from exc
+    validate_path(parent, label="directory root")
+    return safe_io.unique_directory(parent, safe_component(prefix))

@@ -54,7 +54,8 @@ Budgetmangel allein erzeugt keine Nutzerfrage.
 
 ## Protokolle, Parallelität und bewusste Fortsetzung
 
-Unter `.codex_runs/run_todos/<lauf>/call_budgets/task_<root>-<eindeutig>/` stehen `budget.json` und
+Unter `<controller-state>/<plan>/call_budgets/task_<root>/` stehen `budget.json`,
+`reservations.json` (monotoner Zähler) und
 fortlaufende `call_000001.json`-Dateien mit Root, Aufgabe, Phase, Limit und Zeit.
 Exklusive Dateierzeugung reserviert jeden Platz auch über parallele Python-
 Worker hinweg genau einmal. Der Controller vergibt den Pfad; Kinder/Worker
@@ -82,3 +83,6 @@ kein neues Board und keine zusätzliche Schedulerinstanz.
 Die Regeln sind mit lokalen Fakes unter macOS geprüft. Native Windows-/Linux-
 und Live-Codex-Abnahmen bleiben offen. Die manuell startbare CI-Matrix ist in
 `.github/workflows/lean-limits.yml` definiert.
+
+Ab 0.3.0 bleiben Reservierungen über einen Neustart erhalten; gelöschte Diagnose-
+Claims geben keine Aufrufe frei. [Details](../docs/controller-safety.md).

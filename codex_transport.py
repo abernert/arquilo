@@ -12,6 +12,7 @@ The invocation policy fixes the maximum sandbox and independent network grant.
 Process-tree lifetime is owned through a per-call operating-system adapter.
 """
 from __future__ import annotations
+import safe_io
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -118,7 +119,11 @@ class CodexExecRequest:
         for name in ("raw_log", "pretty_log", "output_schema", "output_last_message", "process_stop_path"):
             value = getattr(self, name)
             if value is not None:
-                object.__setattr__(self, name, native_path(value, base=cwd, label=name))
+                # These are controller/output paths, not user-selected roots.
+                # Resolve no workspace links before the anchored I/O layer sees them.
+                from runtime_files import validate_path
+                validate_path(value, label=name)
+                object.__setattr__(self, name, safe_io.check_path(cwd / Path(value)))
         paths = [self.raw_log, self.pretty_log, self.output_schema, self.output_last_message]
         present = [path for path in paths if path is not None]
         if len(set(present)) != len(present):
@@ -321,8 +326,7 @@ def _inject_console_todo_prefix(line: str, todo_id: Optional[str] = None) -> str
 
 
 def append(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as f:
+    with safe_io.open_file(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(text)
 
 
@@ -708,7 +712,7 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
         "cli_answer_file": str(request.output_last_message) if request.output_last_message else None,
     }
     for name in ("stdout.bin", "stderr.bin", "response.txt"):
-        (acc.capture_dir / name).write_bytes(b"")
+        safe_io.write_bytes(acc.capture_dir / name, b"", exclusive=True)
     # Strict encoding: an unpaired surrogate must fail before a process starts.
     prompt = request.prompt.encode("utf-8")
     acc.capture["stdin"]["expected_bytes"] = len(prompt)
@@ -716,7 +720,7 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
     def archived(count: int) -> None:
         acc.capture["stdin"]["archived_bytes"] += count
 
-    with (acc.capture_dir / "prompt.utf8").open("wb", buffering=0) as stream:
+    with safe_io.open_file(acc.capture_dir / "prompt.utf8", "wb", buffering=0) as stream:
         _write_bytes(stream, prompt, archived)
     return prompt
 
@@ -725,7 +729,7 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
 def _cancellation_reason(request: CodexExecRequest) -> str | None:
     reason = request.cancel_requested() if request.cancel_requested is not None else None
     if request.process_stop_path is not None and request.process_stop_path.exists():
-        reason = request.process_stop_path.read_text(encoding="utf-8").strip() or "process_stop active"
+        reason = safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
     return reason
 
 def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes, *,
@@ -798,13 +802,15 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
     def _read_stream(source: str, stream: Any) -> None:
         stats = acc.capture[source]
         archive = None
+        archive_context = None
 
         def archived(count: int) -> None:
             stats["archived_bytes"] += count
 
         try:
             try:
-                archive = (acc.capture_dir / f"{source}.bin").open("ab", buffering=0)
+                archive_context = safe_io.open_file(acc.capture_dir / f"{source}.bin", "ab", buffering=0)
+                archive = archive_context.__enter__()
             except OSError as exc:
                 _io_error("log_error", source, exc)
             while True:
@@ -832,6 +838,8 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
                     archive.close()
                 except OSError as exc:
                     _io_error("log_error", source, exc)
+            if archive_context is not None:
+                archive_context.__exit__(None, None, None)
             stream_queue.put((source + "_eof", None))
 
     def _write_stdin() -> None:
@@ -960,7 +968,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
 
     def read_cancellation() -> str | None:
         if request.process_stop_path is not None and request.process_stop_path.exists():
-            return request.process_stop_path.read_text(encoding="utf-8").strip() or "process_stop active"
+            return safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
         return request.cancel_requested() if request.cancel_requested is not None else None
 
     try:

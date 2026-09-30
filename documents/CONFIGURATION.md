@@ -46,8 +46,9 @@ Erhaltene Spezialoptionen:
   deklaratives JSON für Promptregeln und Preflight, siehe
   [Profilvertrag](../RUNTIME_PROFILE_API.md). Im echten Lauf bleibt sein
   Preflight verpflichtend; im Trockenlauf wird die ausgelassene Prüfung vermerkt.
-- `--git`: standardmäßig aus, benötigt Git und führt nach erfolgreicher
-  Abnahme Add/Commit/Push aus. Ohne diese Option benötigt ARQUILO kein Git.
+- `--git`: ab 0.3.0 nur mit wiederholten `--git-path DATEI`; Commit nach erfolgreicher
+  Abnahme nur für ausgewählte Dateien. Ein Push benötigt zusätzlich `--git-push`.
+  Ohne `--git` benötigt ARQUILO kein Git.
 - `CFG parallel` und Codex-Werkzeugprofile bleiben erhalten; siehe
   [Paketumfang](PACKAGE_SCOPE.md) und
   [ToDo-Direktiven](todo_directives.md). Websuche, Shellnetzwerk, MCP und
@@ -90,3 +91,10 @@ Entfernte Vorgängerfunktionen sind keine aktuellen ARQUILO-Optionen. Die
 vollständigen [historischen Migrationshinweise](HISTORICAL_MIGRATION.md) bleiben
 als Referenz erhalten. Für unterstützte alte Umgebungsnamen siehe
 [Kompatibilität und Namensmigration](../docs/compatibility.md).
+
+## Controller-Zustand und Git ab 0.3.0
+
+Maßgeblich ist die [Controller-Sicherheitsreferenz](../docs/controller-safety.md):
+`--state-dir`, `--accept-plan-changes`, `--git-path` und `--git-push`.
+Der Git-Push ist keine automatische Folge von `--git` mehr. Vorhandene Dry-run-
+Berichte werden nie überschrieben. Vorhandene Policy-Lesefehler stoppen den Lauf.

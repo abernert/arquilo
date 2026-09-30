@@ -15,6 +15,8 @@ Erfordert: Codex CLI im PATH, Login bereits erfolgt.
 """
 
 from __future__ import annotations
+import safe_io
+from controller_state import state_directory
 
 ARQUILO_DIRECT_REPAIR_REVIEW_CONTRACT_VERSION = 1
 
@@ -617,15 +619,15 @@ def setup_workspace(
         if not single_file.exists():
             raise FileNotFoundError(f"--file nicht gefunden: {single_file}")
         base = Path.cwd() / "codex_jobs"
-        base.mkdir(parents=True, exist_ok=True)
+        safe_io.mkdir(base)
         ws = unique_directory(base, prefix=datetime.now().strftime("job_%Y%m%d_%H%M%S"))
         target = ws / single_file.name
-        shutil.copy2(single_file, target)
+        safe_io.write_bytes(target, safe_io.read_bytes(single_file))
         return ws, target
     else:
         assert workdir is not None, "--workdir nötig wenn --file fehlt"
         workdir = native_path(workdir, label="workdir")
-        workdir.mkdir(parents=True, exist_ok=True)
+        safe_io.mkdir(workdir)
         return workdir, None
 
 
@@ -949,7 +951,7 @@ def start(
     workspace, _ = setup_workspace(workdir_path, single_file)
     process_stop_full: Optional[Path] = None
     if process_stop_path is not None:
-        candidate = native_path(process_stop_path, base=workspace, label="process_stop_path")
+        candidate = safe_io.check_path(workspace / Path(process_stop_path))
         if candidate.exists():
             raise ProcessStopActiveError(
                 f"process_stop aktiv unter {candidate}. Lösche die Datei, bevor AutoBuild startet."
@@ -959,17 +961,17 @@ def start(
     default_logs = (unique_directory(workspace / ".codex_runs", prefix=f"run_{stamp}")
                     if logfile is None or rawlog is None else None)
     pretty_log = (
-        native_path(logfile, label="logfile")
+        safe_io.lexical_path(logfile)
         if logfile is not None
         else default_logs / "run.log"
     )
     raw_log = (
-        native_path(rawlog, label="rawlog")
+        safe_io.lexical_path(rawlog)
         if rawlog is not None
         else default_logs / "run.jsonl"
     )
     summary_json_path = (
-        native_path(summary_json, label="summary_json") if summary_json is not None else None
+        safe_io.lexical_path(summary_json) if summary_json is not None else None
     )
 
     sys.stdout.write(
@@ -977,9 +979,13 @@ def start(
     )
     if verbose:
         sys.stdout.flush()
+    budget_directory = (safe_io.lexical_path(context.budget_directory)
+                        if context.budget_directory is not None else unique_directory(
+                            state_directory(workspace, workspace / "standalone"), prefix="call_budget"))
+    if budget_directory.is_relative_to(workspace):
+        raise ValueError("Call budgets must be outside the model-writable workspace")
     call_budget = CallBudget(
-        native_path(context.budget_directory, label="budget_directory")
-        if context.budget_directory is not None else unique_directory(pretty_log.parent, prefix="call_budget"),
+        budget_directory,
         options.max_calls, context.budget_root_id or todo_identifier or "standalone",
     )
 

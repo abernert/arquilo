@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — 2026-09-30 (public preview)
+
+- Keep authoritative task plans, call reservations and runner logs outside the
+  model workspace. Reject unapproved status/removal/requirement changes, including
+  on restart. Validate child insertion and retain mandatory parent review.
+- Add no-follow controller I/O with anchored POSIX operations and Windows parent
+  handle leases; reject symlink/reparse and hardlink redirection.
+- Replace `git add -A` with required literal `--git-path` selections and a separate
+  index. Preserve unrelated changes; `--git-push` separately authorizes publishing.
+- Create dry-run reports exclusively; fail on an unreadable existing policy;
+  preserve preflight argv exactly and reject nonfinite timeout values.
+- Retain call reservations across restart and failed diagnostic writes; missing
+  diagnostic claims do not refund the monotonic counter.
+- Add negative regression tests and document migration/owner-adoption boundaries.
+- Keep Codex 0.154.0/0.159.1 capability negotiation unchanged. No Codex update is
+  required by this release. No claim of complete native sandbox certification.
+
+
 ## 0.2.1 — 2026-09-30 (public preview)
 
 - Discover the installed Codex feature catalog before constructing Decide

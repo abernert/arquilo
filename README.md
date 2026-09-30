@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Initial public preview: 0.2.1.** Suitable for supervised evaluation in disposable
+**Public preview: 0.3.0.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
@@ -90,6 +90,27 @@ Shell network access and Git actions are explicit opt-ins. The call budget is
 not a currency or token cap, and the runner's preliminary Codex probe is outside
 that per-task budget. Read [SECURITY.md](SECURITY.md) before real project use.
 
+## Controller safety and upgrading to 0.3.0
+
+The task runner keeps authoritative plan snapshots, persistent call reservations,
+breakdown plans and its run logs **outside the agent workspace**. The initial
+owner-supplied plan is the baseline. After that, changes to task statuses,
+requirements or task membership need controller approval or explicit owner
+adoption; an agent-written `DONE` cannot silently skip another task.
+
+Existing task lists from older versions must be inspected before their first
+0.3.0 run: old workspace logs are not trusted as controller authority. Routine
+restart uses the same private state and does not refund call reservations.
+Use `--accept-plan-changes` only after personally reviewing intentional edits.
+Do not use it just to suppress a detected integrity failure.
+
+`--git` now requires one or more literal `--git-path FILE` selections. Selected
+files must be clean or absent at startup; unrelated staged/unstaged files and
+internal archives are not swept into commits. Pushing additionally requires
+`--git-push`; the default is a local commit only. Existing dry-run reports are
+never overwritten. See [controller safety and migration](docs/controller-safety.md)
+for state locations, recovery, Git examples and the limits of these checks.
+
 ## Commands and compatibility
 
 | Command | Purpose |
@@ -115,7 +136,7 @@ python3 -B scripts/check_release.py
 python3 -B scripts/build_runtime_zip.py
 ```
 
-CI runs offline controller tests on Linux, Windows and macOS with Python 3.11
+CI runs offline controller tests on Linux, Windows and macOS with Python 3.11, 3.12
 and 3.13. These tests use simulated Codex executions where relevant; a green CI
 run is not proof of real model access, native sandbox enforcement or unattended
 production suitability. The [testing guide](docs/testing.md) separates these checks.

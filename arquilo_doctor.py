@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Lokale Diagnose; --check-decide prüft Decide und kann Modellkosten verursachen."""
 from __future__ import annotations
+from controller_state import default_state_root
 
 import argparse
 from contextlib import redirect_stdout, redirect_stderr
@@ -147,6 +148,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
                   "--check-decide: höchstens ein Modellaufruf; keine automatische Wiederholung.",
                   "Keine Auth-Datei oder Umgebungs-/Konfigurationsdumps im Bericht.",
                   "ToDo-Inhalt und Profil-Preflight separat mit --dry-run prüfen.",
+                  "Runner logs live under the default external controller state root (or --state-dir); the runner prints the exact per-plan path.",
                   "CLI-Stderr wird nur als vorhanden markiert; keine geheimen Fehlertexte ausgeben."],
     }
 
@@ -167,7 +169,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         workspace = workdir.expanduser().resolve() if workdir is not None else (todo.parent if todo else Path.cwd())
         report["paths"].update(workdir=str(workspace), todo_file=str(todo) if todo else None,
                                logs=str(workspace / ".codex_runs"),
-                               runner_logs=str(workspace / ".codex_runs" / "run_todos"))
+                               runner_state_root=str(default_state_root()))
         check("workdir", workspace.is_dir(), "Workspace muss bereits als Verzeichnis vorhanden sein.")
         if todo is not None:
             check("todo_file", todo.is_file(), "ToDo-Datei muss vorhanden sein; keine Inhaltsprüfung im Doctor.")

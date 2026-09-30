@@ -6,7 +6,7 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.2.1 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.3.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
@@ -35,7 +35,11 @@ Die direkten Einstiegspunkte heißen `run_todos.py` und `arquilo_doctor.py`.
 Neue Konfigurationen verwenden `ARQUILO_*`, neue JSON-Ausgaben `arquilo.*`.
 Unterstützte historische Eingabealiase werden mit Migrationshinweis gelesen;
 Details stehen in der [Kompatibilitätsdokumentation](docs/compatibility.md).
-Die Laufprotokolle bleiben unverändert unter `.codex_runs`.
+Seit 0.3.0 liegen die maßgebliche Planhistorie, Aufrufbudgets und Runner-Protokolle
+außerhalb des Agenten-Workspaces. Der Doctor verwendet weiterhin `.codex_runs`.
+`--git` benötigt eine explizite Dateiauswahl (`--git-path`); ein Push zusätzlich
+`--git-push`. Vorhandene Dry-run-Berichte werden nicht überschrieben.
+Siehe [Controller-Sicherheit und Migration](docs/controller-safety.md).
 
 ## Referenz
 

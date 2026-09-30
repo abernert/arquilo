@@ -48,7 +48,8 @@ correctness. Follow the current vendor setup guidance linked in the quick start.
 In PowerShell, from the failing workspace:
 
 ```powershell
-$raw = Get-ChildItem .\.codex_runs\run_todos -Recurse -Filter autobuild_raw.jsonl |
+$runDir = Read-Host "Paste the controller run directory printed by ARQUILO"
+$raw = Get-ChildItem -LiteralPath $runDir -Recurse -Filter autobuild_raw.jsonl |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($null -eq $raw) { throw 'No AutoBuild log found.' }
 Get-Content -LiteralPath $raw.FullName -Encoding UTF8 | ForEach-Object {
@@ -85,3 +86,9 @@ Do not remove mandatory controls or `--strict-config` to make a test pass.
 The actual Decide transport independently repeats this verification. A
 `codex_decision_features_failed` result means no model process was started;
 its archive retains bounded capability diagnostics, not a user config dump.
+
+## Controller integrity failures (0.3.0)
+
+Do not delete state or automatically accept modified plans. See
+[controller safety and recovery](controller-safety.md) for the new state roots,
+explicit owner adoption, Git selection and no-overwrite dry-run reports.

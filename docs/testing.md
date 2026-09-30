@@ -72,3 +72,11 @@ Offline tests separately simulate wrong values, ignored overrides, malformed and
 duplicate catalogs, missing mandatory controls, interruptions, no-model failures,
 independent per-call negotiation and the full decision archive path. These tests
 cannot prove live model access or native sandbox behavior.
+
+## Controller hardening (0.3.0)
+
+`tests/test_controller_hardening.py` reproduces six audited failure classes and
+tests normal completion, restart and parent review. Windows junction and POSIX
+parent-swap cases are platform-specific; symlink tests explicitly skip when the
+host cannot create symlinks. Git push tests use disposable local bare repos only.
+These are controller regressions, not live model or comprehensive sandbox tests.

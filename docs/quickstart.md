@@ -62,7 +62,8 @@ The sample-copy commands above avoid re-encoding Markdown through the shell.
 
 The `hello.txt` file exists with zero bytes, `todo_result_1.md` describes the actual
 checks, and the controller changes task 1 to DONE after a separate passing
-review. Inspect `.codex_runs/run_todos/` for the corresponding run evidence.
+review. Inspect the external controller run directory printed by the runner for its evidence.
+See [state locations](controller-safety.md#where-state-and-logs-live).
 Never manually mark DONE simply to make a test pass.
 
 The creation command deliberately refuses to overwrite an existing smoke
@@ -76,7 +77,7 @@ an old `process_stop` marker aside; preserve the logs.
 own Codex account; ARQUILO does not promise access to any named model.
 `--max-calls` is a shared per-task-tree call count, not a monetary/token cap.
 A preliminary runner probe is outside that budget. `--network-access` and
-`--git` are explicit opt-ins, not needed for the examples. See the
+`--git` with explicit `--git-path` selections are opt-ins, not needed for the examples. See the
 [detailed configuration reference](../documents/CONFIGURATION.md).
 
 ## Three different checks
