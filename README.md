@@ -136,3 +136,19 @@ this repository are licensed under **Apache-2.0**, unless marked otherwise.
 See [LICENSE](LICENSE), [NOTICE](NOTICE) and [third-party information](THIRD_PARTY.md).
 ARQUILO is an independent project, not an official OpenAI or Apache Software
 Foundation product. External products and their marks remain their owners'.
+
+### Commercial and proprietary use
+
+**Commercial and proprietary use is welcome.** You may use, modify and integrate
+ARQUILO into commercial products, closed-source applications and internal company
+workflows under Apache-2.0. You do not have to publish your source code or
+modifications, or contribute changes back.
+
+When redistributing ARQUILO or derivative works, include a copy of the license,
+retain the applicable copyright, patent, trademark and attribution notices
+(including relevant [NOTICE](NOTICE) content), and prominently mark modified
+files as changed, in accordance with Apache-2.0.
+
+This is a plain-language summary, not an additional license condition or a change
+to the license. See [LICENSE](LICENSE) for the full terms. Third-party components
+and external services remain subject to their own terms.
