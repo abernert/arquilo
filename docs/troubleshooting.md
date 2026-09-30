@@ -43,6 +43,34 @@ The native Codex sandbox must be set up for the current user. A Python unit test
 on Linux, a successful login, and a WSL run do not prove native Windows sandbox
 correctness. Follow the current vendor setup guidance linked in the quick start.
 
+### Windows: sandbox setup helper is reported as `program not found`
+
+If a shell/file tool fails with `orchestrator_helper_launch_failed` and names
+`codex-windows-sandbox-setup.exe` (or a versioned/helper-prefixed equivalent),
+the model is not the cause: Codex could not start the Windows sandbox helper.
+
+This is a known failure mode of some standalone Windows launcher layouts. In
+particular, `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` can exist
+and pass `codex --version` while the matching `codex-resources` live only in a
+versioned standalone release. Do not copy a helper from another Codex version
+and do not bypass the sandbox.
+
+Inspect the launcher and installed releases first:
+
+```powershell
+(Get-Command codex).Source
+Get-ChildItem "$HOME\.codex\packages\standalone\releases" -Directory
+Get-ChildItem "$HOME\.codex\packages\standalone\releases" -Recurse `
+  -Filter codex-windows-sandbox-setup.exe -ErrorAction SilentlyContinue
+```
+
+For diagnosis, invoke the `bin\codex.exe` from the matching complete versioned
+release directly and repeat a tiny `exec --sandbox workspace-write` test. If
+that works, repair/reinstall the public launcher or put that matching release's
+`bin` directory first in the current process PATH. Do not silently select a
+different release. Upstream examples include openai/codex issues #30829, #32359
+and #38039.
+
 ## Extract a small diagnostic locally
 
 In PowerShell, from the failing workspace:
