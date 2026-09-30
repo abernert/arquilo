@@ -115,7 +115,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
 
     No profile command, task, authentication read, configuration write or model
     transport call without check_decide. A successful functional test proves the
-    chosen model's Decide contract, not general model quality or OS isolation.
+    effective Codex model's Decide contract, not general model quality or OS isolation.
     """
     if type(check_decide) is not bool:
         raise ValueError("check_decide muss bool sein.")
