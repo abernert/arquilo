@@ -17,8 +17,8 @@ from typing import Mapping, Sequence
 from uuid import uuid4
 
 from codex_launcher import CodexLauncher, resolve_launcher
-from codex_policy import DECISION_DISABLED_FEATURES
-from codex_transport import TransportTimeouts, metadata_probe_arguments, probe_cli_metadata
+from codex_transport import (TransportTimeouts, metadata_probe_arguments, probe_cli_metadata,
+                             inspect_decision_features)
 from runtime_files import validate_path
 
 
@@ -136,6 +136,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         "codex_compatibility": "functional_contract",
         "paths": {"installation": str(root), "caller_cwd": str(Path.cwd())},
         "checks": [], "probes": [], "exec_flags": {}, "decision_features": {},
+        "decision_feature_details": {}, "unavailable_optional_features": [],
         "model_calls": 0,
         "decision_probe": {"status": "NOT_RUN", "requested": check_decide,
                            "detail": "Funktionsprobe nur mit --check-decide; kann Modellkosten verursachen."},
@@ -179,8 +180,8 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         check("paths_or_launcher", False, str(exc))
         return report
 
-    outputs = {name: "" for name in ("version", "help", "features")}
-    for name in ("version", "help", "features"):
+    outputs = {name: "" for name in ("version", "help")}
+    for name in ("version", "help"):
         record, output = _probe(name, launcher, cwd=workspace, env=environment)
         record["name"] = name
         report["probes"].append(record)
@@ -197,16 +198,24 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
     flags = set(re.findall(r"^\s*(?:-[A-Za-z],\s*)?(--[a-z-]+)(?=\s|$)", outputs["help"], re.MULTILINE))
     report["exec_flags"] = {flag: flag in flags for flag in REQUIRED_EXEC_FLAGS}
     check("exec_flags", all(report["exec_flags"].values()), "Alle benötigten Exec-Schalter im lokalen --help.")
-    feature_values: dict[str, list[str]] = {}
-    for line in outputs["features"].splitlines():
-        parts = line.split()
-        if len(parts) >= 3:
-            feature_values.setdefault(parts[0], []).append(parts[-1])
-    expected = {name: "false" for name in DECISION_DISABLED_FEATURES}
-    expected["skip_host_skill_discovery"] = "true"
-    report["decision_features"] = {name: feature_values.get(name) == [value] for name, value in expected.items()}
-    check("decision_features", all(report["decision_features"].values()),
-          "Decide-Featurewerte müssen vollständig, eindeutig und wie vorgegeben erscheinen.")
+    if not report.get("interrupted") and all(row["status"] == "PASS" for row in report["probes"]):
+        compatibility = inspect_decision_features(
+            launcher=(launcher.source,), cwd=workspace, env=environment,
+            timeout=PROBE_TIMEOUT_SECONDS,
+        )
+        report["probes"].extend(compatibility["probes"])
+        for record in compatibility["probes"]:
+            check("probe_" + record["name"], record["status"] == "PASS",
+                  record.get("error", "Lokale CLI-Leseprobe."))
+        report["decision_feature_details"] = compatibility["features"]
+        report["decision_features"] = {name: row["status"] in {"verified", "unavailable_optional"}
+                                       for name, row in compatibility["features"].items()}
+        report["unavailable_optional_features"] = compatibility["unavailable_optional"]
+        if compatibility["interrupted"]:
+            report["interrupted"] = True
+        check("decision_features", compatibility["status"] == "PASS", compatibility["detail"])
+    else:
+        check("decision_features", False, "Nicht geprüft: CLI-Metadaten fehlen oder Diagnose abgebrochen.")
     if check_decide and all(item["status"] == "PASS" for item in report["checks"]):
         report["decision_probe"] = _decision_probe(
             workspace=workspace, launcher=launcher, env=environment, model=model,
@@ -259,6 +268,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Exec {flag}: {'vorhanden' if supported else 'fehlt'}")
         for check in report["checks"]:
             print(f"[{check['status']}] {check['name']}: {check['detail']}")
+        for name, feature in report.get("decision_feature_details", {}).items():
+            if feature["status"] == "unavailable_optional":
+                print(f"[INFO] {name}: in dieser CLI nicht verfügbar; optionaler Override entfällt.")
+            elif feature["status"] != "verified":
+                print(f"[FAIL] {name}: {feature['status']}; erwartet={feature['expected']}, "
+                      f"beobachtet={feature['observed']}")
         if any(probe.get("stderr_present") for probe in report["probes"]):
             print("CLI hat Diagnosehinweise auf stderr ausgegeben; Details lokal prüfen.")
         print("Nicht verifiziert: " + "; ".join(report["not_verified"]))

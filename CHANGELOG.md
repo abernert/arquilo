@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 — 2026-09-30 (public preview)
+
+- Discover the installed Codex feature catalog before constructing Decide
+  overrides; omit `daemon_auto_start=false` only when that reviewed optional
+  feature is not advertised (e.g. Codex 0.154.0).
+- Verify effective values in a second metadata probe. Present daemon auto-start
+  must be disabled; missing required controls, malformed/duplicate entries and
+  ignored overrides still fail before any model process starts.
+- Apply the same capability negotiation in the Doctor AND the actual Decide
+  transport, including direct calls that do not run the Doctor first.
+- Preserve strict configuration, isolated environment, tool/event restrictions,
+  call budgets and evidence. Record selected/effective settings in the archive;
+  do not mutate user configuration or cache capabilities across calls.
+- Explain optional absences and individual failures in text and JSON diagnostics.
+- Add offline capability regressions and opt-in real-CLI metadata compatibility
+  checks for upstream 0.154.0 and 0.159.1, without credentials or model usage.
+
 ## 0.2.0 — 2026-09-30 (public preview)
 
 - Rename the direct diagnostic entry point to `arquilo_doctor.py`; update the

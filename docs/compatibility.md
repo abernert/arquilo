@@ -1,10 +1,10 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.2.0)
+## Current names (ARQUILO 0.2.1)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.2.0. Individual schema version
+identifiers. The public package version is 0.2.1. Individual schema version
 suffixes still describe their unchanged payload contracts, not the package version.
 
 ## Historical project name — DORA Lean
@@ -68,3 +68,29 @@ Decide have different policies; a successful Decide test does not attest to all
 other paths. Offline regression tests do not certify native sandbox enforcement.
 Expect documented changes during 0.x; use public entry points and capability
 checks instead of private implementation details.
+
+## Codex feature compatibility (from 0.2.1)
+
+The Doctor and every actual Decide transport call first read `codex features
+list` without feature overrides. They then build ARQUILO-owned overrides for the
+supported controls and verify their effective values in a second metadata call.
+The version banner is recorded, not used as a hard minimum-version gate.
+
+`daemon_auto_start` is an explicitly reviewed optional capability: upstream
+0.154.0 does not advertise it, while newer versions do. It is omitted only when
+absent; when present, its effective value must be false. All other currently
+required controls, including `shell_tool` and `skip_host_skill_discovery`, must
+still be present. Absence is not generally treated as proof that a control is
+unnecessary. Unknown controls are not granted permissions or copied to config.
+
+Malformed, empty, duplicate or inconsistent feature tables, ignored overrides,
+nonzero metadata exits and interrupted/timed-out probes stop before a model
+process starts. `--strict-config`, `--ignore-user-config`, the sandbox and the
+closed Decide event policy remain enforced. Negotiation runs against each call's
+launcher, cwd and environment; no shared capability cache or config-file edits.
+Each metadata probe is bounded independently (10 seconds by default), in addition
+to the model-call timeout. Metadata probes do not make model calls.
+
+This is not a guarantee for every historical/future CLI build or an attestation
+of native sandbox effects. Older builds missing mandatory flags/controls remain
+unsupported, with specific diagnostics instead of a blanket update instruction.
