@@ -72,6 +72,27 @@ proxy/CA/token forwarding without archival, cancellation/no-fallback behavior,
 format retry and full archive tests. Neither proves a real Databricks tenant
 connection or complete native sandbox enforcement.
 
+## Real CLI against a loopback fake provider (no billed model)
+
+The same compatibility jobs also execute `scripts/check_codex_provider.py`.
+This is a real Codex process and full Decide result/archive flow, but the
+Responses endpoint is a local HTTP test server with synthetic credentials.
+Six cases cover config defaults, model-only override, provider-only override,
+a named profile, explicit selectors overriding that profile, and provider
+rejection without selecting another model/provider. The fixture checks the
+actual URL, deployment name, bearer/header values, query parameters, inherited
+reasoning effort, unchanged configuration and structured response acceptance.
+
+No personal config, Databricks account or external model service is used. No
+MCP servers or hooks are configured in this fixture: their startup remains
+trusted Codex behavior, not an ARQUILO prevention guarantee. This test does not
+validate corporate TLS/proxies, VM installation or native sandbox enforcement.
+Run it locally only with an explicitly approved Codex binary:
+
+```sh
+python3 -B scripts/check_codex_provider.py --codex /absolute/path/to/codex
+```
+
 ## Controller hardening (0.3.0)
 
 `tests/test_controller_hardening.py` reproduces six audited failure classes and
