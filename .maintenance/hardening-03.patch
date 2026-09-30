@@ -1,0 +1,426 @@
+diff --git a/run_todos.py b/run_todos.py
+index 34ffb2b..399ebda 100644
+--- a/run_todos.py
++++ b/run_todos.py
+@@ -10,2 +10,5 @@ ARQUILO_CAPABILITIES_SCHEMA_VERSION = "arquilo.capabilities.v1"
+ import argparse
++import safe_io
++from controller_state import PlanAuthority, PlanIntegrityError, state_directory, default_state_root
++from reviewed_git import ReviewedGit, ReviewedGitError
+ from runtime_config import (
+@@ -687,4 +690,3 @@ class DryRunRecorder:
+         if self.target is not None:
+-            self.target.parent.mkdir(parents=True, exist_ok=True)
+-            self.target.write_text("# run_todos.py dry-run\n\n", encoding="utf-8")
++            safe_io.write_text(self.target, "# run_todos.py dry-run\n\n", exclusive=True)
+ 
+@@ -697,3 +699,3 @@ class DryRunRecorder:
+         block.append("\n")
+-        with self.target.open("a", encoding="utf-8") as handle:
++        with safe_io.open_file(self.target, "a", encoding="utf-8") as handle:
+             handle.writelines(block)
+@@ -739,2 +741,6 @@ class TodoRunner:
+         *removed_positional_options: Any,
++        git_paths: Sequence[str] = (),
++        git_push: bool = False,
++        state_dir: Optional[Path] = None,
++        accept_plan_changes: bool = False,
+         breakdown_policy: str = "minimal",
+@@ -821,3 +827,16 @@ class TodoRunner:
+         self.run_id = self._resolve_run_id(run_id)
+-        self.runs_dir = self.workdir / ".codex_runs" / "run_todos"
++        # Reject stale/hostile workspace links even though control records now
++        # live outside every model-writable workspace.
++        safe_io.check_path(self.workdir / ".codex_runs")
++        self.state_dir = (state_directory(self.workdir, self.todo_workspace_file, state_dir)
++                          if not self.dry_run else safe_io.lexical_path(state_dir or default_state_root()) / "dry-run")
++        self.runs_dir = (self.state_dir / "runs" if self.state_dir else
++                         self.workdir / ".codex_runs" / "run_todos")
++        self.git_selection = None
++        if git_push and not git_enabled:
++            raise ValueError("--git-push requires --git")
++        if self.git_enabled:
++            self.git_repo_root = self._assert_git_repository()
++            if not self.dry_run:
++                self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir, push=git_push)
+         self.run_dir = (self.runs_dir / safe_component(self.run_id) if self.dry_run
+@@ -832,4 +851,5 @@ class TodoRunner:
+             self._ensure_support_documents()
+-        if self.git_enabled:
+-            self.git_repo_root = self._assert_git_repository()
++            self._read_policy_text()
++        self.plan_authority = PlanAuthority(self.todo_file, None if self.dry_run else self.state_dir,
++                                            accept_changes=accept_plan_changes)
+         self.run_config_payload = self._build_run_config_payload()
+@@ -923,2 +943,7 @@ class TodoRunner:
+ 
++    def close(self) -> None:
++        authority = getattr(self, "plan_authority", None)
++        if authority is not None:
++            authority.close()
++
+     @staticmethod
+@@ -931,3 +956,3 @@ class TodoRunner:
+             return
+-        self.process_stop_path.parent.mkdir(parents=True, exist_ok=True)
++        safe_io.mkdir(self.process_stop_path.parent)
+         existing = self._read_text_file_if_exists(self.process_stop_path) or ""
+@@ -1029,3 +1054,3 @@ class TodoRunner:
+         if not self.dry_run:
+-            diagnostic_dir.mkdir(parents=True, exist_ok=True)
++            safe_io.mkdir(diagnostic_dir)
+             self._atomic_write_text(
+@@ -1122,2 +1147,3 @@ class TodoRunner:
+                 # not only after these directives have already been interpreted.
++                self.plan_authority.check()
+                 self._lint_todo_before_autobuild(todo_file=self.todo_file, workdir=self.workdir)
+@@ -1241,3 +1267,6 @@ class TodoRunner:
+                     run_status = "incomplete"
+-            self._write_run_log(run_status=run_status)
++            try:
++                self._write_run_log(run_status=run_status)
++            finally:
++                self.close()
+     def _sanitize_identifier(self, identifier: str) -> str:
+@@ -1291,3 +1320,3 @@ class TodoRunner:
+         if ensure_directories:
+-            attempt_dir.mkdir(parents=True, exist_ok=True)
++            safe_io.mkdir(attempt_dir)
+         return (attempt_dir / "autobuild_pretty.log", attempt_dir / "autobuild_raw.jsonl",
+@@ -1359,3 +1388,3 @@ class TodoRunner:
+         if self.workspace_equals_repo or self.todo_in_workspace:
+-            self.workspace_todo_dir.mkdir(parents=True, exist_ok=True)
++            safe_io.mkdir(self.workspace_todo_dir)
+             self.todo_workspace_file = self.todo_source_file
+@@ -1363,7 +1392,7 @@ class TodoRunner:
+             return
+-        self.workspace_todo_dir.mkdir(parents=True, exist_ok=True)
++        safe_io.mkdir(self.workspace_todo_dir)
+         workspace_todo = self.todo_workspace_file
+-        workspace_todo.parent.mkdir(parents=True, exist_ok=True)
++        safe_io.mkdir(workspace_todo.parent)
+         if not workspace_todo.exists():
+-            shutil.copy2(self.todo_source_file, workspace_todo)
++            safe_io.write_bytes(workspace_todo, safe_io.read_bytes(self.todo_source_file))
+         self.todo_file = workspace_todo
+@@ -1379,4 +1408,4 @@ class TodoRunner:
+                 continue
+-            destination.parent.mkdir(parents=True, exist_ok=True)
+-            shutil.copy2(candidate, destination)
++            safe_io.mkdir(destination.parent)
++            safe_io.write_bytes(destination, safe_io.read_bytes(candidate))
+         source_questions = source_dir / "todo_fragen.md"
+@@ -1385,3 +1414,3 @@ class TodoRunner:
+             if not target_questions.exists():
+-                shutil.copy2(source_questions, target_questions)
++                safe_io.write_bytes(target_questions, safe_io.read_bytes(source_questions))
+ 
+@@ -1393,3 +1422,3 @@ class TodoRunner:
+         target = self.questions_file
+-        target.parent.mkdir(parents=True, exist_ok=True)
++        safe_io.mkdir(target.parent)
+         if target.exists():
+@@ -1402,3 +1431,3 @@ class TodoRunner:
+         try:
+-            target.write_text(template, encoding="utf-8")
++            safe_io.write_text(target, template, exclusive=True)
+         except OSError:
+@@ -1407,14 +1436,10 @@ class TodoRunner:
+     def _ensure_policy_file(self) -> None:
+-        policy_target = self.policy_workspace_file
+-        policy_target.parent.mkdir(parents=True, exist_ok=True)
+-        if policy_target.exists():
++        target = self.policy_workspace_file
++        safe_io.check_path(target)
++        if target.exists():
++            self._read_policy_text(target)
+             return
+         repo_policy = self.repo_root / "config" / "policy.md"
+-        try:
+-            if repo_policy.is_file():
+-                shutil.copy2(repo_policy, policy_target)
+-            else:
+-                policy_target.write_text("", encoding="utf-8")
+-        except OSError:
+-            pass
++        content = read_utf8(repo_policy) if repo_policy.exists() else ""
++        safe_io.write_text(target, content, exclusive=True)
+ 
+@@ -1457,5 +1482,9 @@ class TodoRunner:
+         try:
+-            return target.read_text(encoding="utf-8").strip()
+-        except OSError:
+-            return ""
++            return read_utf8(target).strip()
++        except FileNotFoundError:
++            if self.dry_run:
++                return ""  # dry-run never creates the optional empty default
++            raise RuntimeError(f"Expected policy is missing: {target}")
++        except (OSError, UnicodeError) as exc:
++            raise RuntimeError(f"Cannot read required policy {target}: {exc}") from exc
+ 
+@@ -1565,3 +1594,3 @@ class TodoRunner:
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return read_utf8(path).strip()
+         except OSError:
+@@ -1655,22 +1684,10 @@ class TodoRunner:
+             return
+-        commit_message = self._compose_git_commit_message(todo)
+         if self.dry_run:
+-            command = (
+-                "git add -A && " f'git commit -m "{commit_message}" && ' "git push"
+-            )
+-            note = (
+-                "Dry-run: Git-Commit/PUSH würde hier ausgeführt "
+-                "nach erfolgreichem Pflichtreview."
+-            )
+-            self.recorder.record(f"{todo.identifier}-git", command, note=note)
++            self.recorder.record(f"{todo.identifier}-git", "# explicit reviewed Git selection; no Git mutation")
+             return
+-        if not self._git_status_has_changes():
+-            print(
+-                "[info] --git aktiv, aber keine Änderungen im Workspace – Commit wird übersprungen."
+-            )
+-            return
+-        self._run_git_command(["add", "-A"])
+-        self._run_git_command(["commit", "-m", commit_message])
+-        self._run_git_command(["push"])
+-        print("[info] Git-Commit & Push abgeschlossen.")
++        self.plan_authority.check()
++        result = self.git_selection.commit(self._compose_git_commit_message(todo))
++        if result:
++            write_log_json(self.run_dir / ("git_" + todo.identifier.replace(".", "_") + ".json"), result)
++            print("[info] Ausgewählte geprüfte Dateien committed; Push=" + str(result["pushed"]))
+ 
+@@ -1686,2 +1703,3 @@ class TodoRunner:
+     def _mark_todo_as_done(self, todo: TodoItem) -> None:
++        self.plan_authority.check()
+         if self.dry_run:
+@@ -1724,3 +1742,3 @@ class TodoRunner:
+             raise RuntimeError(f"ToDo {todo.identifier} kann nicht als DONE markiert werden: Eintrag nicht gefunden.")
+-        self._atomic_write_text(self.todo_file, "".join(lines))
++        self.plan_authority.replace_approved("".join(lines))
+         print(f"[info] ToDo {todo.identifier} wurde im ToDo-File als DONE markiert.")
+@@ -2211,3 +2229,3 @@ class TodoRunner:
+         # and final acceptance without replaying the parent's production task.
+-        plan_path = self.workdir / "var" / "breakdowns" / todo.identifier.replace(".", "_") / "breakdown_plan.json"
++        plan_path = self.state_dir / "breakdowns" / todo.identifier.replace(".", "_") / "breakdown_plan.json"
+         if plan_path.is_file() and not todo.config.get("workspace"):
+@@ -2465,3 +2483,3 @@ class TodoRunner:
+         target_dir = (
+-            self.workdir / "var" / "breakdowns" / parent_id.replace(".", "_")
++            self.state_dir / "breakdowns" / parent_id.replace(".", "_")
+         )
+@@ -2736,4 +2754,4 @@ class TodoRunner:
+     ) -> Path:
+-        target_dir = self.workdir / "var" / "breakdowns" / todo.identifier.replace(".", "_")
+-        target_dir.mkdir(parents=True, exist_ok=True)
++        target_dir = self.state_dir / "breakdowns" / todo.identifier.replace(".", "_")
++        safe_io.mkdir(target_dir)
+         target = target_dir / "breakdown_plan.json"
+@@ -2765,2 +2783,3 @@ class TodoRunner:
+         self._atomic_write_text(target, serialized)
++        self.plan_authority.accept_children(todo.identifier, max_children)
+         return target
+@@ -2809,3 +2828,3 @@ class TodoRunner:
+             raw = value.encode("utf-8") if isinstance(value, str) else value
+-            (summary_path.parent / f"worker_{name}.log").write_bytes(raw)
++            safe_io.write_bytes(summary_path.parent / f"worker_{name}.log", raw)
+             worker_streams[name] = raw.decode("utf-8", errors="replace")
+@@ -2838,3 +2857,3 @@ class TodoRunner:
+             if root_id not in self.call_budgets:
+-                directory = unique_directory(self.run_dir / "call_budgets", prefix=f"task_{root_id}")
++                directory = self.state_dir / "call_budgets" / f"task_{root_id}"
+                 self.call_budgets[root_id] = CallBudget(directory, self.max_calls, root_id)
+@@ -2864,3 +2883,26 @@ class TodoRunner:
+ 
+-    def _run_autobuild(
++    def _run_autobuild(self, identifier: str, task_text: str, **kwargs) -> TaskOutcome:
++        self.plan_authority.check()
++        active_file = kwargs.get("todo_file_override") or self.todo_file
++        before = read_utf8(active_file)
++        outcome = self._run_autobuild_impl(identifier, task_text, **kwargs)
++        if self.dry_run:
++            return outcome
++        is_breakdown = identifier == self._derive_todo_id_from_identifier(identifier) + "-breakdown"
++        try:
++            if is_breakdown and outcome.completed:
++                if active_file != self.todo_file:
++                    raise PlanIntegrityError("Breakdown may only modify the primary plan")
++                self.plan_authority.verify_children(self._derive_todo_id_from_identifier(identifier))
++            else:
++                self.plan_authority.check()
++                if read_utf8(active_file) != before:
++                    raise PlanIntegrityError("Worker changed its copied task plan")
++        except (PlanIntegrityError, safe_io.UnsafePathError, OSError) as exc:
++            return replace(outcome, completed=False, abort=True,
++                message=str(exc), execution_error=execution_error(str(exc),
++                    code="unapproved_plan_mutation", phase="controller_acceptance"))
++        return outcome
++
++    def _run_autobuild_impl(
+         self,
+@@ -2899,6 +2941,6 @@ class TodoRunner:
+             self.sandbox if sandbox_override is None else sandbox_override)
+-        active_workdir = (workdir_override or self.workdir).expanduser().resolve()
++        active_workdir = safe_io.check_path(workdir_override or self.workdir, missing_ok=False)
+         if not active_workdir.is_relative_to(self.workdir):
+             raise codex_policy.CodexPolicyError("AutoBuild-Unterworkspace muss innerhalb des Runner-Workspaces liegen.")
+-        active_todo_file = (todo_file_override or self.todo_file).expanduser().resolve()
++        active_todo_file = safe_io.check_path(todo_file_override or self.todo_file, missing_ok=False)
+         self._lint_todo_before_autobuild(
+@@ -3141,2 +3183,3 @@ class TodoRunner:
+             "workdir": str(self.workdir),
++            "controller_state": str(self.state_dir),
+             "sandbox": self.sandbox,
+@@ -3356,3 +3399,4 @@ class TodoRunner:
+     def _resolve_directive_workspace(self, raw_value: str) -> Path:
+-        resolved = native_path(raw_value, base=self.workdir, label="CFG workspace")
++        validate_path(raw_value, label="CFG workspace")
++        resolved = safe_io.check_path(self.workdir / Path(raw_value).expanduser())
+         try:
+@@ -3373,4 +3417,4 @@ class TodoRunner:
+             pass
+-        target.parent.mkdir(parents=True, exist_ok=True)
+-        shutil.copy2(source, target)
++        safe_io.mkdir(target.parent)
++        safe_io.write_bytes(target, safe_io.read_bytes(source))
+ 
+@@ -3380,3 +3424,3 @@ class TodoRunner:
+         try:
+-            return path.read_text(encoding="utf-8")
++            return read_utf8(path)
+         except OSError:
+@@ -3402,3 +3446,3 @@ class TodoRunner:
+         if target_text is None:
+-            target.parent.mkdir(parents=True, exist_ok=True)
++            safe_io.mkdir(target.parent)
+             self._atomic_write_text(target, source_text)
+@@ -3442,4 +3486,4 @@ class TodoRunner:
+         todo_target = workspace / todo_rel
+-        todo_target.parent.mkdir(parents=True, exist_ok=True)
+-        shutil.copy2(self.todo_file, todo_target)
++        safe_io.mkdir(todo_target.parent)
++        safe_io.write_bytes(todo_target, safe_io.read_bytes(self.todo_file))
+ 
+@@ -3460,4 +3504,4 @@ class TodoRunner:
+         else:
+-            policy_target.parent.mkdir(parents=True, exist_ok=True)
+-            policy_target.touch()
++            safe_io.mkdir(policy_target.parent)
++            safe_io.write_text(policy_target, "", exclusive=True)
+         return todo_target, todo_target.parent / "todo_fragen.md", policy_target
+@@ -3486,3 +3530,3 @@ class TodoRunner:
+             workdir = self._resolve_directive_workspace(cfg["workspace"])
+-            workdir.mkdir(parents=True, exist_ok=True)
++            safe_io.mkdir(workdir)
+         todo_file, questions_file, policy_file = self._sync_workspace_support_files(
+@@ -3558,3 +3602,3 @@ class TodoRunner:
+                 try:
+-                    details = context.process_stop_path.read_text(encoding="utf-8")
++                    details = read_utf8(context.process_stop_path)
+                 except OSError:
+@@ -3566,3 +3610,3 @@ class TodoRunner:
+                     if details not in existing:
+-                        self.process_stop_path.parent.mkdir(parents=True, exist_ok=True)
++                        safe_io.mkdir(self.process_stop_path.parent)
+                         if existing:
+@@ -3572,7 +3616,5 @@ class TodoRunner:
+                             merged_details += f"\n---\n{details}"
+-                            self.process_stop_path.write_text(
+-                                merged_details, encoding="utf-8"
+-                            )
++                            self._atomic_write_text(self.process_stop_path, merged_details)
+                         else:
+-                            self.process_stop_path.write_text(details, encoding="utf-8")
++                            self._atomic_write_text(self.process_stop_path, details)
+ 
+@@ -3655,2 +3697,3 @@ class TodoRunner:
+     def _parse_todo_file(self) -> List[TodoItem]:
++        self.plan_authority.check()
+         text = read_utf8(self.todo_file)
+@@ -4217,4 +4260,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+         action="store_true",
+-        help="Aktiviere automatischen Git-Commit und Push nach erfolgreichen ToDos.",
++        help="Commit nur explizit mit --git-path freigegebene Dateien; kein Push ohne --git-push.",
+     )
++    parser.add_argument("--git-path", action="append", default=[],
++                        help="Einzelner relativer Dateipfad für geprüfte Commits (mehrfach, keine Globs).")
++    parser.add_argument("--git-push", action="store_true", help="Zusätzlich ausgewählte Commits zum bestehenden Upstream pushen.")
++    parser.add_argument("--state-dir", type=Path, help="Privater Controller-Zustand außerhalb des Workspaces.")
++    parser.add_argument("--accept-plan-changes", action="store_true",
++                        help="Bewusst vom Eigentümer geprüfte externe Planänderungen übernehmen; Budgets bleiben erhalten.")
+     parser.add_argument(
+@@ -4282,3 +4331,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+             return 3
+-        recorder = DryRunRecorder(args.dry_run_file if args.dry_run else None)
++        try:
++            recorder = DryRunRecorder(args.dry_run_file if args.dry_run else None)
++        except (OSError, ValueError) as exc:
++            print(f"Dry-run report must be a new, non-linked file: {exc}", file=sys.stderr)
++            return 2
+         try:
+@@ -4289,8 +4342,3 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+                                     note="Profilprüfung konfiguriert, im Trockenlauf nicht ausgeführt.")
+-            else:
+-                run_runtime_profile_preflight(
+-                    runtime_profile,
+-                    workdir=workdir,
+-                    todo_file=todo_path,
+-                )
++
+         except RuntimeProfileError as exc:
+@@ -4299,24 +4347,2 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+         simulated = {entry.strip() for entry in args.simulate_incomplete}
+-        if sandbox_level == "workspace-write":
+-            if args.skip_codex_preflight:
+-                if args.dry_run:
+-                    recorder.record(
+-                        "Codex workspace-write preflight skipped",
+-                        "# skipped by --skip-codex-preflight",
+-                        note=(
+-                            "Dry-run: Der Codex-Preflight fuer workspace-write "
+-                            "wurde bewusst uebersprungen."
+-                        ),
+-                    )
+-            else:
+-                try:
+-                    run_codex_workspace_write_preflight(
+-                        dry_run=args.dry_run,
+-                        recorder=recorder,
+-                        model=args.model,
+-                        reasoning_effort=args.reasoning_effort,
+-                    )
+-                except CodexPreflightError as exc:
+-                    print(str(exc), file=sys.stderr)
+-                    return 3
+         run_id = args.run_id.strip() if args.run_id else None
+@@ -4339,2 +4365,4 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+                 git_enabled=args.git,
++                git_paths=args.git_path, git_push=args.git_push,
++                state_dir=args.state_dir, accept_plan_changes=args.accept_plan_changes,
+                 model=args.model,
+@@ -4349,5 +4377,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+             )
+-        except (GitIntegrationError, ValueError) as exc:
++        except (GitIntegrationError, ReviewedGitError, PlanIntegrityError, OSError, ValueError) as exc:
+             print(str(exc), file=sys.stderr)
+             return 2
++        try:
++            if not args.dry_run:
++                run_runtime_profile_preflight(runtime_profile, workdir=workdir, todo_file=todo_path)
++            if not args.skip_codex_preflight:
++                run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
++                    model=args.model, reasoning_effort=args.reasoning_effort)
++            runner.plan_authority.check()
++        except (RuntimeError, ValueError, OSError) as exc:
++            runner.close()
++            print(str(exc), file=sys.stderr)
++            return 3
+         try:
+@@ -4363,3 +4402,3 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+             return 2
+-        except (GitIntegrationError, RuntimeError) as exc:
++        except (GitIntegrationError, RuntimeError, OSError) as exc:
+             print(str(exc), file=sys.stderr)
