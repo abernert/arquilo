@@ -1,6 +1,6 @@
 from pathlib import Path
 import hashlib
-import os
+import json
 import subprocess
 import sys
 
@@ -17,13 +17,22 @@ tree = subprocess.check_output(['git','write-tree'], text=True).strip()
 assert tree == EXPECTED_TREE, 'Result differs from locally tested source'
 print('Verified exact provider configuration candidate:', tree)
 if '--publish-candidate' in sys.argv:
-    live = subprocess.check_output(['gh','api','repos/abernert/arquilo/git/ref/heads/main','--jq','.object.sha'], text=True).strip()
-    assert live == BASE, 'main changed; rebase and retest'
-    env = dict(os.environ, GIT_AUTHOR_NAME='github-actions[bot]', GIT_COMMITTER_NAME='github-actions[bot]',
-               GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com',
-               GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com')
-    sha = subprocess.check_output(['git','commit-tree',tree,'-p',BASE,'-m',
-        'Use configured Codex model/provider for Decide without routing overrides (0.3.2)'],env=env,text=True).strip()
-    subprocess.run(['gh','api','--method','POST','repos/abernert/arquilo/git/refs',
-        '-f','ref=refs/heads/fix/decide-provider-config-032','-f','sha='+sha],check=True)
-    print('Clean candidate SHA:', sha)
+    prefix = 'repos/abernert/arquilo/'
+    def api(endpoint, payload=None):
+        command = ['gh','api',prefix+endpoint]
+        if payload is not None:
+            command += ['--method','POST','--input','-']
+        result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
+                                text=True, stdout=subprocess.PIPE, check=True)
+        return json.loads(result.stdout)
+    assert api('git/ref/heads/main')['object']['sha'] == BASE, 'main changed; rebase and retest'
+    paths = subprocess.check_output(['git','diff','--cached','--name-only','-z'], text=True).split('\0')
+    entries = [{'path':p, 'mode':'100644', 'type':'blob', 'content':Path(p).read_text(encoding='utf-8')}
+               for p in paths if p]
+    base_tree = subprocess.check_output(['git','rev-parse',BASE+'^{tree}'], text=True).strip()
+    uploaded = api('git/trees', {'base_tree':base_tree, 'tree':entries})
+    assert uploaded['sha'] == EXPECTED_TREE, 'Uploaded tree mismatch'
+    commit = api('git/commits', {'tree':uploaded['sha'], 'parents':[BASE],
+        'message':'Use configured Codex model/provider for Decide without routing overrides (0.3.2)'})
+    api('git/refs', {'ref':'refs/heads/fix/decide-provider-config-032','sha':commit['sha']})
+    print('Clean candidate SHA:', commit['sha'])
