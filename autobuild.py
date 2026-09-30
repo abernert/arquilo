@@ -1221,7 +1221,7 @@ def start(
             if latest_review_classification.get("source_format") == "text_legacy":
                 if settings is None:
                     settings = DecisionExecSettings(
-                        project_root=workspace, trusted_codex_home=Path.home() / ".codex",
+                        project_root=workspace, config_profile=config_profile,
                         env=dict(os.environ), log_root=workspace / ".codex_runs",
                         process_stop_path=process_stop_full,
                     )
@@ -1230,7 +1230,8 @@ def start(
                                              "Decision settings must belong to the active workspace")
                 elif process_stop_full is not None:
                     settings = replace(settings, process_stop_path=process_stop_full)
-                settings = replace(settings, call_budget=call_budget)
+                settings = replace(settings, call_budget=call_budget,
+                                   config_profile=settings.config_profile or config_profile)
             decision = evaluate_completion_decision(
                 original_task=original_task, latest_answer=last_answer, review_findings=review_findings,
                 task_snapshot=decision_snapshot, run_id=active_decision_run_id,

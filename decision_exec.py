@@ -31,16 +31,6 @@ from runtime_contracts import DecisionResult, ExecutionResult, ExecutionStatus, 
 from runtime_files import atomic_write_text, native_path, safe_component, unique_directory
 
 
-# No provider URL/key, shell injection, Codex session/config override, inherited
-# agent identity or project .env. Authentication uses an explicitly trusted
-# Codex home. Keep the OS user's identity for native credential-store access.
-_OS_ENV = frozenset({
-    "PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
-    "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE",
-})
-_HOME_ENV = frozenset({"HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR", "COMSPEC"})
-
-
 def _outside(path: Path, project: Path, label: str) -> Path:
     if path.is_relative_to(project):
         raise CodexPolicyError(f"{label} must be outside the project tree: {path}")
@@ -53,37 +43,49 @@ def _absolute(value: str | Path, label: str) -> Path:
     return native_path(value, label=label)
 
 
+def configured_codex_home(source: Mapping[str, str], explicit: Path | None = None) -> Path:
+    """Resolve only the config HOME location, never inspect config or credentials.
+
+    An explicit settings path wins; otherwise honor the caller's CODEX_HOME.
+    Absence of a file auth store is normal for external providers/keyrings.
+    """
+    env = {k.upper(): v for k, v in source.items()} if os.name == "nt" else source
+    value = explicit if explicit is not None else env.get("CODEX_HOME")
+    if value is None:
+        home = env.get("USERPROFILE" if os.name == "nt" else "HOME")
+        value = (Path(home) if home else Path.home()) / ".codex"
+    path = _absolute(value, "Codex configuration home")
+    if path.exists() and not path.is_dir():
+        raise CodexPolicyError("Codex configuration home is not a directory.")
+    return path
+
+
 def decision_environment(source: Mapping[str, str], *, project_root: Path,
-                         trusted_codex_home: Path) -> dict[str, str]:
-    """Copy an OS allowlist; never mutate os.environ or load a .env file."""
-    project = _absolute(project_root, "project_root")
-    auth = _outside(_absolute(trusted_codex_home, "trusted_codex_home"), project, "Codex auth home")
-    if not auth.is_dir():
-        raise CodexPolicyError("The trusted Codex auth home must already exist; authenticate using Codex first")
-    # Check links without opening credential contents (or logging a config dump).
-    _outside((auth / "auth.json").resolve(), project, "Codex auth file")
+                         trusted_codex_home: Path | None = None) -> dict[str, str]:
+    """Inherit a COPY of trusted host environment, including provider/proxy/CA vars.
+
+    The source must come from the host/caller, not a task or model. No .env is
+    loaded and no environment values/configuration/auth contents are archived.
+    Keep spelling and values unchanged; case-folding only detects Windows aliases.
+    """
     result: dict[str, str] = {}
+    seen: dict[str, str] = {}
     for key, value in source.items():
-        if not isinstance(key, str) or not isinstance(value, str) or "\0" in key + value:
-            raise CodexPolicyError("Process environment must contain NUL-free strings")
-        canonical = key.upper()
-        if canonical not in _OS_ENV:
-            continue
-        if canonical in result and result[canonical] != value:
-            raise CodexPolicyError(f"Conflicting environment spellings for {canonical}")
-        if canonical in _HOME_ENV:
-            _outside(_absolute(value, canonical), project, canonical)
-        result[canonical] = value
-    path_dirs = []
-    for value in result.get("PATH", "").split(os.pathsep):
-        if not value:
-            continue  # Never search the implicit cwd.
-        # npm's standard Windows shim is resolved by the shared launcher.
-        value = value.strip('"') if os.name == "nt" else value
-        directory = _outside(_absolute(value, "PATH entry"), project, "PATH entry")
-        path_dirs.append(str(directory))
-    result["PATH"] = os.pathsep.join(path_dirs)
-    result["CODEX_HOME"] = str(auth)
+        if (not isinstance(key, str) or not isinstance(value, str) or not key
+                or "\0" in key + value or "=" in key):
+            raise CodexPolicyError("Process environment must contain valid NUL-free strings.")
+        canonical = key.upper() if os.name == "nt" else key
+        if canonical in seen and seen[canonical] != value:
+            raise CodexPolicyError("Conflicting environment variable spellings.")
+        seen[canonical] = value
+        result[key] = value
+    home = configured_codex_home(result, trusted_codex_home)
+    _outside(home, _absolute(project_root, "project_root"), "Codex configuration home")
+    if trusted_codex_home is not None:
+        for key in list(result):
+            if key == "CODEX_HOME" or (os.name == "nt" and key.upper() == "CODEX_HOME"):
+                del result[key]
+        result["CODEX_HOME"] = str(home)
     return result
 
 
@@ -104,11 +106,12 @@ class DecisionAttempt:
 
 
 def execute_attempt(
-    request: DecisionRequest, *, project_root: Path, trusted_codex_home: Path,
+    request: DecisionRequest, *, project_root: Path, trusted_codex_home: Path | None,
     env: Mapping[str, str], raw_log: Path, pretty_log: Path,
     temp_root: Path | None = None, launcher: str = "codex",
     output_schema: Path | None = None, output_last_message: Path | None = None,
     timeouts: transport.TransportTimeouts | None = None,
+    model_provider: str | None = None, config_profile: str | None = None,
     process_stop_path: Path | None = None,
     cancel_requested: Callable[[], str | None] | None = None,
 ) -> DecisionAttempt:
@@ -116,7 +119,8 @@ def execute_attempt(
 
     trusted_codex_home/env/launcher are host configuration, never task input.
     The temporary root must be outside the project and any Git repository.
-    There is no network/profile/extra_args/resume escape hatch in this API.
+    A named trusted profile/provider can be selected explicitly, never from task text.
+    There is no network/extra_args/resume escape hatch in this API.
     """
     if not isinstance(request, DecisionRequest):
         raise TypeError("request must be DecisionRequest")
@@ -128,10 +132,9 @@ def execute_attempt(
     if not base.is_dir():
         raise CodexPolicyError("Decide temporary root must exist")
     for parent in (base, *base.parents):
-        # Native Windows TEMP normally descends from the user's home. The
-        # explicitly trusted auth home is covered by --ignore-user-config, and
-        # host skill discovery is disabled. Other ancestor project layers fail.
-        trusted_user_parent = (parent / ".codex").resolve() == Path(child_env["CODEX_HOME"])
+        # User configuration is intentionally inherited; unrelated project
+        # layers must not be picked up merely through the temporary directory.
+        trusted_user_parent = (parent / ".codex").resolve() == configured_codex_home(child_env, trusted_codex_home)
         if ((parent / ".git").exists() or (not trusted_user_parent and (
                 (parent / ".codex").exists() or (parent / ".agents").exists()))):
             raise CodexPolicyError(f"Decide temporary root inherits repository/configuration context from {parent}")
@@ -153,16 +156,14 @@ def execute_attempt(
     for path in (selected.source, *selected.argv):
         _outside(native_path(path, label="Codex launcher"), project, "Codex launcher")
     cwd = Path(tempfile.mkdtemp(prefix="arquilo-decide-", dir=base)).resolve()
-    # Shell temp directories, if any tool slips through, stay within its cwd.
-    for key in ("TMPDIR", "TEMP", "TMP"):
-        child_env[key] = str(cwd)
     try:
         if any(path.is_relative_to(cwd) for path in outputs.values()):
             raise CodexPolicyError("Decision logs/schema/response must stay outside its disposable cwd")
         call = transport.CodexExecRequest(
             prompt=prompt, cwd=cwd, env=child_env, launcher=(selected.source,),
             model=request.model, reasoning_effort=request.reasoning_effort,
-            network_access=False, sandbox="workspace-write", decision_only=True,
+            model_provider=model_provider, config_profile=config_profile,
+            network_access=False, sandbox="read-only", decision_only=True,
             phase="decide", timeouts=timeouts or transport.TransportTimeouts(total=120),
             process_stop_path=process_stop_path, cancel_requested=cancel_requested, **outputs,
         )
@@ -181,11 +182,13 @@ class DecisionExecSettings:
     """
 
     project_root: Path
-    trusted_codex_home: Path
+    trusted_codex_home: Path | None = None
     env: Mapping[str, str]
     log_root: Path
     temp_root: Path | None = None
     launcher: str = "codex"
+    model_provider: str | None = None
+    config_profile: str | None = None
     timeouts: transport.TransportTimeouts | None = None
     process_stop_path: Path | None = None
     cancel_requested: Callable[[], str | None] | None = None
@@ -193,6 +196,9 @@ class DecisionExecSettings:
     call_budget: CallBudget | None = None
 
     def __post_init__(self) -> None:
+        from codex_policy import validate_config_profile, validate_model_provider
+        validate_model_provider(self.model_provider)
+        validate_config_profile(self.config_profile)
         if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 2:
             raise ValueError("Decide max_attempts must be 1 or 2 (at most one format repair)")
         for name in ("project_root", "trusted_codex_home", "log_root", "temp_root", "process_stop_path"):
@@ -316,6 +322,7 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
                 project_root=settings.project_root, trusted_codex_home=settings.trusted_codex_home,
                 env=settings.env, raw_log=directory / "events.jsonl", pretty_log=directory / "pretty.log",
                 temp_root=settings.temp_root, launcher=settings.launcher, timeouts=settings.timeouts,
+                model_provider=settings.model_provider, config_profile=settings.config_profile,
                 output_schema=schema_path, output_last_message=response_path,
                 process_stop_path=settings.process_stop_path, cancel_requested=settings.cancel_requested)
             result = validate_response(request, attempt.result.execution, response_path)

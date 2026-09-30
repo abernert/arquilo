@@ -19,8 +19,13 @@ not have a separate maintenance commitment.
 - Production is constrained to Codex `workspace-write`; review requests use
   `read-only`. ARQUILO is not itself an OS sandbox. Native enforcement and setup
   depend on Codex and the host. A fresh directory does not imply full read isolation.
-- Decide runs with restricted configuration and rejects tool/unknown events.
-  Its event validation is an acceptance gate, not a pre-tool security interceptor.
+- Decide inherits trusted host Codex configuration/environment (including provider,
+  proxy and credential dependencies) and requests `read-only`/`never`. It rejects
+  tool/unknown events, but this is an acceptance gate, not a pre-tool interceptor.
+  Configured tools, MCP servers, hooks and auth/notification commands may start
+  under Codex's own rules. Do not treat config inheritance as zero side effects
+  or a blanket tool-disable mechanism. See [Decide configuration](docs/decide-configuration.md).
+  Never populate its host settings/environment from model-controlled input.
 - Shell network access and Git operations are explicit opt-ins. Disabling shell
   networking does not disable model-provider communication or prove that every
   other integration is offline. Inspect the effective configuration.

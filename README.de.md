@@ -6,7 +6,7 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.3.1 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.4.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
@@ -64,3 +64,13 @@ Live-Abnahme der konkreten Codex-/Windows-Sandbox-Installation.
 
 Autor und Maintainer: **Alexander Bernert**. Apache-2.0; siehe [LICENSE](LICENSE)
 und [NOTICE](NOTICE). Hinweise für Beiträge: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Decide ab 0.4.0
+
+Decide übernimmt eure Codex-Hostkonfiguration einschließlich Provider,
+Authentifizierung, `CODEX_HOME`, Proxy und Zertifikatsumgebung. Ohne expliziten
+Override wird weder Modell noch Provider noch Profil ausgewählt. Die vielen
+Feature-Overrides entfallen. `read-only`, nichtinteraktiver Betrieb und
+Ergebnisprüfung bleiben; konfigurierte Tools/Hooks sind vertrauenswürdige
+Hostkonfiguration, nicht präventiv durch ARQUILO deaktiviert.
+[Details und Grenzen](docs/decide-configuration.md).

@@ -1,11 +1,11 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.3.1)
+## Current names (ARQUILO 0.4.0)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.3.1. Individual schema version
-suffixes still describe their unchanged payload contracts, not the package version.
+identifiers. The public package version is 0.4.0. Individual schema version
+suffixes describe their payload contracts, not the package version; see the 0.4.0 diagnostic migration below.
 
 ## Historical project name — DORA Lean
 
@@ -71,28 +71,20 @@ other paths. Offline regression tests do not certify native sandbox enforcement.
 Expect documented changes during 0.x; use public entry points and capability
 checks instead of private implementation details.
 
-## Codex feature compatibility (from 0.2.1)
+## Configuration inheritance (from 0.4.0)
 
-The Doctor and every actual Decide transport call first read `codex features
-list` without feature overrides. They then build ARQUILO-owned overrides for the
-supported controls and verify their effective values in a second metadata call.
-The version banner is recorded, not used as a hard minimum-version gate.
+The 0.2.1–0.3.1 feature-negotiation policy is historical. Decide now uses the
+trusted Codex user/managed configuration and inherited process environment.
+It omits model/provider/profile/effort unless explicitly selected. User config,
+rules and integrations are no longer discarded or disabled with bulk feature
+flags. See [Decide configuration and trust boundary](decide-configuration.md).
 
-`daemon_auto_start` is an explicitly reviewed optional capability: upstream
-0.154.0 does not advertise it, while newer versions do. It is omitted only when
-absent; when present, its effective value must be false. All other currently
-required controls, including `shell_tool` and `skip_host_skill_discovery`, must
-still be present. Absence is not generally treated as proof that a control is
-unnecessary. Unknown controls are not granted permissions or copied to config.
+Only required Exec flags are checked (`--version` and `exec --help` in Doctor,
+`exec --help` at the actual Decide start). Older CLIs are not rejected merely
+because an unrelated feature is absent. Missing protocol flags, help failures
+or cancellation still stop before a model call. No silent fallback is made.
 
-Malformed, empty, duplicate or inconsistent feature tables, ignored overrides,
-nonzero metadata exits and interrupted/timed-out probes stop before a model
-process starts. `--strict-config`, `--ignore-user-config`, the sandbox and the
-closed Decide event policy remain enforced. Negotiation runs against each call's
-launcher, cwd and environment; no shared capability cache or config-file edits.
-Each metadata probe is bounded independently (10 seconds by default), in addition
-to the model-call timeout. Metadata probes do not make model calls.
-
-This is not a guarantee for every historical/future CLI build or an attestation
-of native sandbox effects. Older builds missing mandatory flags/controls remain
-unsupported, with specific diagnostics instead of a blanket update instruction.
+Doctor output is now `arquilo.doctor.v2`, and decision attempt manifests use
+`arquilo.decision_attempt.v2`. Update consumers of the removed feature metadata:
+use `configuration_policy`/`cli_compatibility` instead. Core decision request and
+result validation is unchanged. Old archives and release tags remain untouched.

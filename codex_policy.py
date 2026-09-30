@@ -18,116 +18,44 @@ class CodexPolicyError(ValueError):
     """An invocation requests authority outside ARQUILO's fixed boundary."""
 
 
-# Fixed execution restrictions, independent of the CLI version string. The
-# Doctor can exercise the full Decide contract with the installed CLI.
-DECISION_DISABLED_FEATURES = (
-    "shell_tool", "shell_snapshot", "multi_agent", "multi_agent_v2",
-    "apps", "plugins", "remote_plugin", "skill_search", "skill_mcp_dependency_install",
-    "hooks", "memories", "computer_use", "browser_use", "browser_use_external",
-    "browser_use_full_cdp_access", "image_generation", "view_image", "code_mode",
-    "code_mode_host", "artifact", "goals", "tool_suggest", "sleep_tool",
-    "workspace_dependencies", "daemon_auto_start",
+# Decide deliberately inherits trusted Codex configuration. No model/provider,
+# authentication, proxy, certificate, feature, or transport defaults live here.
+# The read-only/never pair prevents broadening the filesystem sandbox through a
+# configured default. Tool events still invalidate a decision; this is NOT a
+# pre-tool authorization hook. See docs/decide-configuration.md.
+DECISION_CONFIG = ('approval_policy="never"',)
+DECISION_REQUIRED_EXEC_FLAGS = (
+    "--json", "--output-schema", "--output-last-message", "--skip-git-repo-check",
+    "--sandbox", "--config",
 )
-DECISION_CONFIG = (
-    'web_search="disabled"', 'mcp_servers={}', 'model_provider="openai"',
-    "project_doc_max_bytes=0", "project_doc_fallback_filenames=[]",
-    'shell_environment_policy.inherit="none"',
-    "suppress_unstable_features_warning=true",
-    "features.skip_host_skill_discovery=true",
-    *(f"features.{name}=false" for name in DECISION_DISABLED_FEATURES),
-)
-
-
-# Only explicitly reviewed, additive features may be absent. Never treat a
-# missing security control as disabled merely because introspection omitted it.
-# daemon_auto_start is absent in upstream rust-v0.154.0 and present in newer CLIs.
-DECISION_OPTIONAL_FEATURES = frozenset({"daemon_auto_start"})
-DECISION_EXPECTED_FEATURES = {
-    **{name: False for name in DECISION_DISABLED_FEATURES},
-    "skip_host_skill_discovery": True,
-}
-_FEATURE_NAME = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*")
-
-
-def parse_feature_catalog(text: str) -> dict[str, bool]:
-    """Read Codex's name/stage/bool table without accepting ambiguous evidence.
-
-    Stages may contain spaces (e.g. 'under development'). Unknown well-formed
-    feature names are metadata, not new permission grants. Error messages never
-    echo raw CLI output or configuration values.
-    """
-    features: dict[str, bool] = {}
-    for number, line in enumerate(text.splitlines(), 1):
-        if not line.strip():
-            continue
-        parts = line.split()
-        if (len(parts) < 3 or not _FEATURE_NAME.fullmatch(parts[0])
-                or parts[-1] not in {"true", "false"}):
-            raise CodexPolicyError(f"Malformed Codex feature table at line {number}.")
-        if parts[0] in features:
-            raise CodexPolicyError(f"Duplicate Codex feature entry at line {number}.")
-        features[parts[0]] = parts[-1] == "true"
-    if not features:
-        raise CodexPolicyError("Codex returned an empty feature table.")
-    return features
-
-
-def select_decision_features(catalog: Mapping[str, bool]) -> tuple[str, ...]:
-    """Select supported restrictions; only reviewed optional absences are valid."""
-    missing = sorted(set(DECISION_EXPECTED_FEATURES) - set(catalog) - DECISION_OPTIONAL_FEATURES)
-    if missing:
-        raise CodexPolicyError("Required Decide features unavailable: " + ", ".join(missing))
-    return tuple(name for name in DECISION_EXPECTED_FEATURES if name in catalog)
-
-
-def decision_config_for_features(features: Sequence[str] | None = None) -> tuple[str, ...]:
-    """Build only fixed ARQUILO settings, never CLI-supplied keys or values.
-
-    None retains the full conservative policy for legacy pure-builder callers.
-    Runtime execution always discovers and verifies capabilities afresh.
-    """
-    if features is None:
-        return DECISION_CONFIG
-    if isinstance(features, str) or any(not isinstance(name, str) for name in features):
-        raise CodexPolicyError("Decide feature selection must contain feature names.")
-    selected = set(features)
-    if len(selected) != len(features) or selected - set(DECISION_EXPECTED_FEATURES):
-        raise CodexPolicyError("Invalid Decide feature selection.")
-    select_decision_features({name: False for name in selected})
-    return tuple(value for value in DECISION_CONFIG
-                 if not value.startswith("features.") or value.split("=", 1)[0][9:] in selected)
-
-
-def decision_feature_details(catalog: Mapping[str, bool],
-                             effective: Mapping[str, bool] | None = None) -> dict[str, dict]:
-    """Safe, bounded diagnostics for known controls only."""
-    details = {}
-    for name, expected in DECISION_EXPECTED_FEATURES.items():
-        present = name in catalog
-        if not present:
-            status = "unavailable_optional" if name in DECISION_OPTIONAL_FEATURES else "missing_required"
-            if effective is not None and name in effective:
-                status = "catalog_changed"
-        elif effective is None:
-            status = "pending_verification"
-        elif name not in effective:
-            status = "not_confirmed"
-        else:
-            status = "verified" if effective[name] is expected else "wrong_value"
-        details[name] = {"status": status, "required": name not in DECISION_OPTIONAL_FEATURES,
-                         "expected": expected, "available": present,
-                         "observed": effective.get(name) if effective is not None else None}
-    return details
 
 
 def decision_arguments(*, network_access: bool, config_profile: str | None,
-                       extra_args: Sequence[str],
-                       features: Sequence[str] | None = None) -> list[str]:
-    """No user profiles, resuming, arbitrary features or web/network overrides."""
-    if network_access is not False or config_profile is not None or extra_args:
-        raise CodexPolicyError("Decide requires network_access=False, no profile and no extra_args.")
-    return ["--ignore-user-config", "--ephemeral", "--strict-config",
-            *(arg for value in decision_config_for_features(features) for arg in ("-c", value))]
+                       extra_args: Sequence[str]) -> list[str]:
+    """Minimal protocol/sandbox policy; leave provider configuration to Codex."""
+    if network_access is not False or extra_args:
+        raise CodexPolicyError("Decide does not accept extra arguments or a shell network grant.")
+    validate_config_profile(config_profile)
+    return ["--sandbox", "read-only", "-c", DECISION_CONFIG[0]]
+
+
+def validate_model_provider(value: str | None) -> str | None:
+    """Only a named provider selection, never a URL, token or config fragment."""
+    if value is not None and (not isinstance(value, str) or
+            not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", value)):
+        raise CodexPolicyError("model_provider must be a configured provider ID, not a URL or credentials.")
+    return value
+
+
+def decision_required_flags(*, model: str | None = None,
+                            config_profile: str | None = None) -> tuple[str, ...]:
+    return DECISION_REQUIRED_EXEC_FLAGS + (("--model",) if model is not None else ()) + (
+        ("--profile",) if config_profile is not None else ())
+
+
+def exec_help_flags(text: str) -> set[str]:
+    """Parse flag names only; never expose arbitrary help or configuration text."""
+    return set(re.findall(r"^\s*(?:-[A-Za-z],\s*)?(--[a-z-]+)(?=\s|$)", text, re.MULTILINE))
 
 
 def decision_event_violation(event: object) -> str | None:

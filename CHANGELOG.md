@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — 2026-09-30 (public preview)
+
+- Inherit trusted Codex user/managed configuration and host environment in Decide.
+  Do not select a model, provider, endpoint, profile, auth mode or effort unless
+  explicitly supplied. Honor CODEX_HOME and custom proxy/token/CA variables.
+- Remove forced OpenAI provider, ignore-user-config/rules, strict-config and
+  ephemeral flags, bulk feature overrides and feature-table negotiation.
+- Keep only the structured-output flags and explicit read-only/never policy;
+  preserve response/event validation, budgets, timeouts and complete archives.
+- Add explicit-only provider/profile selectors to the Doctor and Decide API;
+  forward AutoBuild's selected Codex profile. Do not copy/parse credentials/TOML.
+- Document the changed trust boundary: configured integrations remain trusted;
+  rejecting a tool event is not a pre-tool authorization mechanism.
+- Replace retired feature tests with configuration/argv/environment regressions
+  and real-CLI synthetic provider metadata checks. No real Databricks access is
+  claimed. Diagnostic/attempt schemas advance to v2; old archives stay unchanged.
+
+
 ## 0.3.1 — 2026-09-30 (public preview)
 
 - Remove ARQUILO's implicit `gpt-5.5` Decide default. When no task/Decide

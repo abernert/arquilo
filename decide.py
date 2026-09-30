@@ -34,12 +34,14 @@ def configure(*, api_key=None, base_url=None, client=None) -> None:
 
 
 def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | None = None,
-                 max_attempts: int | None = None) -> DecisionCall:
+                 max_attempts: int | None = None, model_provider: str | None = None,
+                 config_profile: str | None = None) -> DecisionCall:
     """Structured API; every failed/cancelled attempt has no usable option.
 
-    Standalone defaults use the current project and the OS user's ~/.codex.
-    A custom auth home must be explicitly trusted through settings; inherited
-    CODEX_HOME, API keys and .env files cannot select it implicitly.
+    Model/provider defaults, authentication and network provisioning remain
+    Codex's responsibility. CODEX_HOME and trusted process environment are
+    inherited; ARQUILO never loads .env or reads/copies credentials or TOML.
+    Explicit model_provider/config_profile override only the named selector.
     """
     if not isinstance(request, DecisionRequest):
         raise DecisionInputError("decision_invalid_input", "request", "Expected DecisionRequest")
@@ -50,15 +52,19 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
     # add --model to the Codex invocation.
     if settings is None:
         project = Path.cwd().resolve()
-        settings = DecisionExecSettings(project_root=project, trusted_codex_home=Path.home() / ".codex",
+        settings = DecisionExecSettings(project_root=project,
             env=dict(os.environ), log_root=project / ".codex_runs")
-    if max_attempts is not None:
-        settings = replace(settings, max_attempts=max_attempts)
+    overrides = {key: value for key, value in (("max_attempts", max_attempts),
+        ("model_provider", model_provider), ("config_profile", config_profile)) if value is not None}
+    if overrides:
+        settings = replace(settings, **overrides)
     return execute_decision(request, settings=settings)
 
 
 def _decide_with_options(request: DecisionRequest, *, max_retries: int | None = None,
-                         settings: DecisionExecSettings | None = None) -> Tuple[str, str]:
+                         settings: DecisionExecSettings | None = None,
+                         model_provider: str | None = None,
+                         config_profile: str | None = None) -> Tuple[str, str]:
     """Legacy max_retries counts total attempts, as in the original API.
 
     None uses settings (one attempt by default); 2 permits one format replay.
@@ -67,7 +73,8 @@ def _decide_with_options(request: DecisionRequest, *, max_retries: int | None = 
     if max_retries is not None and (type(max_retries) is not int or not 1 <= max_retries <= 2):
         raise DecisionInputError("decision_invalid_input", "max_retries", "Expected 1 or 2 total attempts")
     overrides = {} if max_retries is None else {"max_attempts": max_retries}
-    call = run_decision(request, settings=settings, **overrides)
+    call = run_decision(request, settings=settings, model_provider=model_provider,
+                        config_profile=config_profile, **overrides)
     if not call.result.valid:
         raise DecisionError(call)
     return request.selected_option(call.result), call.result.explanation
@@ -108,6 +115,7 @@ def decide(
     api_key: Optional[str] = None, base_url: Optional[str] = None,
     client: object | None = None,
     settings: DecisionExecSettings | None = None,
+    model_provider: str | None = None, config_profile: str | None = None,
     reasoning_effort: Optional[str] = None, context: Sequence[ContextSection] = (),
     run_id: Optional[str] = None, task_id: str = "question", phase: str = "decide",
     attempt_id: str = "1", max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
@@ -123,7 +131,8 @@ def decide(
         phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes, request=request)
     if any(value is not None for value in (client, api_key, base_url)):
         configure(api_key=api_key, base_url=base_url, client=client)
-    return _decide_with_options(prepared, max_retries=max_retries, settings=settings)
+    return _decide_with_options(prepared, max_retries=max_retries, settings=settings,
+                                model_provider=model_provider, config_profile=config_profile)
 
 
 def decide_bool(
@@ -134,6 +143,7 @@ def decide_bool(
     max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     boolean_mapping: BooleanMapping = BooleanMapping(),
     settings: DecisionExecSettings | None = None,
+    model_provider: str | None = None, config_profile: str | None = None,
 ) -> Tuple[bool, str]:
     """true/false by default; YES/NO requires its explicit BooleanMapping."""
     if not isinstance(boolean_mapping, BooleanMapping):
@@ -142,7 +152,8 @@ def decide_bool(
         reasoning_effort=reasoning_effort, context=context, run_id=run_id, task_id=task_id,
         phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes,
         boolean_mapping=boolean_mapping)
-    option, explanation = _decide_with_options(prepared, max_retries=max_retries, settings=settings)
+    option, explanation = _decide_with_options(prepared, max_retries=max_retries, settings=settings,
+                                                model_provider=model_provider, config_profile=config_profile)
     return boolean_mapping.decode(option), explanation
 
 
@@ -154,6 +165,7 @@ def evaluate(
     task_id: str = "plan", attempt_id: str = "1",
     max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     settings: DecisionExecSettings | None = None,
+    model_provider: str | None = None, config_profile: str | None = None,
 ) -> Dict[str, Any]:
     """Evaluate a full, explicit planning context; invalid/missing input raises.
 
@@ -168,7 +180,8 @@ def evaluate(
         task_id=task_id, attempt_id=attempt_id, model=model, reasoning_effort=reasoning_effort,
         system_prompt=system_prompt, max_input_bytes=max_input_bytes)
     status, explanation = decide(request.question, request.options, request=request,
-                                 max_retries=max_retries, settings=settings)
+                                 max_retries=max_retries, settings=settings,
+                                 model_provider=model_provider, config_profile=config_profile)
     decision: Dict[str, Any] = {"status": status, "explanation": explanation, "plan_id": resolved_plan_id}
     if stage == "step":
         decision["step_id"] = resolved_step_id
