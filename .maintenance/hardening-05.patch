@@ -1,0 +1,66 @@
+--- a/controller_state.py
++++ b/controller_state.py
+@@ -22,5 +22,19 @@
+ def default_state_root() -> Path:
+     if os.name == 'nt':
+-        return Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData' / 'Local')) / 'ARQUILO' / 'controller'
++        appdata = os.environ.get('LOCALAPPDATA')
++        if not appdata:
++            # Read the current user's registered local folder even when the
++            # caller deliberately sanitized HOME/USERPROFILE/environment.
++            import ctypes
++            from ctypes import wintypes
++            query = ctypes.WinDLL('shell32').SHGetFolderPathW
++            query.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.HANDLE,
++                              wintypes.DWORD, wintypes.LPWSTR]
++            query.restype = ctypes.c_long
++            buffer = ctypes.create_unicode_buffer(260)
++            if query(None, 0x001c, None, 0, buffer) != 0 or not buffer.value:
++                raise PlanIntegrityError('Cannot determine private Windows state root; use --state-dir.')
++            appdata = buffer.value
++        return Path(appdata) / 'ARQUILO' / 'controller'
+     if sys.platform == 'darwin':
+         return Path.home() / 'Library' / 'Application Support' / 'ARQUILO' / 'controller'
+--- a/arquilo_doctor.py
++++ b/arquilo_doctor.py
+@@ -3,4 +3,5 @@
+ """Lokale Diagnose; --check-decide prüft Decide und kann Modellkosten verursachen."""
+ from __future__ import annotations
++from controller_state import default_state_root
+ 
+ import argparse
+@@ -148,4 +149,5 @@
+                   "Keine Auth-Datei oder Umgebungs-/Konfigurationsdumps im Bericht.",
+                   "ToDo-Inhalt und Profil-Preflight separat mit --dry-run prüfen.",
++                  "Runner logs live under the default external controller state root (or --state-dir); the runner prints the exact per-plan path.",
+                   "CLI-Stderr wird nur als vorhanden markiert; keine geheimen Fehlertexte ausgeben."],
+     }
+@@ -168,5 +170,5 @@
+         report["paths"].update(workdir=str(workspace), todo_file=str(todo) if todo else None,
+                                logs=str(workspace / ".codex_runs"),
+-                               runner_logs=str(workspace / ".codex_runs" / "run_todos"))
++                               runner_state_root=str(default_state_root()))
+         check("workdir", workspace.is_dir(), "Workspace muss bereits als Verzeichnis vorhanden sein.")
+         if todo is not None:
+--- a/tests/test_controller_hardening.py
++++ b/tests/test_controller_hardening.py
+@@ -61,4 +61,19 @@
+ 
+ class PlanTests(Fixture):
++    @unittest.skipUnless(os.name == 'nt', 'Windows registered user folders')
++    def test_windows_state_root_without_environment(self):
++        from controller_state import default_state_root
++        with patch.dict(os.environ, {}, clear=True):
++            root = default_state_root()
++        self.assertTrue(root.is_absolute())
++        self.assertEqual(root.parts[-2:], ('ARQUILO', 'controller'))
++
++    def test_doctor_reports_external_default_state_root(self):
++        import arquilo_doctor
++        with patch('arquilo_doctor.resolve_launcher', side_effect=OSError('Not needed')):
++            report = arquilo_doctor.collect_report(workdir=self.workspace, env={})
++        self.assertIn('runner_state_root', report['paths'])
++        self.assertNotIn('runner_logs', report['paths'])
++
+     def test_unauthorized_done_removed_obsolete_and_hidden_tasks_fail(self):
+         authority = self.authority()
