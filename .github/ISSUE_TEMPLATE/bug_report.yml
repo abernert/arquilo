@@ -1,0 +1,39 @@
+name: Bug report
+description: A small, sanitized reproduction of an ARQUILO problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Do not attach credentials, customer data or full run archives. For vulnerabilities, read SECURITY.md."
+  - type: input
+    id: version
+    attributes:
+      label: ARQUILO version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "OS, Python version, Codex CLI version, model (if applicable); no credentials."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: "Exact commands, synthetic task input, expected and actual behavior."
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: "Small relevant error excerpts only; review raw logs privately before sharing."
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: "I removed credentials, private project content and personal data from this report."
+          required: true

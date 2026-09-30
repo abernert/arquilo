@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "Citation is welcome but not required by the license."
+title: "ARQUILO: Agentic Runtime for Quality, Unified Iteration, Logging and Orchestration"
+type: software
+authors:
+  - family-names: Bernert
+    given-names: Alexander
+    affiliation: Independent
+version: "0.1.0"
+date-released: 2026-09-30
+license: Apache-2.0
+repository-code: "https://github.com/abernert/arquilo"
+url: "https://github.com/abernert/arquilo"

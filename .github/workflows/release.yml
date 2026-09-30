@@ -1,0 +1,39 @@
+name: Release preview
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  release:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - name: Match release tag to version
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          version = Path('VERSION').read_text().strip()
+          if os.environ['GITHUB_REF_NAME'] != 'v' + version:
+              raise SystemExit('Tag and VERSION disagree')
+      - run: python -B -m unittest discover -s tests -v
+      - run: python -B scripts/check_release.py
+      - run: python -B scripts/build_runtime_zip.py
+      - name: Publish versioned preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/arquilo-*.zip dist/arquilo-*.sha256 --verify-tag --prerelease --title "ARQUILO $RELEASE_TAG (preview)" --notes-file CHANGELOG.md

@@ -1,0 +1,16 @@
+name: Feature request
+description: Describe the problem and a focused proposed improvement.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and acceptance criteria
+      description: "Include any effect on security boundaries or compatibility."
+    validations:
+      required: true

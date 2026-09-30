@@ -55,3 +55,18 @@ smoke_test_output/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Disposable public examples and local run evidence
+/.local-work/
+/var[0-9]*/
+process_stop
+todo_result_*.md
+todo_fragen.md
+*.sha256
+
+# Never commit local authentication or service configuration
+.codex/
+.env.*
+!.env.example
+*.pem
+*.key

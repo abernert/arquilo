@@ -66,7 +66,8 @@ Fehlern des Analyse- oder Auditauftrags zu unterscheiden.
 AutoBuild hält den vor der ersten Ausführung erfassten Auftrag für den gesamten
 lokalen Korrekturlauf fest. Vor jedem Review schreibt es aus diesem Speicher
 eine normale UTF-8-Datei `review_contract_<id>.json` neben seine Logs. Review
-und Korrektur erhalten einen ausdrücklichen Leseverweis. Dadurch ersetzen
+und Korrektur erhalten denselben Snapshot inline im Prompt; ein Shell-Lesezugriff
+auf die Archivdatei ist dafür nicht erforderlich. Dadurch ersetzen
 zwischenzeitliche ToDo-Änderungen die ursprünglichen Kriterien nicht. Die
 Datei enthält `original_request`, `task_text` und `source`; die wirksame
 Vorbemerkung steckt im Originalprompt, sodass `auto|off|required` erhalten
@@ -88,17 +89,17 @@ Der eigenständige Decide-Kontext pro Versuch bleibt erhalten.
 ## Lokale Abnahme
 
 ```text
-python3 -I -S -B tests/run_lean_reviews.py --with-characterization --output-dir documents/lean_build/1020/native-ci/reviews
+python3 -B -m unittest discover -s tests -v
+python3 -B scripts/check_release.py
 ```
 
-Unter Windows heißt der Interpreter gegebenenfalls `python` statt `python3`.
-Das Profil nutzt ausschließlich Standardbibliothek und lokale Python-Fakes.
-Es schreibt JSON-Ergebnisse, vollständige Testlogs und Szenarioarchive. Reale
-`process_stop`-Dateien und Netzwerk-/Modellaufrufe sind im Profil gesperrt.
-Die manuell startbare CI-Matrix steht in
-`lean-reviews.yml` im Entwicklungscheckout unter `.github/workflows/`.
+Die Tests im öffentlichen Entwicklungsrepo verwenden Standardbibliothek und
+simulierte Codex-Ergebnisse. Sie prüfen unter anderem die Übergabe des
+Originalvertrags, begrenzte Korrekturen und Archivierungsfehler. Das Runtime-ZIP
+enthält die Tests nicht; dort bleiben die Paketprüfung und CLI-Hilfe verfügbar.
 
-Fakes belegen Steuerung, Dateizugriff und Promptverträge; die Urteilskraft eines
-realen Modells und die native Codex-Sandbox sind dadurch nicht abgenommen.
-Tatsächlich ausgeführte Plattformen und Befehle stehen im
-`documents/todos/todo_result_1020.md` im Entwicklungscheckout (kein Paketbestandteil).
+Die CI-Matrix in `.github/workflows/ci.yml` prüft Python 3.11 und 3.13 auf Linux,
+Windows und macOS. Maßgeblich ist das tatsächliche Ergebnis des jeweiligen Runs.
+Fakes belegen nicht die Urteilskraft eines realen Modells oder die native
+Codex-Sandbox. Siehe [Testanleitung](../docs/testing.md) und
+[Architektur](../docs/architecture.md).
