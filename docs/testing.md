@@ -16,7 +16,7 @@ correction rounds, archive preservation, Decide event restrictions, CLI
 forwarding, dry-run behavior, version consistency, release-license inclusion,
 allowlist isolation and ZIP overwrite protection.
 
-CI is configured for Linux, native Windows and macOS with Python 3.11 and 3.13.
+CI is configured for Linux, native Windows and macOS with Python 3.11, 3.12 and 3.13.
 The exact commit's Actions run is the source of truth for its outcome; merely
 including a workflow file does not mean that a job passed.
 
@@ -54,15 +54,19 @@ rejection-only. Tests cover the doctor entry point and output, canonical
 configuration precedence, same-version schema aliases, budget preservation and
 package contents. These are offline checks, not live model or sandbox claims.
 
-## Real Codex metadata compatibility (opt-in; no model calls)
+## Real Codex metadata compatibility (opt-in locally; no model calls)
 
-The additional compatibility check runs upstream 0.154.0 (without the daemon
-flag) and 0.159.1 (with it) in isolated temporary homes. CI downloads an exact
-upstream release asset and verifies its SHA-256 digest before extracting only
-the CLI executable. It does not update a user's installation, load personal
-credentials, or send model prompts. See `scripts/install_test_codex.py` and
-`scripts/check_codex_features.py`; run these only when intentionally testing
-external executables. Outcomes must be read from the exact CI run.
+The `Codex metadata compatibility` workflow checks upstream 0.154.0 (without
+`daemon_auto_start`) and 0.159.1 (with it) on Linux, Windows and macOS using
+Python 3.12 and isolated temporary homes. CI downloads an exact upstream release
+asset and verifies its SHA-256 digest before extracting only the CLI executable.
+It does not update a user's installation, load personal credentials, or send
+model prompts. The workflow runs on pushes and pull requests to main and can
+also be triggered manually. Outcomes must be read from the exact CI run.
+
+See `scripts/install_test_codex.py` and `scripts/check_codex_features.py`; run
+these locally only when intentionally testing external executables. The
+standard offline unit-test command does not download or execute these binaries.
 
 Offline tests separately simulate wrong values, ignored overrides, malformed and
 duplicate catalogs, missing mandatory controls, interruptions, no-model failures,
