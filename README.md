@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.3.1.** Suitable for supervised evaluation in disposable
+**Public preview: 0.3.2.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
@@ -89,6 +89,15 @@ provide its own OS security boundary: enforcement depends on Codex and the host.
 Shell network access and Git actions are explicit opt-ins. The call budget is
 not a currency or token cap, and the runner's preliminary Codex probe is outside
 that per-task budget. Read [SECURITY.md](SECURITY.md) before real project use.
+
+## Codex configuration and corporate gateways
+
+Decide now uses normal Codex user/managed configuration, including `CODEX_HOME`
+and provider/proxy/certificate environment. It adds no model/provider routing
+unless explicitly requested; there is no fallback to a different provider.
+See [Decide configuration](docs/decide-configuration.md) for the small set of
+remaining tool-safety overrides and the trust boundary. Real Databricks access
+and corporate Windows setup still require local verification.
 
 ## Controller safety and upgrading to 0.3.0
 

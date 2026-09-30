@@ -1,10 +1,10 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.3.1)
+## Current names (ARQUILO 0.3.2)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.3.1. Individual schema version
+identifiers. The public package version is 0.3.2. Individual schema version
 suffixes still describe their unchanged payload contracts, not the package version.
 
 ## Historical project name — DORA Lean
@@ -87,8 +87,9 @@ unnecessary. Unknown controls are not granted permissions or copied to config.
 
 Malformed, empty, duplicate or inconsistent feature tables, ignored overrides,
 nonzero metadata exits and interrupted/timed-out probes stop before a model
-process starts. `--strict-config`, `--ignore-user-config`, the sandbox and the
-closed Decide event policy remain enforced. Negotiation runs against each call's
+process starts. The read-only sandbox and closed Decide event policy remain
+enforced. From 0.3.2, user config/rules are no longer suppressed and strict-config
+is no longer forced; tool-only overrides do not replace provider provisioning. Negotiation runs against each call's
 launcher, cwd and environment; no shared capability cache or config-file edits.
 Each metadata probe is bounded independently (10 seconds by default), in addition
 to the model-call timeout. Metadata probes do not make model calls.
@@ -96,3 +97,5 @@ to the model-call timeout. Metadata probes do not make model calls.
 This is not a guarantee for every historical/future CLI build or an attestation
 of native sandbox effects. Older builds missing mandatory flags/controls remain
 unsupported, with specific diagnostics instead of a blanket update instruction.
+
+See [provider-neutral Decide](decide-configuration.md) for the 0.3.2 config/env trust change.

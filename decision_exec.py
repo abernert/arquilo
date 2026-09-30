@@ -5,8 +5,8 @@
 execute_attempt returns a technical TransportResult; execute_decision also
 validates the CLI-owned response file. Callers own the
 logs; the working directory is deliberately retained until explicitly cleaned
-after archiving. No credentials, global configuration or project files are read
-or copied by this module. An empty cwd is NOT an absolute read sandbox.
+after archiving. No credential values or configuration contents are read or copied by this module;
+Codex loads its trusted configuration itself. An empty cwd is NOT an absolute read sandbox.
 """
 from __future__ import annotations
 
@@ -31,13 +31,9 @@ from runtime_contracts import DecisionResult, ExecutionResult, ExecutionStatus, 
 from runtime_files import atomic_write_text, native_path, safe_component, unique_directory
 
 
-# No provider URL/key, shell injection, Codex session/config override, inherited
-# agent identity or project .env. Authentication uses an explicitly trusted
-# Codex home. Keep the OS user's identity for native credential-store access.
-_OS_ENV = frozenset({
-    "PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT",
-    "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE",
-})
+# Host-owned configuration is trusted just as for a direct Codex invocation.
+# Keep provider tokens, proxy/CA variables, and arbitrary custom env_key names;
+# ARQUILO neither interprets nor archives their values. Task text cannot add env.
 _HOME_ENV = frozenset({"HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR", "COMSPEC"})
 
 
@@ -55,20 +51,22 @@ def _absolute(value: str | Path, label: str) -> Path:
 
 def decision_environment(source: Mapping[str, str], *, project_root: Path,
                          trusted_codex_home: Path) -> dict[str, str]:
-    """Copy an OS allowlist; never mutate os.environ or load a .env file."""
+    """Copy host environment without stripping corporate routing/auth settings.
+
+    Keep OS/path isolation checks. Do not load a project .env, dump env values,
+    or grant shell networking. The explicitly trusted home wins over source env.
+    """
     project = _absolute(project_root, "project_root")
     auth = _outside(_absolute(trusted_codex_home, "trusted_codex_home"), project, "Codex auth home")
     if not auth.is_dir():
-        raise CodexPolicyError("The trusted Codex auth home must already exist; authenticate using Codex first")
+        raise CodexPolicyError("The trusted Codex config home must exist; configure Codex for this account/provider first")
     # Check links without opening credential contents (or logging a config dump).
     _outside((auth / "auth.json").resolve(), project, "Codex auth file")
     result: dict[str, str] = {}
     for key, value in source.items():
         if not isinstance(key, str) or not isinstance(value, str) or "\0" in key + value:
             raise CodexPolicyError("Process environment must contain NUL-free strings")
-        canonical = key.upper()
-        if canonical not in _OS_ENV:
-            continue
+        canonical = key.upper() if os.name == "nt" else key
         if canonical in result and result[canonical] != value:
             raise CodexPolicyError(f"Conflicting environment spellings for {canonical}")
         if canonical in _HOME_ENV:
@@ -129,7 +127,7 @@ def execute_attempt(
         raise CodexPolicyError("Decide temporary root must exist")
     for parent in (base, *base.parents):
         # Native Windows TEMP normally descends from the user's home. The
-        # explicitly trusted auth home is covered by --ignore-user-config, and
+        # explicitly trusted home supplies the owner's routing configuration;
         # host skill discovery is disabled. Other ancestor project layers fail.
         trusted_user_parent = (parent / ".codex").resolve() == Path(child_env["CODEX_HOME"])
         if ((parent / ".git").exists() or (not trusted_user_parent and (
@@ -161,8 +159,9 @@ def execute_attempt(
             raise CodexPolicyError("Decision logs/schema/response must stay outside its disposable cwd")
         call = transport.CodexExecRequest(
             prompt=prompt, cwd=cwd, env=child_env, launcher=(selected.source,),
-            model=request.model, reasoning_effort=request.reasoning_effort,
-            network_access=False, sandbox="workspace-write", decision_only=True,
+            model=request.model, model_provider=request.model_provider,
+            reasoning_effort=request.reasoning_effort,
+            network_access=False, sandbox="read-only", decision_only=True,
             phase="decide", timeouts=timeouts or transport.TransportTimeouts(total=120),
             process_stop_path=process_stop_path, cancel_requested=cancel_requested, **outputs,
         )

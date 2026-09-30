@@ -35,8 +35,8 @@ nicht geändert. Profile und CFG dürfen die feste Startpolicy nicht erweitern.
 
 Decide übernimmt das wirksame Auftragsmodell/Effort, sofern eines ausdrücklich
 gesetzt ist. Sind weder Auftrags- noch Decide-Modell gesetzt, übergibt ARQUILO
-kein `--model`; Codex beziehungsweise der aktive Provider wählt dann unter der
-isolierten Decide-Konfiguration sein Default-Modell. Für reproduzierbare Läufe
+kein `--model`; Codex beziehungsweise der aktive Provider wählt dann aus der normalen
+Benutzer-/verwalteten Codex-Konfiguration sein Default-Modell. Für reproduzierbare Läufe
 Modell/Effort explizit angeben; die Distribution legt kein bestimmtes Modell fest.
 
 Erhaltene Spezialoptionen:
@@ -99,3 +99,14 @@ Maßgeblich ist die [Controller-Sicherheitsreferenz](../docs/controller-safety.m
 `--state-dir`, `--accept-plan-changes`, `--git-path` und `--git-push`.
 Der Git-Push ist keine automatische Folge von `--git` mehr. Vorhandene Dry-run-
 Berichte werden nie überschrieben. Vorhandene Policy-Lesefehler stoppen den Lauf.
+
+## Decide und Firmenprovider ab 0.3.2
+
+Decide erzwingt weder `model_provider="openai"` noch einen Modellnamen. Es
+verwendet den konfigurierten `CODEX_HOME` und behält die Host-Umgebung für
+Provider-Token, Proxys und Zertifikate bei. `--ignore-user-config`,
+`--ignore-rules` und `--strict-config` werden für Decide nicht gesetzt.
+Der Doctor sowie die Decide-Python-APIs unterstützen zusätzlich einen expliziten
+`model_provider` (Doctor: `--model-provider`); sonst bleibt die Providervorgabe
+Codex überlassen. Sicherheitsvorgaben betreffen nur Tools/Abnahme, nicht Routing.
+[Details und Grenzen](../docs/decide-configuration.md).

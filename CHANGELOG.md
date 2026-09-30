@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.2 — 2026-09-30 (public preview)
+
+- Let Decide use normal Codex user/managed configuration and the configured
+  CODEX_HOME. Preserve host provider credentials, proxy and CA environment.
+  No forced provider, model, endpoint, authentication scheme or reasoning effort.
+- Remove Decide-only user-config/rules suppression and strict-config override.
+  Explicit model/provider selections still win; errors never select a fallback.
+- Keep structured response validation, event controls, budgets and archival.
+  Use read-only Decide sandbox and compact verified tool-feature restrictions.
+  Disable configured MCP servers per invocation using Codex-native introspection,
+  without copying configuration or recording raw MCP headers/environment.
+- Add provider/configuration regressions and real-CLI loopback gateway tests.
+  No claim of testing a real Databricks account or corporate Windows environment.
+
 ## 0.3.1 — 2026-09-30 (public preview)
 
 - Remove ARQUILO's implicit `gpt-5.5` Decide default. When no task/Decide

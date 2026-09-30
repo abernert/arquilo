@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -48,9 +49,12 @@ def main() -> int:
                    raw_log=work/'events.jsonl', pretty_log=work/'pretty.log',
                    launcher=(str(binary),), decision_only=True)
         command = codex_transport.build_command(request, decision_features=selected)
-        if ('features.daemon_auto_start=false' in command) == absent:
+        config = tomllib.loads('\n'.join(command[i+1] for i, a in enumerate(command[:-1]) if a == '-c'))
+        if ('daemon_auto_start' in config['features']) == absent:
             return 1
-        if not {'--strict-config', '--ignore-user-config', 'features.shell_tool=false'}.issubset(command):
+        if (config['features']['shell_tool'] is not False or
+                '--strict-config' in command or '--ignore-user-config' in command or
+                'model_provider' in config or command[command.index('--sandbox')+1] != 'read-only'):
             return 1
     return 0
 

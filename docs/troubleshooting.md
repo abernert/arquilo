@@ -109,7 +109,8 @@ Run `python3 arquilo_doctor.py --json` for `decision_feature_details` (expected,
 observed, availability and per-control status). `unavailable_optional` is an
 accepted absence, not proof of a disabled feature. `missing_required`,
 `not_confirmed`, `wrong_value` and `catalog_changed` prevent Decide execution.
-Do not remove mandatory controls or `--strict-config` to make a test pass.
+Do not remove mandatory tool controls to make a test pass. From 0.3.2 Decide
+does not itself force strict-config or suppress user config.
 
 The actual Decide transport independently repeats this verification. A
 `codex_decision_features_failed` result means no model process was started;
@@ -120,3 +121,12 @@ its archive retains bounded capability diagnostics, not a user config dump.
 Do not delete state or automatically accept modified plans. See
 [controller safety and recovery](controller-safety.md) for the new state roots,
 explicit owner adoption, Git selection and no-overwrite dry-run reports.
+
+## Direct Codex works but corporate Decide fails
+
+Use 0.3.2 or newer: older Decide calls could override the provider and omit
+proxy/credential environment even after the fixed model default was removed.
+Verify that the same approved CLI and user/managed `CODEX_HOME` configuration
+are used. Do not dump credential files or redirect a corporate task to another
+provider to obtain a PASS. Configured gateway/authentication errors remain
+errors, without fallback. See [Decide configuration](decide-configuration.md).

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 import os
+from pathlib import Path
 from typing import Mapping
 import warnings
 from legacy_naming import historical_environment_aliases
@@ -76,3 +77,27 @@ def transport_timeout_values(*, environ: Mapping[str, str] | None = None) -> dic
             raise ValueError(f"{name} must be a finite nonnegative number")
         result[field] = value
     return result
+
+
+def resolve_codex_home(*, environ: Mapping[str, str] | None = None) -> Path:
+    """Use the owner's Codex home, not an ARQUILO-specific credential store.
+
+    The result is validated against the task workspace by decision_environment.
+    Values are host configuration; never accept them from task/model output.
+    """
+    env = os.environ if environ is None else environ
+    values = [value for key, value in env.items()
+              if key == "CODEX_HOME" or (os.name == "nt" and key.upper() == "CODEX_HOME")]
+    if any(not isinstance(value, str) or "\0" in value for value in values):
+        raise ValueError("CODEX_HOME must be a NUL-free path")
+    if len(set(values)) > 1:
+        raise ValueError("Conflicting CODEX_HOME values")
+    value = values[0] if values else None
+    if value is not None and (not isinstance(value, str) or "\0" in value):
+        raise ValueError("CODEX_HOME must be a NUL-free path")
+    if not value or not value.strip():
+        return Path.home() / ".codex"
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise ValueError("CODEX_HOME must be absolute")
+    return path

@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tomllib
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -22,6 +23,14 @@ import codex_policy as policy
 import codex_transport as transport
 import decision_exec
 from decision_request import DecisionRequest
+
+
+def config_values(values):
+    return tomllib.loads("\n".join(values))
+
+
+def argv_config(argv):
+    return config_values([argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == '-c'])
 
 
 def catalog(*, daemon=False, effective=False):
@@ -50,6 +59,8 @@ def probes(*, daemon=False, effective=None, raw=None):
             return subprocess.CompletedProcess([], 0, effective if effective is not None else table(catalog(daemon=daemon, effective=True)), '')
         if name == 'version':
             return subprocess.CompletedProcess([], 0, 'codex-cli 0.154.0\n', '')
+        if name == 'mcp_catalog':
+            return subprocess.CompletedProcess([], 0, '[]', '')
         raise AssertionError(name)
     return probe
 
@@ -58,14 +69,14 @@ class PolicyTests(unittest.TestCase):
     def test_old_catalog_omits_only_optional_override(self):
         selected = policy.select_decision_features(catalog())
         config = policy.decision_config_for_features(selected)
-        self.assertNotIn('features.daemon_auto_start=false', config)
-        self.assertIn('features.shell_tool=false', config)
-        self.assertIn('features.skip_host_skill_discovery=true', config)
+        self.assertNotIn('daemon_auto_start', config_values(config)['features'])
+        self.assertFalse(config_values(config)['features']['shell_tool'])
+        self.assertTrue(config_values(config)['features']['skip_host_skill_discovery'])
 
     def test_new_catalog_disables_default_enabled_daemon(self):
         self.assertTrue(catalog(daemon=True)['daemon_auto_start'])
         config = policy.decision_config_for_features(policy.select_decision_features(catalog(daemon=True)))
-        self.assertIn('features.daemon_auto_start=false', config)
+        self.assertFalse(config_values(config)['features']['daemon_auto_start'])
         self.assertFalse(any('future_display_feature' in value for value in config))
 
     def test_every_other_missing_control_fails(self):
@@ -105,12 +116,14 @@ class PolicyTests(unittest.TestCase):
     def test_old_effective_probe_and_exec_keep_all_other_restrictions(self):
         selected = policy.select_decision_features(catalog())
         args = policy.decision_arguments(network_access=False, config_profile=None, extra_args=(), features=selected)
-        self.assertTrue({'--strict-config', '--ignore-user-config', '--ephemeral'}.issubset(args))
-        self.assertIn('features.shell_tool=false', args)
-        self.assertNotIn('features.daemon_auto_start=false', args)
+        self.assertIn('--ephemeral', args)
+        self.assertNotIn('--strict-config', args)
+        self.assertNotIn('--ignore-user-config', args)
+        self.assertFalse(argv_config(args)['features']['shell_tool'])
+        self.assertNotIn('daemon_auto_start', argv_config(args)['features'])
         args = transport.metadata_probe_arguments('features', decision_features=selected)
         self.assertEqual(args[-2:], ['features', 'list'])
-        self.assertNotIn('features.daemon_auto_start=false', args)
+        self.assertNotIn('daemon_auto_start', argv_config(args)['features'])
 
     def test_network_profile_and_extra_argument_rejections_unchanged(self):
         for kwargs in ({'network_access': True}, {'config_profile': 'custom'}, {'extra_args': ('--search',)}):
@@ -293,8 +306,9 @@ class TransportTests(unittest.TestCase):
             self.assertTrue(outcome.execution.succeeded, outcome)
             self.assertEqual(model.call_count, 1)
             args = outcome.trace.capture['argv']
-            self.assertEqual('features.daemon_auto_start=false' in args, daemon)
-            self.assertIn('--strict-config', args); self.assertIn('--sandbox', args)
+            self.assertEqual('daemon_auto_start' in argv_config(args)['features'], daemon)
+            self.assertNotIn('--strict-config', args); self.assertIn('--sandbox', args)
+            self.assertEqual(args[args.index('--sandbox') + 1], 'read-only')
             saved = json.loads((outcome.trace.capture_dir/'capture.json').read_text())
             self.assertEqual(saved['argv'], args)
             self.assertEqual(saved['decision_feature_compatibility']['status'], 'PASS')
@@ -337,8 +351,8 @@ class TransportTests(unittest.TestCase):
         self.assertTrue(call.result.valid, call.result)
         saved = json.loads((call.directory/'call.json').read_text())
         self.assertTrue(saved['archive_complete'])
-        self.assertNotIn('features.daemon_auto_start=false', saved['settings']['enforced_cli_arguments'])
-        self.assertNotIn('features.daemon_auto_start=false', saved['argv'])
+        self.assertNotIn('daemon_auto_start', argv_config(saved['settings']['enforced_cli_arguments'])['features'])
+        self.assertNotIn('daemon_auto_start', argv_config(saved['argv'])['features'])
         self.assertEqual(saved['feature_compatibility']['unavailable_optional'], ['daemon_auto_start'])
 
 

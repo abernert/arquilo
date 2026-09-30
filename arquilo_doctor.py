@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+from runtime_config import resolve_codex_home
 import re
 import subprocess
 import sys
@@ -25,15 +26,15 @@ from runtime_files import validate_path
 
 REQUIRED_EXEC_FLAGS = (
     "--json", "--output-schema", "--output-last-message", "--skip-git-repo-check",
-    "--sandbox", "--config", "--model", "--profile", "--ephemeral",
-    "--ignore-user-config", "--ignore-rules", "--strict-config",
+    "--sandbox", "--config", "--model", "--ephemeral",
 )
 PROBE_TIMEOUT_SECONDS = 10
 DECIDE_TIMEOUT_SECONDS = 120
 
 
 def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[str, str],
-                    model: str | None, reasoning_effort: str | None, timeout: float) -> dict:
+                    model: str | None, reasoning_effort: str | None, timeout: float,
+                    model_provider: str | None = None) -> dict:
     """One public Decide call with normal isolation, validation and full logs.
 
     A valid but wrong choice is a failed smoke test. Never retry, weaken the
@@ -50,10 +51,10 @@ def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[st
             question="What is 2 + 2? Choose FOUR for 4 or FIVE for 5 and explain briefly. Do not use tools.",
             options=("FOUR", "FIVE"), context=(), run_id=f"doctor-{uuid4().hex}",
             task_id="decide-smoke", phase="diagnostic", attempt_id="1",
-            model=model, reasoning_effort=reasoning_effort,
+            model=model, model_provider=model_provider, reasoning_effort=reasoning_effort,
         )
         settings = decide.DecisionExecSettings(
-            project_root=workspace, trusted_codex_home=Path.home() / ".codex", env=env,
+            project_root=workspace, trusted_codex_home=resolve_codex_home(environ=env), env=env,
             log_root=workspace / ".codex_runs" / "arquilo_doctor", launcher=launcher.source,
             timeouts=TransportTimeouts(total=timeout), max_attempts=1,
             process_stop_path=workspace / "process_stop",
@@ -65,6 +66,8 @@ def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[st
             call = decide.run_decision(request, settings=settings)
         probe["archive"] = str(call.directory) if call.directory is not None else None
         probe["model"] = call.request.model if call.request is not None else model
+        probe["model_provider"] = model_provider
+        probe["configuration_source"] = "Codex config + explicit overrides; no provider fallback"
         probe["reasoning_effort"] = reasoning_effort
         probe["model_calls"] = sum(
             row.attempt is not None and "launcher" in row.attempt.result.trace.capture
@@ -110,6 +113,7 @@ def _probe(name: str, launcher: CodexLauncher, *, cwd: Path, env: Mapping[str, s
 def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None,
                    env: Mapping[str, str] | None = None, check_decide: bool = False,
                    model: str | None = None, reasoning_effort: str | None = None,
+                   model_provider: str | None = None,
                    decide_timeout: float = DECIDE_TIMEOUT_SECONDS) -> dict:
     """Resolve paths like run_todos; metadata by default, Decide only by opt-in.
 
@@ -122,7 +126,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
     if (type(decide_timeout) not in (int, float) or not math.isfinite(decide_timeout)
             or decide_timeout <= 0):
         raise ValueError("decide_timeout muss eine endliche positive Sekundenzahl sein.")
-    if not check_decide and (model is not None or reasoning_effort is not None
+    if not check_decide and (model is not None or model_provider is not None or reasoning_effort is not None
                              or decide_timeout != DECIDE_TIMEOUT_SECONDS):
         raise ValueError("Decide-Optionen benötigen --check-decide.")
     environment = dict(os.environ if env is None else env)
@@ -146,7 +150,8 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         "notes": ["CLI-Version ist Metadatum; keine Versionsliste oder Mindestversion.",
                   "Ohne --check-decide nur --version, exec --help und features list, kein Modellprompt.",
                   "--check-decide: höchstens ein Modellaufruf; keine automatische Wiederholung.",
-                  "--check-decide ohne --model übergibt kein --model; Codex/Provider wählt den Default.",
+                  "Decide verwendet Codex-Konfiguration und Host-Umgebung; Modell/Provider nur bei ausdrücklichem Override.",
+                  "Decide behält read-only, Toolkontrollen und strukturierte Abnahme; MCP-Metadaten werden nicht ausgegeben.",
                   "Keine Auth-Datei oder Umgebungs-/Konfigurationsdumps im Bericht.",
                   "ToDo-Inhalt und Profil-Preflight separat mit --dry-run prüfen.",
                   "Runner logs live under the default external controller state root (or --state-dir); the runner prints the exact per-plan path.",
@@ -223,6 +228,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         report["decision_probe"] = _decision_probe(
             workspace=workspace, launcher=launcher, env=environment, model=model,
             reasoning_effort=reasoning_effort, timeout=decide_timeout,
+            model_provider=model_provider,
         ) | {"requested": True}
         report["model_calls"] = report["decision_probe"]["model_calls"]
         passed = report["decision_probe"]["status"] == "PASS"
@@ -245,17 +251,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check-decide", action="store_true",
                         help="Decide tatsächlich prüfen: höchstens ein Modellaufruf, kann Kosten verursachen.")
     parser.add_argument("--model", help="Expliziter Modell-Override für --check-decide; ohne Angabe übergibt ARQUILO kein --model und Codex/Provider wählt den Default.")
+    parser.add_argument("--model-provider", help="Optionaler Provider-ID-Override; sonst unverändert aus der Codex-Konfiguration.")
     parser.add_argument("--reasoning-effort", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
                         help="Reasoning-Effort für --check-decide.")
     parser.add_argument("--decide-timeout", type=float, default=None,
                         help=f"Zeitlimit der Funktionsprobe in Sekunden (Standard {DECIDE_TIMEOUT_SECONDS}, plus Metadaten/Prozessbereinigung).")
     args = parser.parse_args(argv)
-    if not args.check_decide and any(value is not None for value in (args.model, args.reasoning_effort, args.decide_timeout)):
-        parser.error("--model, --reasoning-effort und --decide-timeout benötigen --check-decide.")
+    if not args.check_decide and any(value is not None for value in (args.model, args.model_provider, args.reasoning_effort, args.decide_timeout)):
+        parser.error("--model, --model-provider, --reasoning-effort und --decide-timeout benötigen --check-decide.")
     if args.decide_timeout is not None and (not math.isfinite(args.decide_timeout) or args.decide_timeout <= 0):
         parser.error("--decide-timeout muss eine endliche positive Sekundenzahl sein.")
     report = collect_report(workdir=args.workdir, todo_file=args.todo_file, check_decide=args.check_decide,
-                            model=args.model, reasoning_effort=args.reasoning_effort,
+                            model=args.model, model_provider=args.model_provider, reasoning_effort=args.reasoning_effort,
                             decide_timeout=DECIDE_TIMEOUT_SECONDS if args.decide_timeout is None else args.decide_timeout)
     if args.json:
         print(json.dumps(report, ensure_ascii=True, indent=2))

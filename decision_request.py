@@ -158,6 +158,7 @@ class DecisionRequest:
     phase: str
     attempt_id: str
     model: str | None = None
+    model_provider: str | None = None
     reasoning_effort: str | None = None
     system_prompt: str | None = None
     kind: DecisionKind = DecisionKind.CHOICE
@@ -167,7 +168,7 @@ class DecisionRequest:
     def __post_init__(self) -> None:
         for name in ("question", "run_id", "task_id", "phase", "attempt_id"):
             _text(getattr(self, name), name)
-        for name in ("model", "reasoning_effort", "system_prompt"):
+        for name in ("model", "model_provider", "reasoning_effort", "system_prompt"):
             if getattr(self, name) is not None:
                 _text(getattr(self, name), name)
         if not isinstance(self.options, (list, tuple)) or not self.options:
@@ -221,7 +222,8 @@ class DecisionRequest:
                 "context": {s.name: s.text for s in self.context},
                 "run_id": self.run_id, "task_id": self.task_id,
                 "phase": self.phase, "attempt_id": self.attempt_id,
-                "model": self.model, "reasoning_effort": self.reasoning_effort,
+                "model": self.model, "model_provider": self.model_provider,
+                "reasoning_effort": self.reasoning_effort,
                 "system_prompt": self.system_prompt,
                 "boolean_mapping": ({"true": self.boolean_mapping.true_option,
                                      "false": self.boolean_mapping.false_option} if self.boolean_mapping else None)}
@@ -297,7 +299,8 @@ def completion_request(snapshot: TaskSnapshot, *, latest_answer: str, review_fin
                        run_id: str, task_id: str, phase: str, attempt_id: str,
                        model: str | None = None, reasoning_effort: str | None = None,
                        system_prompt: str | None = None,
-                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES) -> DecisionRequest:
+                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
+                       model_provider: str | None = None) -> DecisionRequest:
     if not isinstance(snapshot, TaskSnapshot):
         raise DecisionInputError("decision_missing_input", "snapshot", "Task evidence is required")
     return DecisionRequest(
@@ -314,7 +317,8 @@ def completion_request(snapshot: TaskSnapshot, *, latest_answer: str, review_fin
             ("reference_prompt", snapshot.reference_prompt), ("attempt_prompt", snapshot.attempt_prompt),
             ("task_source", snapshot.source), ("latest_answer", latest_answer), ("review_findings", review_findings))),
         run_id=run_id, task_id=task_id, phase=phase, attempt_id=attempt_id,
-        model=model, reasoning_effort=reasoning_effort, system_prompt=system_prompt,
+        model=model, model_provider=model_provider,
+        reasoning_effort=reasoning_effort, system_prompt=system_prompt,
         max_input_bytes=max_input_bytes)
 
 
@@ -346,7 +350,8 @@ def evaluation_request(context: dict[str, Any], *, stage: str, plan_id: str | No
                        step_id: str | None, run_id: str, task_id: str, attempt_id: str,
                        model: str | None = None, reasoning_effort: str | None = None,
                        system_prompt: str | None = None,
-                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES) -> tuple[DecisionRequest, str, str | None]:
+                       max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
+                       model_provider: str | None = None) -> tuple[DecisionRequest, str, str | None]:
     """Full legacy planning context; no 600-character or last-N reductions.
 
     A final evaluation explicitly requires preamble, latest_answer and
@@ -411,6 +416,7 @@ def evaluation_request(context: dict[str, Any], *, stage: str, plan_id: str | No
                  ContextSection("selected_plan", _json(plan, "plan")),
                  ContextSection("selected_plan_id", resolved), ContextSection("selected_step_id", step_id or "")),
         run_id=run_id, task_id=task_id, phase=f"evaluate.{stage}", attempt_id=attempt_id,
-        model=model, reasoning_effort=reasoning_effort, system_prompt=system_prompt,
+        model=model, model_provider=model_provider,
+        reasoning_effort=reasoning_effort, system_prompt=system_prompt,
         max_input_bytes=max_input_bytes)
     return request, resolved, step_id

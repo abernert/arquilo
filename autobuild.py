@@ -67,6 +67,7 @@ import time
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from runtime_config import resolve_codex_home
 from typing import (
     Any,
     Callable,
@@ -1221,7 +1222,7 @@ def start(
             if latest_review_classification.get("source_format") == "text_legacy":
                 if settings is None:
                     settings = DecisionExecSettings(
-                        project_root=workspace, trusted_codex_home=Path.home() / ".codex",
+                        project_root=workspace, trusted_codex_home=resolve_codex_home(),
                         env=dict(os.environ), log_root=workspace / ".codex_runs",
                         process_stop_path=process_stop_full,
                     )

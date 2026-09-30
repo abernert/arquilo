@@ -19,7 +19,8 @@ not have a separate maintenance commitment.
 - Production is constrained to Codex `workspace-write`; review requests use
   `read-only`. ARQUILO is not itself an OS sandbox. Native enforcement and setup
   depend on Codex and the host. A fresh directory does not imply full read isolation.
-- Decide runs with restricted configuration and rejects tool/unknown events.
+- Decide inherits trusted Codex provider configuration and host environment,
+  with tool-scope restrictions, and rejects tool/unknown events.
   Its event validation is an acceptance gate, not a pre-tool security interceptor.
 - Shell network access and Git operations are explicit opt-ins. Disabling shell
   networking does not disable model-provider communication or prove that every
@@ -71,3 +72,16 @@ Review local runtime profiles and Codex integrations before granting access.
 CI deliberately has no model credentials and never runs live agent workloads.
 Its tests do not establish that the native sandbox correctly enforces every
 boundary on a user's installation.
+
+## Provider configuration trust (0.3.2)
+
+Decide no longer suppresses user configuration or filters provider credentials,
+proxy variables and CA settings from the host environment. This is deliberate:
+corporate routing stays with Codex, not an ARQUILO allowlist or fallback provider.
+Do not supply untrusted host configuration/environment. Configured credential
+helpers and metadata auth checks may have host/network effects even without a
+model call. ARQUILO does not log env/config dumps or raw MCP-list output;
+normal Codex stdout/stderr archives are still sensitive.
+Read-only sandbox and compact verified tool controls remain, but an event gate
+cannot prevent every already-started tool side effect. Native enforcement is
+still Codex/OS responsibility. [Configuration details](docs/decide-configuration.md).

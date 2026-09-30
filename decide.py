@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import replace
 import os
 from pathlib import Path
+from runtime_config import resolve_codex_home
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
@@ -37,9 +38,9 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
                  max_attempts: int | None = None) -> DecisionCall:
     """Structured API; every failed/cancelled attempt has no usable option.
 
-    Standalone defaults use the current project and the OS user's ~/.codex.
-    A custom auth home must be explicitly trusted through settings; inherited
-    CODEX_HOME, API keys and .env files cannot select it implicitly.
+    No implicit model/provider selection. Codex loads the owner's config from
+    CODEX_HOME (or ~/.codex), including provider auth and proxy settings.
+    Explicit settings.trusted_codex_home overrides that host default.
     """
     if not isinstance(request, DecisionRequest):
         raise DecisionInputError("decision_invalid_input", "request", "Expected DecisionRequest")
@@ -50,7 +51,7 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
     # add --model to the Codex invocation.
     if settings is None:
         project = Path.cwd().resolve()
-        settings = DecisionExecSettings(project_root=project, trusted_codex_home=Path.home() / ".codex",
+        settings = DecisionExecSettings(project_root=project, trusted_codex_home=resolve_codex_home(),
             env=dict(os.environ), log_root=project / ".codex_runs")
     if max_attempts is not None:
         settings = replace(settings, max_attempts=max_attempts)
@@ -80,13 +81,14 @@ def _request(
     phase: str, attempt_id: str, max_input_bytes: int,
     request: Optional[DecisionRequest] = None,
     boolean_mapping: Optional[BooleanMapping] = None,
+    model_provider: Optional[str] = None,
 ) -> DecisionRequest:
     if request is not None:
         if not isinstance(request, DecisionRequest):
             raise DecisionInputError("decision_invalid_input", "request", "Expected DecisionRequest")
         if not isinstance(options, (list, tuple)) or question != request.question or tuple(options) != request.options:
             raise DecisionInputError("decision_invalid_input", "request", "Question/options disagree with request")
-        for name, override in (("model", model), ("reasoning_effort", reasoning_effort), ("system_prompt", system_prompt)):
+        for name, override in (("model", model), ("model_provider", model_provider), ("reasoning_effort", reasoning_effort), ("system_prompt", system_prompt)):
             if override is not None and override != getattr(request, name):
                 raise DecisionInputError("decision_invalid_input", name, "Override disagrees with request")
         if context or run_id is not None or task_id != "question" or phase != "decide" or attempt_id != "1":
@@ -96,7 +98,7 @@ def _request(
         return request
     return DecisionRequest(question=question, options=options, context=context,
         run_id=run_id if run_id is not None else f"standalone-{uuid4().hex}", task_id=task_id,
-        phase=phase, attempt_id=attempt_id, model=model,
+        phase=phase, attempt_id=attempt_id, model=model, model_provider=model_provider,
         reasoning_effort=reasoning_effort, system_prompt=system_prompt,
         kind=DecisionKind.BOOLEAN if boolean_mapping else DecisionKind.CHOICE,
         boolean_mapping=boolean_mapping, max_input_bytes=max_input_bytes)
@@ -104,6 +106,7 @@ def _request(
 
 def decide(
     question: str, options: Sequence[str], *, model: Optional[str] = None,
+    model_provider: Optional[str] = None,
     system_prompt: Optional[str] = None, max_retries: int | None = None,
     api_key: Optional[str] = None, base_url: Optional[str] = None,
     client: object | None = None,
@@ -118,7 +121,7 @@ def decide(
     Legacy callers receive a fresh standalone run ID. Production callers pass
     their explicit request, including the actual attempt's evidence and IDs.
     """
-    prepared = _request(question, options, model=model, system_prompt=system_prompt,
+    prepared = _request(question, options, model=model, model_provider=model_provider, system_prompt=system_prompt,
         reasoning_effort=reasoning_effort, context=context, run_id=run_id, task_id=task_id,
         phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes, request=request)
     if any(value is not None for value in (client, api_key, base_url)):
@@ -128,6 +131,7 @@ def decide(
 
 def decide_bool(
     question: str, *, model: Optional[str] = None, system_prompt: Optional[str] = None,
+    model_provider: Optional[str] = None,
     max_retries: int | None = None, reasoning_effort: Optional[str] = None,
     context: Sequence[ContextSection] = (), run_id: Optional[str] = None,
     task_id: str = "question", phase: str = "decide", attempt_id: str = "1",
@@ -138,7 +142,7 @@ def decide_bool(
     """true/false by default; YES/NO requires its explicit BooleanMapping."""
     if not isinstance(boolean_mapping, BooleanMapping):
         raise DecisionInputError("decision_invalid_input", "boolean_mapping", "Expected BooleanMapping")
-    prepared = _request(question, boolean_mapping.options, model=model, system_prompt=system_prompt,
+    prepared = _request(question, boolean_mapping.options, model=model, model_provider=model_provider, system_prompt=system_prompt,
         reasoning_effort=reasoning_effort, context=context, run_id=run_id, task_id=task_id,
         phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes,
         boolean_mapping=boolean_mapping)
@@ -149,6 +153,7 @@ def decide_bool(
 def evaluate(
     context_path: Union[str, Path], *, stage: str = "step", plan_id: Optional[str] = None,
     step_id: Optional[str] = None, model: Optional[str] = None,
+    model_provider: Optional[str] = None,
     system_prompt: Optional[str] = None, max_retries: int | None = None,
     reasoning_effort: Optional[str] = None, run_id: Optional[str] = None,
     task_id: str = "plan", attempt_id: str = "1",
@@ -165,8 +170,8 @@ def evaluate(
     request, resolved_plan_id, resolved_step_id = evaluation_request(
         context, stage=stage, plan_id=plan_id, step_id=step_id,
         run_id=run_id if run_id is not None else f"standalone-{uuid4().hex}",
-        task_id=task_id, attempt_id=attempt_id, model=model, reasoning_effort=reasoning_effort,
-        system_prompt=system_prompt, max_input_bytes=max_input_bytes)
+        task_id=task_id, attempt_id=attempt_id, model=model, model_provider=model_provider,
+        reasoning_effort=reasoning_effort, system_prompt=system_prompt, max_input_bytes=max_input_bytes)
     status, explanation = decide(request.question, request.options, request=request,
                                  max_retries=max_retries, settings=settings)
     decision: Dict[str, Any] = {"status": status, "explanation": explanation, "plan_id": resolved_plan_id}

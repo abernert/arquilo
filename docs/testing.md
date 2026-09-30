@@ -61,7 +61,7 @@ The `Codex metadata compatibility` workflow checks upstream 0.154.0 (without
 Python 3.12 and isolated temporary homes. CI downloads an exact upstream release
 asset and verifies its SHA-256 digest before extracting only the CLI executable.
 It does not update a user's installation, load personal credentials, or send
-model prompts. The workflow runs on pushes and pull requests to main and can
+prompts to a real provider. The workflow runs on pushes and pull requests to main and can
 also be triggered manually. Outcomes must be read from the exact CI run.
 
 See `scripts/install_test_codex.py` and `scripts/check_codex_features.py`; run
@@ -80,3 +80,13 @@ tests normal completion, restart and parent review. Windows junction and POSIX
 parent-swap cases are platform-specific; symlink tests explicitly skip when the
 host cannot create symlinks. Git push tests use disposable local bare repos only.
 These are controller regressions, not live model or comprehensive sandbox tests.
+
+## Real CLI, simulated corporate gateway (0.3.2)
+
+The compatibility workflow also runs `scripts/check_codex_provider.py` against a
+loopback HTTP test server and synthetic config/credentials. It verifies normal
+config model/provider/header selection, independent explicit overrides, disabled
+MCP startup, structured response acceptance and rejection without fallback.
+No real model is called; this does not verify a Databricks service, corporate
+proxy/TLS, or native sandbox enforcement. The standard unittest command uses
+only fakes; the native integration requires an explicitly selected CLI.

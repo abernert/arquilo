@@ -29,9 +29,7 @@ DECISION_DISABLED_FEATURES = (
     "workspace_dependencies", "daemon_auto_start",
 )
 DECISION_CONFIG = (
-    'web_search="disabled"', 'mcp_servers={}', 'model_provider="openai"',
-    "project_doc_max_bytes=0", "project_doc_fallback_filenames=[]",
-    'shell_environment_policy.inherit="none"',
+    'web_search="disabled"', "project_doc_max_bytes=0", "notify=[]",
     "suppress_unstable_features_warning=true",
     "features.skip_host_skill_discovery=true",
     *(f"features.{name}=false" for name in DECISION_DISABLED_FEATURES),
@@ -87,15 +85,22 @@ def decision_config_for_features(features: Sequence[str] | None = None) -> tuple
     Runtime execution always discovers and verifies capabilities afresh.
     """
     if features is None:
-        return DECISION_CONFIG
+        features = tuple(DECISION_EXPECTED_FEATURES)
     if isinstance(features, str) or any(not isinstance(name, str) for name in features):
         raise CodexPolicyError("Decide feature selection must contain feature names.")
     selected = set(features)
     if len(selected) != len(features) or selected - set(DECISION_EXPECTED_FEATURES):
         raise CodexPolicyError("Invalid Decide feature selection.")
     select_decision_features({name: False for name in selected})
-    return tuple(value for value in DECISION_CONFIG
-                 if not value.startswith("features.") or value.split("=", 1)[0][9:] in selected)
+    # A single TOML table instead of a long series of per-feature switches.
+    # These values concern tools only, never models/providers/endpoints/auth.
+    controls = ", ".join(
+        f"{name}={str(expected).lower()}"
+        for name, expected in DECISION_EXPECTED_FEATURES.items() if name in selected
+    )
+    return tuple(value for value in DECISION_CONFIG if not value.startswith("features.")) + (
+        "features={" + controls + "}",
+    )
 
 
 def decision_feature_details(catalog: Mapping[str, bool],
@@ -123,10 +128,14 @@ def decision_feature_details(catalog: Mapping[str, bool],
 def decision_arguments(*, network_access: bool, config_profile: str | None,
                        extra_args: Sequence[str],
                        features: Sequence[str] | None = None) -> list[str]:
-    """No user profiles, resuming, arbitrary features or web/network overrides."""
+    """Inherit trusted Codex configuration; restrict only execution/tool scope.
+
+    No routing override, user-config suppression, strict-config mode or rules
+    suppression. Configured corporate routing/authentication remains Codex-owned.
+    """
     if network_access is not False or config_profile is not None or extra_args:
         raise CodexPolicyError("Decide requires network_access=False, no profile and no extra_args.")
-    return ["--ignore-user-config", "--ephemeral", "--strict-config",
+    return ["--ephemeral",
             *(arg for value in decision_config_for_features(features) for arg in ("-c", value))]
 
 
@@ -296,3 +305,31 @@ def sandbox_arguments(*, sandbox: str, network_access: bool) -> list[str]:
         "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
         "-c", "sandbox_workspace_write.exclude_slash_tmp=true",
     ]
+
+
+def decision_sandbox_arguments() -> list[str]:
+    """No writes or approval escalation, without workspace-write-only settings."""
+    return ["--sandbox", "read-only", "-c", 'approval_policy="never"']
+
+
+def decision_mcp_config(names: Sequence[str]) -> tuple[str, ...]:
+    """Disable configured MCP servers, without copying URLs/commands/secrets.
+
+    An empty table would only merge with (not clear) the user's configured map.
+    Server names come from Codex's own metadata resolver, not a second TOML
+    configuration loader. Quoted TOML keys keep names literal.
+    """
+    if isinstance(names, str) or len(names) > 1024:
+        raise CodexPolicyError("Invalid Decide MCP selection")
+    for name in names:
+        if (not isinstance(name, str) or not name or len(name) > 256
+                or any(ord(c) < 32 for c in name)):
+            raise CodexPolicyError("Invalid Decide MCP name")
+    if len(set(names)) != len(names):
+        raise CodexPolicyError("Duplicate Decide MCP name")
+    if not names:
+        return ()
+    return ("mcp_servers={" + ", ".join(
+        json.dumps(name, ensure_ascii=False) + "={enabled=false}"
+        for name in sorted(names)
+    ) + "}",)

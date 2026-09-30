@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -166,8 +167,8 @@ class EventPolicyTests(unittest.TestCase):
         self.assertIn("suppress_unstable_features_warning=true", codex_policy.DECISION_CONFIG)
         self.assertIn("features.skip_host_skill_discovery=true", codex_policy.DECISION_CONFIG)
         args = codex_policy.decision_arguments(network_access=False, config_profile=None, extra_args=())
-        self.assertIn("--ignore-user-config", args)
-        self.assertIn("features.shell_tool=false", args)
+        self.assertNotIn("--ignore-user-config", args)
+        self.assertFalse(tomllib.loads("\n".join(args[i+1] for i, a in enumerate(args[:-1]) if a == "-c"))["features"]["shell_tool"])
 
     def test_top_level_error_is_fatal_but_item_warning_is_not(self):
         with tempfile.TemporaryDirectory() as t, redirect_stdout(io.StringIO()):

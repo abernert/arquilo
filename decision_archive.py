@@ -56,16 +56,19 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
                   "reason": retry_reason, "scheduled": False,
                   "policy": "only decision_invalid_response after successful execution; at most one replay"},
         "settings": {
-            "model": request.model, "reasoning_effort": request.reasoning_effort,
+            "model": request.model, "model_provider": request.model_provider,
+            "reasoning_effort": request.reasoning_effort,
+            "model_selection": "explicit" if request.model else "codex_config",
+            "provider_selection": "explicit" if request.model_provider else "codex_config",
             "max_input_bytes": request.max_input_bytes,
             "timeouts": asdict(settings.timeouts or TransportTimeouts(total=120)),
-            "sandbox": "workspace-write", "network_access": False,
+            "sandbox": "read-only", "network_access": False,
             "enforced_cli_arguments": None,  # Set only after verified negotiation.
             "requested_policy_arguments": (
-                codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
+                codex_policy.decision_sandbox_arguments()
                 + codex_policy.decision_arguments(network_access=False, config_profile=None, extra_args=())),
-            "environment": "OS allowlist only; values and credentials are not archived",
-            "auth": "explicit trusted Codex home; credentials are not read or copied",
+            "environment": "trusted host environment; values and credentials are not archived",
+            "auth": "Codex-owned provider configuration; no ARQUILO credential parsing or fallback",
         },
         "cli_version": None, "cwd": None,
         "cleanup_policy": "retain workdir; explicit cleanup only after all attempts are archived",
@@ -123,7 +126,7 @@ def finish_manifest(manifest: dict, *, directory: Path, result: DecisionResult,
     compatibility = capture.get("decision_feature_compatibility", {})
     if compatibility.get("status") == "PASS":
         settings["enforced_cli_arguments"] = (
-            codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
+            codex_policy.decision_sandbox_arguments()
             + codex_policy.decision_arguments(network_access=False, config_profile=None,
                                              extra_args=(), features=compatibility["selected_features"]))
     return manifest | {

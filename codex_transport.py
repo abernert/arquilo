@@ -14,7 +14,7 @@ Process-tree lifetime is owned through a per-call operating-system adapter.
 from __future__ import annotations
 import safe_io
 
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from datetime import datetime
 import codecs
 import json
@@ -62,6 +62,7 @@ class CodexExecRequest:
     raw_log: Path
     pretty_log: Path
     model: str | None = None
+    model_provider: str | None = None
     reasoning_effort: str | None = None
     network_access: bool = False
     output_schema: Path | None = None
@@ -79,6 +80,7 @@ class CodexExecRequest:
     log_redactor: Callable[[str], str] | None = None
     prompt_display: str = "<prompt>"
     decision_only: bool = False
+    disabled_mcp_servers: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.prompt, str) or not self.prompt.strip():
@@ -101,7 +103,15 @@ class CodexExecRequest:
         codex_policy.validate_sandbox(self.sandbox)
         codex_policy.validate_extra_args(self.extra_args)
         codex_policy.validate_config_profile(self.config_profile)
+        for name in ("model", "model_provider"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()
+                                      or any(ord(c) < 32 for c in value)):
+                raise ValueError(f"{name} must be a non-empty single-line string or None")
+        codex_policy.decision_mcp_config(self.disabled_mcp_servers)
         if self.decision_only:
+            # The decision cwd contains no user artifacts and requires no writes.
+            object.__setattr__(self, "sandbox", "read-only")
             codex_policy.decision_arguments(network_access=self.network_access,
                                            config_profile=self.config_profile, extra_args=self.extra_args)
         if self.reasoning_effort is not None and self.reasoning_effort not in (
@@ -140,10 +150,12 @@ def build_command(request: CodexExecRequest, *,
     if profile is not None:
         cmd += ["--profile", profile]
     cmd += ["--cd", str(request.cwd)]
-    if request.model:
+    if request.model is not None:
         cmd += ["--model", request.model]
+    if request.model_provider is not None:
+        cmd += ["-c", "model_provider=" + json.dumps(request.model_provider, ensure_ascii=False)]
     if request.reasoning_effort:
-        cmd += ["-c", f"model_reasoning_effort={request.reasoning_effort}"]
+        cmd += ["-c", "model_reasoning_effort=" + json.dumps(request.reasoning_effort)]
     if request.output_schema is not None:
         cmd += ["--output-schema", str(request.output_schema)]
     if request.output_last_message is not None:
@@ -153,11 +165,16 @@ def build_command(request: CodexExecRequest, *,
     if "--skip-git-repo-check" not in cmd:
         cmd.append("--skip-git-repo-check")
     # Explicit CLI policy takes precedence over user/project/profile defaults.
-    cmd += codex_policy.sandbox_arguments(sandbox=request.sandbox, network_access=request.network_access)
+    if request.decision_only:
+        cmd += codex_policy.decision_sandbox_arguments()
+    else:
+        cmd += codex_policy.sandbox_arguments(sandbox=request.sandbox, network_access=request.network_access)
     if request.decision_only:
         cmd += codex_policy.decision_arguments(network_access=request.network_access,
                                               config_profile=request.config_profile, extra_args=extras,
                                               features=decision_features)
+        for value in codex_policy.decision_mcp_config(request.disabled_mcp_servers):
+            cmd += ["-c", value]
     cmd.append("-")
     return cmd
 
@@ -192,7 +209,8 @@ def probe_version(*, launcher: Sequence[str], cwd: Path, env: Mapping[str, str],
 
 
 def metadata_probe_arguments(probe: str, *,
-                             decision_features: Sequence[str] | None = None) -> list[str]:
+                             decision_features: Sequence[str] | None = None,
+                             disabled_mcp_servers: Sequence[str] = ()) -> list[str]:
     """Closed, non-model commands only; callers cannot add a prompt or login."""
     if probe == "version":
         return ["--version"]
@@ -201,19 +219,25 @@ def metadata_probe_arguments(probe: str, *,
     if probe == "feature_catalog":
         return ["features", "list"]
     if probe == "features":
-        # ignore-user-config/strict-config/ephemeral are Exec-only switches.
+        # Model/provider/config-home selection is left to normal Codex config.
         return [*(arg for value in codex_policy.decision_config_for_features(decision_features)
                  for arg in ("-c", value)),
                 "features", "list"]
-    raise ValueError("Unknown metadata probe; allowed: version, help, feature_catalog, features")
+    if probe == "mcp_catalog":
+        values = (codex_policy.decision_config_for_features(decision_features)
+                  + codex_policy.decision_mcp_config(disabled_mcp_servers))
+        return [*(arg for value in values for arg in ("-c", value)), "mcp", "list", "--json"]
+    raise ValueError("Unknown metadata probe")
 
 
 def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
                        env: Mapping[str, str], timeout: float,
-                       decision_features: Sequence[str] | None = None) -> subprocess.CompletedProcess:
-    """Cost-free introspection using the same launcher and owned process tree."""
+                       decision_features: Sequence[str] | None = None,
+                       disabled_mcp_servers: Sequence[str] = ()) -> subprocess.CompletedProcess:
+    """No model request; Codex may inspect configured auth metadata endpoints."""
     codex_policy.validate_launcher(launcher)
-    command = [*launcher, *metadata_probe_arguments(probe, decision_features=decision_features)]
+    command = [*launcher, *metadata_probe_arguments(probe, decision_features=decision_features,
+                                                   disabled_mcp_servers=disabled_mcp_servers)]
     proc = _start_process(command, cwd=cwd, env=env)
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
@@ -683,6 +707,50 @@ class ProcessStopMonitor:
 
 _CHUNK_SIZE = 64 * 1024
 _INVALID_UTF8 = re.compile("[\udc80-\udcff]")
+
+
+def inspect_decision_mcp(*, request: CodexExecRequest,
+                         decision_features: Sequence[str]) -> tuple[str, ...]:
+    """Resolve MCP through Codex, never load/copy its provider config ourselves.
+
+    Listing may inspect configured MCP auth metadata; no model/exec task runs.
+    Do not archive the raw list: it can contain server headers and env values.
+    An empty table is not sufficient to clear inherited MCP config (deep merge).
+    """
+    names: tuple[str, ...] = ()
+    for verification in (False, True):
+        if _cancellation_reason(request):
+            raise InterruptedError("Decide MCP metadata verification cancelled")
+        try:
+            result = probe_cli_metadata(probe="mcp_catalog", launcher=request.launcher,
+                cwd=request.cwd, env=request.env, timeout=10,
+                decision_features=decision_features, disabled_mcp_servers=names)
+        except (OSError, UnicodeError, subprocess.TimeoutExpired, RuntimeError):
+            raise codex_policy.CodexPolicyError(
+                "Cannot inspect Decide MCP configuration; no model process started") from None
+        if result.returncode != 0:
+            raise codex_policy.CodexPolicyError("Cannot verify Decide MCP configuration; no model process started")
+        try:
+            rows = codex_policy.parse_decision_event(result.stdout)
+            if not isinstance(rows, list) or len(rows) > 1024:
+                raise ValueError()
+            state = {}
+            for row in rows:
+                if (not isinstance(row, dict) or not isinstance(row.get("name"), str)
+                        or type(row.get("enabled")) is not bool or row["name"] in state):
+                    raise ValueError()
+                state[row["name"]] = row["enabled"]
+            codex_policy.decision_mcp_config(tuple(state))
+        except (ValueError, TypeError):
+            raise codex_policy.CodexPolicyError("Malformed Decide MCP metadata; no model process started") from None
+        if verification:
+            if set(state) != set(names) or any(state.values()):
+                raise codex_policy.CodexPolicyError("Decide MCP disable controls were not effective; no model process started")
+        else:
+            names = tuple(sorted(state))
+            if not names:
+                break
+    return names
 
 
 def _write_bytes(stream: Any, data: bytes, progress: Callable[[int], None]) -> None:
@@ -1230,6 +1298,17 @@ def execute(request: CodexExecRequest) -> TransportResult:
                     code="codex_decision_features_failed", phase=request.phase))
             else:
                 decision_features = tuple(compatibility["selected_features"])
+                try:
+                    mcp_names = inspect_decision_mcp(request=request, decision_features=decision_features)
+                except InterruptedError:
+                    trace.process_stop_triggered = True
+                    trace.process_stop_details = "Decide metadata verification cancelled"
+                    mcp_names = ()
+                except codex_policy.CodexPolicyError as exc:
+                    raise CodexExecutionError(trace, execution_error(str(exc),
+                        code="codex_decision_mcp_failed", phase=request.phase)) from exc
+                request = replace(request, disabled_mcp_servers=mcp_names)
+                trace.capture["disabled_mcp_server_count"] = len(mcp_names)
                 trace.capture["argv"] = build_command(request, decision_features=decision_features)
         if not trace.process_stop_triggered:
             trace = _run(request, trace, prompt_bytes, decision_features=decision_features)
