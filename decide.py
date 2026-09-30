@@ -15,9 +15,6 @@ from decision_request import (
     DecisionKind, DecisionRequest, evaluation_request, load_evaluation_context,
 )
 
-_DEFAULT_DECISION_MODEL = "gpt-5.5"
-
-
 class DecisionError(ValueError):
     """Unusable decision, retaining the result and evidence for its caller."""
 
