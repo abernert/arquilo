@@ -1,0 +1,33 @@
+name: Controller hardening checks
+on:
+  push:
+    branches: [validation/controller-hardening]
+    paths: [.github/workflows/controller-hardening-check.yml]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12', '3.13']
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Apply the reviewed plaintext changes
+        run: git apply --index .maintenance/controller-hardening.patch
+      - name: Run existing and new offline regressions
+        run: python -B -m unittest discover -s tests -v
+      - name: Validate runtime package
+        run: python -B scripts/check_release.py
+      - name: Build runtime package
+        run: python -B scripts/build_runtime_zip.py
