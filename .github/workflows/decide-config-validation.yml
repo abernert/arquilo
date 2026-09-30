@@ -6,19 +6,59 @@ on:
 permissions:
   contents: read
 jobs:
-  source:
+  prepare:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/validation/decide-config-inheritance'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 45efd35fabea5aea00a20b373cf70339d5747c0c
           persist-credentials: false
-      - name: Archive only tracked public source at the reviewed commit
-        run: git archive --format=zip --output=source.zip HEAD
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
-          name: decide-config-source
-          path: source.zip
-          retention-days: 1
-          if-no-files-found: error
+          python-version: '3.12'
+      - name: Apply only exact reviewed files with before and after digest verification
+        run: python -B .maintenance/apply_decide_changes.py
+      - name: Offline regression tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Check and build licensed distribution
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Prepare clean candidate branch, never push main or release tags
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import base64, json, os, pathlib, subprocess
+          base = '45efd35fabea5aea00a20b373cf70339d5747c0c'
+          branch = 'fix/decide-config-inheritance-040'
+          expected_tree = '7ca012798e51d6e381f00f08faa4af5524f02112'
+          assert subprocess.check_output(['git', 'rev-parse', 'origin/main'], text=True).strip() == base
+          paths = json.loads(pathlib.Path('.maintenance/candidate-paths.json').read_text())
+          # The workflow file is subsequently updated through the maintainer's
+          # authorized GitHub connector. This token writes no workflow files.
+          paths = [p for p in paths if not p.startswith('.github/')]
+          assert len(paths) == 26 and not any(p.startswith(('.maintenance/', '.git/')) for p in paths)
+          env = dict(os.environ, GIT_INDEX_FILE=str(pathlib.Path(os.environ['RUNNER_TEMP'])/'candidate.index'))
+          subprocess.run(['git','read-tree',base],env=env,check=True)
+          subprocess.run(['git','add','-A','--',*paths],env=env,check=True)
+          tree = subprocess.check_output(['git','write-tree'],env=env,text=True).strip()
+          assert tree == expected_tree, 'Candidate tree differs from locally tested exact files'
+          env.update(GIT_AUTHOR_NAME='github-actions[bot]',GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com',
+                     GIT_COMMITTER_NAME='github-actions[bot]',GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com')
+          commit = subprocess.check_output(['git','commit-tree',tree,'-p',base],env=env,text=True,
+              input='Inherit Codex provisioning in Decide with minimal arguments (0.4.0)\n').strip()
+          token = env.pop('GH_TOKEN')
+          auth = base64.b64encode(('x-access-token:'+token).encode()).decode()
+          env.update(GIT_CONFIG_COUNT='1',GIT_CONFIG_KEY_0='http.https://github.com/.extraheader',
+                     GIT_CONFIG_VALUE_0='AUTHORIZATION: basic '+auth)
+          existing = subprocess.check_output(['git','ls-remote','--heads','origin',branch],env=env,text=True)
+          assert not existing.strip(), 'Candidate branch already exists; not overwriting it'
+          subprocess.run(['git','push','origin',commit+':refs/heads/'+branch],env=env,check=True)
+          print('Prepared clean candidate:',branch,commit,tree)
