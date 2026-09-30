@@ -18,47 +18,58 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 36a6dc2a1f08587e7bb8b8b876cbbb82268064a0
+          path: candidate
+          persist-credentials: false
           fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.12'
-      - name: Apply only exact reviewed files with before and after digest verification
-        run: python -B .maintenance/apply_decide_changes.py
-      - name: Offline regression tests
-        run: python -B -m unittest discover -s tests -v
-      - name: Check and build licensed distribution
-        run: |
-          python -B scripts/check_release.py
-          python -B scripts/build_runtime_zip.py
-      - name: Prepare clean candidate branch, never push main or release tags
+      - name: Apply four exact amendments without changing other files
         shell: python
+        working-directory: candidate
+        run: |
+          import hashlib,json,pathlib,subprocess
+          ops=json.loads(pathlib.Path('../.maintenance/decide-finish.json').read_text(encoding='utf-8'))
+          expected={'decision_exec.py','tests/test_decide_configuration.py','scripts/check_codex_configuration.py','docs/testing.md'}
+          assert {o['path'] for o in ops}==expected
+          prepared={}
+          for op in ops:
+              raw=subprocess.check_output(['git','show','HEAD:'+op['path']])
+              assert hashlib.sha256(raw).hexdigest()==op['sha256_before'],op['path']
+              lines=raw.decode('utf-8').splitlines(keepends=True)
+              for edit in reversed(op['edits']): lines[edit['start']:edit['end']]=[edit['text']]
+              data=''.join(lines).encode('utf-8')
+              assert hashlib.sha256(data).hexdigest()==op['sha256_after'],op['path']
+              prepared[op['path']]=data
+          for name,data in prepared.items():pathlib.Path(name).write_bytes(data)
+      - name: Offline regression tests and package checks
+        working-directory: candidate
+        run: |
+          python -B -m unittest discover -s tests -v
+          python -B scripts/check_release.py
+      - name: Prepare fast-forward amendment branch only, never main or tags
+        shell: python
+        working-directory: candidate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          import base64, json, os, pathlib, subprocess
-          base = '45efd35fabea5aea00a20b373cf70339d5747c0c'
-          branch = 'fix/decide-config-inheritance-040'
-          expected_tree = '7ca012798e51d6e381f00f08faa4af5524f02112'
-          assert subprocess.check_output(['git', 'rev-parse', 'origin/main'], text=True).strip() == base
-          paths = json.loads(pathlib.Path('.maintenance/candidate-paths.json').read_text())
-          # The workflow file is subsequently updated through the maintainer's
-          # authorized GitHub connector. This token writes no workflow files.
-          paths = [p for p in paths if not p.startswith('.github/')]
-          assert len(paths) == 26 and not any(p.startswith(('.maintenance/', '.git/')) for p in paths)
-          env = dict(os.environ, GIT_INDEX_FILE=str(pathlib.Path(os.environ['RUNNER_TEMP'])/'candidate.index'))
-          subprocess.run(['git','read-tree',base],env=env,check=True)
-          subprocess.run(['git','add','-A','--',*paths],env=env,check=True)
-          tree = subprocess.check_output(['git','write-tree'],env=env,text=True).strip()
-          assert tree == expected_tree, 'Candidate tree differs from locally tested exact files'
-          env.update(GIT_AUTHOR_NAME='github-actions[bot]',GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com',
-                     GIT_COMMITTER_NAME='github-actions[bot]',GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com')
-          commit = subprocess.check_output(['git','commit-tree',tree,'-p',base],env=env,text=True,
-              input='Inherit Codex provisioning in Decide with minimal arguments (0.4.0)\n').strip()
-          token = env.pop('GH_TOKEN')
-          auth = base64.b64encode(('x-access-token:'+token).encode()).decode()
-          env.update(GIT_CONFIG_COUNT='1',GIT_CONFIG_KEY_0='http.https://github.com/.extraheader',
-                     GIT_CONFIG_VALUE_0='AUTHORIZATION: basic '+auth)
-          existing = subprocess.check_output(['git','ls-remote','--heads','origin',branch],env=env,text=True)
-          assert not existing.strip(), 'Candidate branch already exists; not overwriting it'
+          import base64,json,os,pathlib,subprocess
+          base='36a6dc2a1f08587e7bb8b8b876cbbb82268064a0'
+          branch='validation/decide-config-finish'
+          assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==base
+          paths=[o['path'] for o in json.loads(pathlib.Path('../.maintenance/decide-finish.json').read_text(encoding='utf-8'))]
+          subprocess.run(['git','add','--',*paths],check=True)
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert tree=='883ccba7848bb86fa13929e2ebba1950cd777298','Unexpected candidate tree'
+          env=dict(os.environ,GIT_AUTHOR_NAME='github-actions[bot]',GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com',
+                   GIT_COMMITTER_NAME='github-actions[bot]',GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com')
+          commit=subprocess.check_output(['git','commit-tree',tree,'-p',base],env=env,text=True,
+              input='Cover custom Codex home and validate profiles through a supported metadata command\n').strip()
+          auth=base64.b64encode(('x-access-token:'+env.pop('GH_TOKEN')).encode()).decode()
+          env.update(GIT_CONFIG_COUNT='1',GIT_CONFIG_KEY_0='http.https://github.com/.extraheader',GIT_CONFIG_VALUE_0='AUTHORIZATION: basic '+auth)
+          assert not subprocess.check_output(['git','ls-remote','--heads','origin',branch],env=env,text=True).strip()
           subprocess.run(['git','push','origin',commit+':refs/heads/'+branch],env=env,check=True)
-          print('Prepared clean candidate:',branch,commit,tree)
+          print('Amendment candidate:',commit,tree)
