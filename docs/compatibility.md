@@ -1,6 +1,6 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.3.0)
+## Current names (ARQUILO 0.3.1)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
