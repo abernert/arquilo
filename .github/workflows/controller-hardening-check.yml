@@ -23,11 +23,44 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: ${{ matrix.python }}
-      - name: Apply the reviewed plaintext changes
-        run: git apply --index .maintenance/controller-hardening.patch
+      - name: Verify and apply the exact plaintext code changes
+        run: python -B .maintenance/apply_hardening.py
       - name: Run existing and new offline regressions
         run: python -B -m unittest discover -s tests -v
       - name: Validate runtime package
         run: python -B scripts/check_release.py
       - name: Build runtime package
         run: python -B scripts/build_runtime_zip.py
+  prepare-candidate:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: python -B .maintenance/apply_hardening.py
+      - name: Create the tested source commit on a new branch, leaving protected main unchanged
+        shell: python
+        run: |
+          import subprocess
+          def git(*args, **kwargs):
+              return subprocess.check_output(['git', *args], **kwargs).decode().strip()
+          base = '3e76e63d23054611c71b283a18194565b936259d'
+          current = git('ls-remote', 'origin', 'refs/heads/main').split()[0]
+          if current != base:
+              raise SystemExit('Main changed; reconcile before preparing a candidate')
+          git('rm', '--cached', '-r', '.maintenance')
+          git('rm', '--cached', '.github/workflows/controller-hardening-check.yml')
+          git('diff', '--cached', '--check')
+          git('config', 'user.name', 'github-actions[bot]')
+          git('config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com')
+          tree = git('write-tree')
+          sha = git('commit-tree', tree, '-p', base, input=b'Harden task acceptance, controller I/O and explicit Git output selection (0.3.0)\n\nFix the six audited controller failures with persistent external authority and negative regression tests.\n')
+          git('push', 'origin', sha + ':refs/heads/fix/controller-hardening-030')
+          print('CANDIDATE_COMMIT=' + sha)
