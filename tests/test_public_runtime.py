@@ -24,6 +24,9 @@ import autobuild
 from autobuild_contract import AutoBuildContext, AutoBuildOptions
 import codex_policy
 import codex_transport
+import decide
+from decision_request import DecisionRequest
+import run_todos
 from review_contract import build_review_context_reference, parse_review_classification
 from scripts.build_runtime_zip import build_distribution
 from scripts.check_release import check_release
@@ -43,6 +46,49 @@ def extract_contract(prompt):
 
 def result(answer):
     return codex_transport.RunResult(assistant_messages=[answer], turn_completed=True, process_exit_code=0)
+
+
+class DecideModelSelectionTests(unittest.TestCase):
+    @staticmethod
+    def request(model=None):
+        return DecisionRequest(
+            question="What is 2 + 2?",
+            options=("FOUR", "FIVE"),
+            context=(),
+            run_id="test-run",
+            task_id="test-task",
+            phase="test",
+            attempt_id="1",
+            model=model,
+        )
+
+    def test_no_implicit_model_override(self):
+        marker = object()
+        settings = object()
+        with patch.object(decide, "execute_decision", return_value=marker) as execute:
+            self.assertIs(decide.run_decision(self.request(), settings=settings), marker)
+        forwarded = execute.call_args.args[0]
+        self.assertIsNone(forwarded.model)
+        self.assertIs(execute.call_args.kwargs["settings"], settings)
+
+    def test_explicit_model_override_is_preserved(self):
+        marker = object()
+        with patch.object(decide, "execute_decision", return_value=marker) as execute:
+            self.assertIs(decide.run_decision(self.request("provider-specific-model"), settings=object()), marker)
+        self.assertEqual(execute.call_args.args[0].model, "provider-specific-model")
+
+
+class WindowsSandboxHintTests(unittest.TestCase):
+    def test_missing_setup_helper_gets_specific_non_bypass_hint(self):
+        output = (
+            "windows sandbox: orchestrator_helper_launch_failed: setup refresh failed to launch helper: "
+            "helper=codex-windows-sandbox-setup.exe, error=program not found"
+        )
+        hints = run_todos._codex_workspace_write_known_hints(output, platform_name="Windows")
+        combined = "\n".join(hints)
+        self.assertIn("versionierten Release-Verzeichnis", combined)
+        self.assertIn("Kopiere keinen Helper aus einer anderen Version", combined)
+        self.assertIn("umgehe die Sandbox nicht", combined)
 
 
 class ContractTests(unittest.TestCase):

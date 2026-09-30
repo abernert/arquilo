@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 — 2026-09-30 (public preview)
+
+- Remove ARQUILO's implicit `gpt-5.5` Decide default. When no task/Decide
+  model is explicitly selected, ARQUILO now omits `--model` and lets Codex or
+  the active provider choose its effective default. Explicit `--model` and
+  per-call model selections remain unchanged.
+- Clarify the Doctor behavior and add regressions proving that an unspecified
+  model remains unspecified through the Decide transport.
+- Diagnose the Windows `orchestrator_helper_launch_failed ... program not found`
+  failure without weakening the sandbox, and document the known standalone
+  launcher/resource-layout failure mode plus a safe version-matched diagnostic.
+
 ## 0.3.0 — 2026-09-30 (public preview)
 
 - Keep authoritative task plans, call reservations and runner logs outside the

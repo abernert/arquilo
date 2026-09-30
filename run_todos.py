@@ -371,6 +371,26 @@ def _codex_workspace_write_known_hints(output: str, *, platform_name: str) -> Li
             "Windows/native Sandbox: Nutze eine Codex-Version mit eingerichteter Windows-workspace-write-Sandbox. Zugriffsprobleme werden gemeldet; es gibt keinen automatischen Start mit erweiterten Rechten. WSL2 ist eine getrennte Linux-Umgebung."
         )
 
+    helper_tokens = (
+        "orchestrator_helper_launch_failed",
+        "codex-windows-sandbox-setup.exe",
+        "helper-codex-windows-sandbox-setup.exe",
+    )
+    if (is_windows or "windows" in normalized) and any(token in normalized for token in helper_tokens) and (
+        "program not found" in normalized
+        or "cannot find" in normalized
+        or "nicht gefunden" in normalized
+    ):
+        hints.append(
+            "Windows Codex-Launcher/Helper: Der gestartete codex.exe findet seinen passenden "
+            "Sandbox-Setup-Helper nicht. Bei Standalone-Installationen kann der öffentliche "
+            "...\\Programs\\OpenAI\\Codex\\bin\\codex.exe-Launcher vorhanden sein, obwohl die "
+            "zugehörigen codex-resources nur im versionierten Release liegen. Prüfe die vollständige "
+            "Codex-Installation bzw. starte testweise den codex.exe aus dem passenden versionierten "
+            "Release-Verzeichnis. Kopiere keinen Helper aus einer anderen Version und umgehe die "
+            "Sandbox nicht."
+        )
+
     linux_specific_tokens = (
         "apparmor",
         "landlock",

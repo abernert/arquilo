@@ -115,7 +115,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
 
     No profile command, task, authentication read, configuration write or model
     transport call without check_decide. A successful functional test proves the
-    chosen model's Decide contract, not general model quality or OS isolation.
+    effective Codex model's Decide contract, not general model quality or OS isolation.
     """
     if type(check_decide) is not bool:
         raise ValueError("check_decide muss bool sein.")
@@ -146,6 +146,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         "notes": ["CLI-Version ist Metadatum; keine Versionsliste oder Mindestversion.",
                   "Ohne --check-decide nur --version, exec --help und features list, kein Modellprompt.",
                   "--check-decide: höchstens ein Modellaufruf; keine automatische Wiederholung.",
+                  "--check-decide ohne --model übergibt kein --model; Codex/Provider wählt den Default.",
                   "Keine Auth-Datei oder Umgebungs-/Konfigurationsdumps im Bericht.",
                   "ToDo-Inhalt und Profil-Preflight separat mit --dry-run prüfen.",
                   "Runner logs live under the default external controller state root (or --state-dir); the runner prints the exact per-plan path.",
@@ -243,7 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Strukturierten Bericht auf stdout ausgeben, auch bei Fehlern.")
     parser.add_argument("--check-decide", action="store_true",
                         help="Decide tatsächlich prüfen: höchstens ein Modellaufruf, kann Kosten verursachen.")
-    parser.add_argument("--model", help="Modell für --check-decide; Standard wie decide.py.")
+    parser.add_argument("--model", help="Expliziter Modell-Override für --check-decide; ohne Angabe übergibt ARQUILO kein --model und Codex/Provider wählt den Default.")
     parser.add_argument("--reasoning-effort", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
                         help="Reasoning-Effort für --check-decide.")
     parser.add_argument("--decide-timeout", type=float, default=None,
