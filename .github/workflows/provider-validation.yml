@@ -34,7 +34,13 @@ jobs:
           required = [j for j in jobs if j['name'].startswith(('offline (','native ('))]
           assert len(required) == 15 and all(j['conclusion']=='success' for j in required)
           print('All nine offline and six real-CLI loopback tests succeeded; no provider billing.')
-      - name: Create clean feature branch only, never update main
+      - name: Apply exact tested tree and publish runtime-only branch
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python -B .maintenance/provider/apply.py --publish-candidate
+        shell: python
+        run: |
+          from pathlib import Path
+          import runpy
+          publisher = Path('.maintenance/provider/publish_runtime.py').read_text(encoding='utf-8')
+          runpy.run_path('.maintenance/provider/apply.py', run_name='__main__')
+          exec(compile(publisher, 'publish_runtime.py', 'exec'))
