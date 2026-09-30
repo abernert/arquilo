@@ -1,0 +1,415 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a588a3f..6453937 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,2 +2,20 @@
+ 
++## 0.3.0 — 2026-09-30 (public preview)
++
++- Keep authoritative task plans, call reservations and runner logs outside the
++  model workspace. Reject unapproved status/removal/requirement changes, including
++  on restart. Validate child insertion and retain mandatory parent review.
++- Add no-follow controller I/O with anchored POSIX operations and Windows parent
++  handle leases; reject symlink/reparse and hardlink redirection.
++- Replace `git add -A` with required literal `--git-path` selections and a separate
++  index. Preserve unrelated changes; `--git-push` separately authorizes publishing.
++- Create dry-run reports exclusively; fail on an unreadable existing policy;
++  preserve preflight argv exactly and reject nonfinite timeout values.
++- Retain call reservations across restart and failed diagnostic writes; missing
++  diagnostic claims do not refund the monotonic counter.
++- Add negative regression tests and document migration/owner-adoption boundaries.
++- Keep Codex 0.154.0/0.159.1 capability negotiation unchanged. No Codex update is
++  required by this release. No claim of complete native sandbox certification.
++
++
+ ## 0.2.1 — 2026-09-30 (public preview)
+diff --git a/CITATION.cff b/CITATION.cff
+index 7a410e7..6079949 100644
+--- a/CITATION.cff
++++ b/CITATION.cff
+@@ -8,3 +8,3 @@ authors:
+     affiliation: Independent
+-version: "0.2.1"
++version: "0.3.0"
+ date-released: 2026-09-30
+diff --git a/README.de.md b/README.de.md
+index 2b30d6b..b338d48 100644
+--- a/README.de.md
++++ b/README.de.md
+@@ -8,3 +8,3 @@ Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
+ 
+-Die Version **0.2.1 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
++Die Version **0.3.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+ für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
+@@ -37,3 +37,7 @@ Unterstützte historische Eingabealiase werden mit Migrationshinweis gelesen;
+ Details stehen in der [Kompatibilitätsdokumentation](docs/compatibility.md).
+-Die Laufprotokolle bleiben unverändert unter `.codex_runs`.
++Seit 0.3.0 liegen die maßgebliche Planhistorie, Aufrufbudgets und Runner-Protokolle
++außerhalb des Agenten-Workspaces. Der Doctor verwendet weiterhin `.codex_runs`.
++`--git` benötigt eine explizite Dateiauswahl (`--git-path`); ein Push zusätzlich
++`--git-push`. Vorhandene Dry-run-Berichte werden nicht überschrieben.
++Siehe [Controller-Sicherheit und Migration](docs/controller-safety.md).
+ 
+diff --git a/README.md b/README.md
+index c6f6b34..bd51b5a 100644
+--- a/README.md
++++ b/README.md
+@@ -15,3 +15,3 @@ available for inspection.
+ 
+-**Initial public preview: 0.2.1.** Suitable for supervised evaluation in disposable
++**Public preview: 0.3.0.** Suitable for supervised evaluation in disposable
+ workspaces, not a claim of production readiness or infallible verification.
+@@ -92,2 +92,23 @@ that per-task budget. Read [SECURITY.md](SECURITY.md) before real project use.
+ 
++## Controller safety and upgrading to 0.3.0
++
++The task runner keeps authoritative plan snapshots, persistent call reservations,
++breakdown plans and its run logs **outside the agent workspace**. The initial
++owner-supplied plan is the baseline. After that, changes to task statuses,
++requirements or task membership need controller approval or explicit owner
++adoption; an agent-written `DONE` cannot silently skip another task.
++
++Existing task lists from older versions must be inspected before their first
++0.3.0 run: old workspace logs are not trusted as controller authority. Routine
++restart uses the same private state and does not refund call reservations.
++Use `--accept-plan-changes` only after personally reviewing intentional edits.
++Do not use it just to suppress a detected integrity failure.
++
++`--git` now requires one or more literal `--git-path FILE` selections. Selected
++files must be clean or absent at startup; unrelated staged/unstaged files and
++internal archives are not swept into commits. Pushing additionally requires
++`--git-push`; the default is a local commit only. Existing dry-run reports are
++never overwritten. See [controller safety and migration](docs/controller-safety.md)
++for state locations, recovery, Git examples and the limits of these checks.
++
+ ## Commands and compatibility
+@@ -117,3 +138,3 @@ python3 -B scripts/build_runtime_zip.py
+ 
+-CI runs offline controller tests on Linux, Windows and macOS with Python 3.11
++CI runs offline controller tests on Linux, Windows and macOS with Python 3.11, 3.12
+ and 3.13. These tests use simulated Codex executions where relevant; a green CI
+diff --git a/RUNTIME_PROFILE_API.md b/RUNTIME_PROFILE_API.md
+index e944ebe..b0a853b 100644
+--- a/RUNTIME_PROFILE_API.md
++++ b/RUNTIME_PROFILE_API.md
+@@ -51 +51,7 @@ Konstanten zu untersuchen.
+ Es gibt keine Felder für installierbare Zusatzgruppen mehr.
++
++## Trust boundary
++
++`preflight.command` is executable owner-trusted host code, not sandboxed model
++configuration. Inspect profiles before execution. Argument order, repeats, empty
++values and whitespace are preserved; only a finite positive timeout is valid.
+diff --git a/SECURITY.md b/SECURITY.md
+index e4836a2..2298036 100644
+--- a/SECURITY.md
++++ b/SECURITY.md
+@@ -2,3 +2,3 @@
+ 
+-ARQUILO 0.1.0 is an experimental public preview. Evaluate it under supervision
++ARQUILO is an experimental public preview. Evaluate it under supervision
+ in disposable, least-privilege workspaces. No production security certification
+@@ -35,2 +35,29 @@ not have a separate maintenance commitment.
+ 
++## Controller records and local trust
++
++The task runner stores plan authority, call counters and run evidence outside
++its production workspaces. Ordinary model output cannot authorize task status
++changes. Only validated open child additions and controller-approved completions
++change the persisted plan; owner adoption is an explicit, auditable override.
++Controller file operations reject links/reparse points and hardlinked files.
++POSIX writes use directory-relative descriptors; Windows holds parent-directory
++handles without delete sharing while reading or writing. These are not a new OS
++sandbox or protection against arbitrary code with the user's credentials.
++
++Use local, user-owned state storage. POSIX state roots require user ownership and
++mode 0700; on Windows use the default private LocalAppData or an equivalently
++restricted, user-owned directory with appropriate ACLs. Do not grant Codex,
++external tools or other users extra access to the state root. Profiles with
++`preflight.command` are **trusted executable code with host permissions**, not
++untrusted configuration; do not run downloaded profiles without inspection.
++
++`--git` requires literal owner-selected files; selected files must initially be
++clean or absent. A local commit does not imply authorization to publish it.
++Only `--git-push` enables a push, and unrelated unpushed commits are refused.
++Do not edit the selected files, Git index or branch concurrently with a run.
++The allowlist is not a content/secret scanner or proof that every output is
++correct. Inspect sensitive deliverables before publishing.
++
++See [controller safety](docs/controller-safety.md) for migration and recovery.
++
+ ## Operational baseline
+diff --git a/VERSION b/VERSION
+index 0c62199..0d91a54 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-0.2.1
++0.3.0
+diff --git a/autobuild.py b/autobuild.py
+index 8d55f84..6c63717 100644
+--- a/autobuild.py
++++ b/autobuild.py
+@@ -17,2 +17,4 @@ Erfordert: Codex CLI im PATH, Login bereits erfolgt.
+ from __future__ import annotations
++import safe_io
++from controller_state import state_directory
+ 
+@@ -619,6 +621,6 @@ def setup_workspace(
+         base = Path.cwd() / "codex_jobs"
+-        base.mkdir(parents=True, exist_ok=True)
++        safe_io.mkdir(base)
+         ws = unique_directory(base, prefix=datetime.now().strftime("job_%Y%m%d_%H%M%S"))
+         target = ws / single_file.name
+-        shutil.copy2(single_file, target)
++        safe_io.write_bytes(target, safe_io.read_bytes(single_file))
+         return ws, target
+@@ -627,3 +629,3 @@ def setup_workspace(
+         workdir = native_path(workdir, label="workdir")
+-        workdir.mkdir(parents=True, exist_ok=True)
++        safe_io.mkdir(workdir)
+         return workdir, None
+@@ -951,3 +953,3 @@ def start(
+     if process_stop_path is not None:
+-        candidate = native_path(process_stop_path, base=workspace, label="process_stop_path")
++        candidate = safe_io.check_path(workspace / Path(process_stop_path))
+         if candidate.exists():
+@@ -961,3 +963,3 @@ def start(
+     pretty_log = (
+-        native_path(logfile, label="logfile")
++        safe_io.lexical_path(logfile)
+         if logfile is not None
+@@ -966,3 +968,3 @@ def start(
+     raw_log = (
+-        native_path(rawlog, label="rawlog")
++        safe_io.lexical_path(rawlog)
+         if rawlog is not None
+@@ -971,3 +973,3 @@ def start(
+     summary_json_path = (
+-        native_path(summary_json, label="summary_json") if summary_json is not None else None
++        safe_io.lexical_path(summary_json) if summary_json is not None else None
+     )
+@@ -979,5 +981,9 @@ def start(
+         sys.stdout.flush()
++    budget_directory = (safe_io.lexical_path(context.budget_directory)
++                        if context.budget_directory is not None else unique_directory(
++                            state_directory(workspace, workspace / "standalone"), prefix="call_budget"))
++    if budget_directory.is_relative_to(workspace):
++        raise ValueError("Call budgets must be outside the model-writable workspace")
+     call_budget = CallBudget(
+-        native_path(context.budget_directory, label="budget_directory")
+-        if context.budget_directory is not None else unique_directory(pretty_log.parent, prefix="call_budget"),
++        budget_directory,
+         options.max_calls, context.budget_root_id or todo_identifier or "standalone",
+diff --git a/codex_transport.py b/codex_transport.py
+index c5224ee..248f9e1 100644
+--- a/codex_transport.py
++++ b/codex_transport.py
+@@ -14,2 +14,3 @@ Process-tree lifetime is owned through a per-call operating-system adapter.
+ from __future__ import annotations
++import safe_io
+ 
+@@ -120,3 +121,7 @@ class CodexExecRequest:
+             if value is not None:
+-                object.__setattr__(self, name, native_path(value, base=cwd, label=name))
++                # These are controller/output paths, not user-selected roots.
++                # Resolve no workspace links before the anchored I/O layer sees them.
++                from runtime_files import validate_path
++                validate_path(value, label=name)
++                object.__setattr__(self, name, safe_io.check_path(cwd / Path(value)))
+         paths = [self.raw_log, self.pretty_log, self.output_schema, self.output_last_message]
+@@ -323,4 +328,3 @@ def _inject_console_todo_prefix(line: str, todo_id: Optional[str] = None) -> str
+ def append(path: Path, text: str) -> None:
+-    path.parent.mkdir(parents=True, exist_ok=True)
+-    with path.open("a", encoding="utf-8", newline="\n") as f:
++    with safe_io.open_file(path, "a", encoding="utf-8", newline="\n") as f:
+         f.write(text)
+@@ -710,3 +714,3 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
+     for name in ("stdout.bin", "stderr.bin", "response.txt"):
+-        (acc.capture_dir / name).write_bytes(b"")
++        safe_io.write_bytes(acc.capture_dir / name, b"", exclusive=True)
+     # Strict encoding: an unpaired surrogate must fail before a process starts.
+@@ -718,3 +722,3 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
+ 
+-    with (acc.capture_dir / "prompt.utf8").open("wb", buffering=0) as stream:
++    with safe_io.open_file(acc.capture_dir / "prompt.utf8", "wb", buffering=0) as stream:
+         _write_bytes(stream, prompt, archived)
+@@ -727,3 +731,3 @@ def _cancellation_reason(request: CodexExecRequest) -> str | None:
+     if request.process_stop_path is not None and request.process_stop_path.exists():
+-        reason = request.process_stop_path.read_text(encoding="utf-8").strip() or "process_stop active"
++        reason = safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
+     return reason
+@@ -800,2 +804,3 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
+         archive = None
++        archive_context = None
+ 
+@@ -806,3 +811,4 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
+             try:
+-                archive = (acc.capture_dir / f"{source}.bin").open("ab", buffering=0)
++                archive_context = safe_io.open_file(acc.capture_dir / f"{source}.bin", "ab", buffering=0)
++                archive = archive_context.__enter__()
+             except OSError as exc:
+@@ -834,2 +840,4 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
+                     _io_error("log_error", source, exc)
++            if archive_context is not None:
++                archive_context.__exit__(None, None, None)
+             stream_queue.put((source + "_eof", None))
+@@ -962,3 +970,3 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
+         if request.process_stop_path is not None and request.process_stop_path.exists():
+-            return request.process_stop_path.read_text(encoding="utf-8").strip() or "process_stop active"
++            return safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
+         return request.cancel_requested() if request.cancel_requested is not None else None
+diff --git a/docs/compatibility.md b/docs/compatibility.md
+index 8bf56c7..728ebcb 100644
+--- a/docs/compatibility.md
++++ b/docs/compatibility.md
+@@ -2,3 +2,3 @@
+ 
+-## Current names (ARQUILO 0.2.1)
++## Current names (ARQUILO 0.3.0)
+ 
+@@ -6,3 +6,3 @@ ARQUILO is the only active project name. Use `arquilo.py` and
+ `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
+-identifiers. The public package version is 0.2.1. Individual schema version
++identifiers. The public package version is 0.3.0. Individual schema version
+ suffixes still describe their unchanged payload contracts, not the package version.
+@@ -55,3 +55,5 @@ read new output unchanged. Update readers that match schema strings, the doctor
+ version key, direct Python imports or old prompt markers. Existing `run_todos.py`,
+-`autobuild.py`, `decide.py`, `.codex_runs` and Markdown task syntax stay intact.
++`autobuild.py`, `decide.py` and Markdown task syntax stay intact.
++Runner control records/logs moved outside the workspace in 0.3.0; see
++[controller state and migration](controller-safety.md).
+ Doctor logs now use `.codex_runs/arquilo_doctor`; old diagnostic folders remain.
+diff --git a/docs/quickstart.md b/docs/quickstart.md
+index b150f20..0575eec 100644
+--- a/docs/quickstart.md
++++ b/docs/quickstart.md
+@@ -64,3 +64,4 @@ The `hello.txt` file exists with zero bytes, `todo_result_1.md` describes the ac
+ checks, and the controller changes task 1 to DONE after a separate passing
+-review. Inspect `.codex_runs/run_todos/` for the corresponding run evidence.
++review. Inspect the external controller run directory printed by the runner for its evidence.
++See [state locations](controller-safety.md#where-state-and-logs-live).
+ Never manually mark DONE simply to make a test pass.
+@@ -78,3 +79,3 @@ own Codex account; ARQUILO does not promise access to any named model.
+ A preliminary runner probe is outside that budget. `--network-access` and
+-`--git` are explicit opt-ins, not needed for the examples. See the
++`--git` with explicit `--git-path` selections are opt-ins, not needed for the examples. See the
+ [detailed configuration reference](../documents/CONFIGURATION.md).
+diff --git a/docs/testing.md b/docs/testing.md
+index bf451e4..3adcc9e 100644
+--- a/docs/testing.md
++++ b/docs/testing.md
+@@ -74 +74,9 @@ independent per-call negotiation and the full decision archive path. These tests
+ cannot prove live model access or native sandbox behavior.
++
++## Controller hardening (0.3.0)
++
++`tests/test_controller_hardening.py` reproduces six audited failure classes and
++tests normal completion, restart and parent review. Windows junction and POSIX
++parent-swap cases are platform-specific; symlink tests explicitly skip when the
++host cannot create symlinks. Git push tests use disposable local bare repos only.
++These are controller regressions, not live model or comprehensive sandbox tests.
+diff --git a/docs/troubleshooting.md b/docs/troubleshooting.md
+index 445af3f..9219ad8 100644
+--- a/docs/troubleshooting.md
++++ b/docs/troubleshooting.md
+@@ -50,3 +50,4 @@ In PowerShell, from the failing workspace:
+ ```powershell
+-$raw = Get-ChildItem .\.codex_runs\run_todos -Recurse -Filter autobuild_raw.jsonl |
++$runDir = Read-Host "Paste the controller run directory printed by ARQUILO"
++$raw = Get-ChildItem -LiteralPath $runDir -Recurse -Filter autobuild_raw.jsonl |
+     Sort-Object LastWriteTime -Descending | Select-Object -First 1
+@@ -87 +88,7 @@ The actual Decide transport independently repeats this verification. A
+ its archive retains bounded capability diagnostics, not a user config dump.
++
++## Controller integrity failures (0.3.0)
++
++Do not delete state or automatically accept modified plans. See
++[controller safety and recovery](controller-safety.md) for the new state roots,
++explicit owner adoption, Git selection and no-overwrite dry-run reports.
+diff --git a/documents/CONFIGURATION.md b/documents/CONFIGURATION.md
+index 485482b..d32acd0 100644
+--- a/documents/CONFIGURATION.md
++++ b/documents/CONFIGURATION.md
+@@ -48,4 +48,5 @@ Erhaltene Spezialoptionen:
+   Preflight verpflichtend; im Trockenlauf wird die ausgelassene Prüfung vermerkt.
+-- `--git`: standardmäßig aus, benötigt Git und führt nach erfolgreicher
+-  Abnahme Add/Commit/Push aus. Ohne diese Option benötigt ARQUILO kein Git.
++- `--git`: ab 0.3.0 nur mit wiederholten `--git-path DATEI`; Commit nach erfolgreicher
++  Abnahme nur für ausgewählte Dateien. Ein Push benötigt zusätzlich `--git-push`.
++  Ohne `--git` benötigt ARQUILO kein Git.
+ - `CFG parallel` und Codex-Werkzeugprofile bleiben erhalten; siehe
+@@ -92 +93,8 @@ als Referenz erhalten. Für unterstützte alte Umgebungsnamen siehe
+ [Kompatibilität und Namensmigration](../docs/compatibility.md).
++
++## Controller-Zustand und Git ab 0.3.0
++
++Maßgeblich ist die [Controller-Sicherheitsreferenz](../docs/controller-safety.md):
++`--state-dir`, `--accept-plan-changes`, `--git-path` und `--git-push`.
++Der Git-Push ist keine automatische Folge von `--git` mehr. Vorhandene Dry-run-
++Berichte werden nie überschrieben. Vorhandene Policy-Lesefehler stoppen den Lauf.
+diff --git a/documents/MIGRATION.md b/documents/MIGRATION.md
+index 30cb49c..c2bd8e6 100644
+--- a/documents/MIGRATION.md
++++ b/documents/MIGRATION.md
+@@ -3,3 +3,5 @@
+ Use `arquilo_doctor.py` or `arquilo.py doctor` for diagnostics. `run_todos.py`,
+-`autobuild.py`, `decide.py`, Markdown task syntax and `.codex_runs` are unchanged.
++`autobuild.py`, `decide.py` and Markdown task syntax are retained.
++In 0.3.0, runner control data/logs moved outside the workspace and Git requires
++explicit file selection; see [controller migration](../docs/controller-safety.md).
+ New configuration uses `ARQUILO_*` environment variables; newly emitted JSON
+diff --git a/documents/REVIEW_CORE.md b/documents/REVIEW_CORE.md
+index 6845f3c..d214d13 100644
+--- a/documents/REVIEW_CORE.md
++++ b/documents/REVIEW_CORE.md
+@@ -100,3 +100,3 @@ enthält die Tests nicht; dort bleiben die Paketprüfung und CLI-Hilfe verfügba
+ 
+-Die CI-Matrix in `.github/workflows/ci.yml` prüft Python 3.11 und 3.13 auf Linux,
++Die CI-Matrix in `.github/workflows/ci.yml` prüft Python 3.11, 3.12 und 3.13 auf Linux,
+ Windows und macOS. Maßgeblich ist das tatsächliche Ergebnis des jeweiligen Runs.
+diff --git a/documents/WORKFLOW_LIMITS.md b/documents/WORKFLOW_LIMITS.md
+index 22632d0..5c4f181 100644
+--- a/documents/WORKFLOW_LIMITS.md
++++ b/documents/WORKFLOW_LIMITS.md
+@@ -56,3 +56,4 @@ Budgetmangel allein erzeugt keine Nutzerfrage.
+ 
+-Unter `.codex_runs/run_todos/<lauf>/call_budgets/task_<root>-<eindeutig>/` stehen `budget.json` und
++Unter `<controller-state>/<plan>/call_budgets/task_<root>/` stehen `budget.json`,
++`reservations.json` (monotoner Zähler) und
+ fortlaufende `call_000001.json`-Dateien mit Root, Aufgabe, Phase, Limit und Zeit.
+@@ -84 +85,4 @@ und Live-Codex-Abnahmen bleiben offen. Die manuell startbare CI-Matrix ist in
+ `.github/workflows/lean-limits.yml` definiert.
++
++Ab 0.3.0 bleiben Reservierungen über einen Neustart erhalten; gelöschte Diagnose-
++Claims geben keine Aufrufe frei. [Details](../docs/controller-safety.md).
+diff --git a/documents/lean_package.json b/documents/lean_package.json
+index 00cea14..94be02e 100644
+--- a/documents/lean_package.json
++++ b/documents/lean_package.json
+@@ -5,3 +5,3 @@
+   "build_dependencies": [],
+-  "runtime_file_count": 69,
++  "runtime_file_count": 73,
+   "external_runtime": {
+@@ -34,2 +34,3 @@
+     "config/policy.md",
++    "controller_state.py",
+     "decide.py",
+@@ -41,2 +42,3 @@
+     "docs/compatibility.md",
++    "docs/controller-safety.md",
+     "docs/quickstart.md",
+@@ -66,2 +68,3 @@
+     "review_contract.py",
++    "reviewed_git.py",
+     "run_todos.py",
+@@ -73,2 +76,3 @@
+     "runtime_profile.py",
++    "safe_io.py",
+     "scripts/build_runtime_zip.py",
+@@ -85,3 +89,3 @@
+     "runtime_profiles": "--runtime-profile / ARQUILO_RUNTIME_PROFILE mit bestehenden Grenzen",
+-    "git": "--git explizit; unveränderter Commit-/Push-Pfad, standardmäßig aus"
++    "git": "--git with literal --git-path selections; --git-push separately opts into publishing; default off"
+   },
