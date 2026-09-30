@@ -13,6 +13,7 @@ from removed_features import check_removed_fields
 from execution_budget import DEFAULT_MAX_CALLS, positive_limit
 from runtime_contracts import AutoBuildStatus, ExitCode
 from review_contract import parse_review_classification
+from legacy_naming import schema_matches
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -126,7 +127,7 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
         raise AutoBuildResultError("AutoBuild status/completed contradicts exit_code")
     budget = payload.get("call_budget")
     if budget is not None:
-        if (not isinstance(budget, dict) or budget.get("schema_version") != "dora.call_budget.v1"
+        if (not isinstance(budget, dict) or not schema_matches(budget.get("schema_version"), "arquilo.call_budget.v1")
                 or any(type(budget.get(k)) is not int for k in ("limit", "used", "remaining"))
                 or not 0 <= budget["used"] <= budget["limit"] or budget["limit"] < 1
                 or budget["remaining"] != budget["limit"] - budget["used"]):

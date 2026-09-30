@@ -216,7 +216,7 @@ class DecisionRequest:
         self.to_prompt()  # Reject oversize/invalid UTF-8 before any provider setup.
 
     def to_dict(self) -> dict[str, Any]:
-        return {"schema_version": "dora.decision_input.v1", "kind": self.kind.value,
+        return {"schema_version": "arquilo.decision_input.v1", "kind": self.kind.value,
                 "question": self.question, "options": list(self.options),
                 "context": {s.name: s.text for s in self.context},
                 "run_id": self.run_id, "task_id": self.task_id,
@@ -256,7 +256,7 @@ class TaskSnapshot:
         _text(self.preamble, "preamble", empty=True)
         if self.source == "inline" and re.match(r"\s*Erfülle aus `[^`]+` das ToDo Nummer \d", self.task_text):
             raise DecisionInputError("decision_missing_input", "task_text",
-                                     "A DORA reference prompt requires a concrete ToDo snapshot")
+                                     "A ARQUILO reference prompt requires a concrete ToDo snapshot")
 
 
 def snapshot_todo(text: str, *, task_id: str, reference_prompt: str,

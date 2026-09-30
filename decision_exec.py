@@ -152,7 +152,7 @@ def execute_attempt(
     selected = resolve_launcher(launcher, cwd=base, env=child_env)
     for path in (selected.source, *selected.argv):
         _outside(native_path(path, label="Codex launcher"), project, "Codex launcher")
-    cwd = Path(tempfile.mkdtemp(prefix="dora-decide-", dir=base)).resolve()
+    cwd = Path(tempfile.mkdtemp(prefix="arquilo-decide-", dir=base)).resolve()
     # Shell temp directories, if any tool slips through, stay within its cwd.
     for key in ("TMPDIR", "TEMP", "TMP"):
         child_env[key] = str(cwd)

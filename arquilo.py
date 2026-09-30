@@ -1,13 +1,13 @@
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
-"""ARQUILO command-line entry point; existing runtime APIs remain compatible."""
+"""ARQUILO command-line entry point; current public runtime commands."""
 from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
-from runtime_profile import DORA_RUNTIME_VERSION
+from runtime_profile import ARQUILO_RUNTIME_VERSION
 
-__version__ = DORA_RUNTIME_VERSION
+__version__ = ARQUILO_RUNTIME_VERSION
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -17,7 +17,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         from run_todos import main as run_main
         return run_main(args[1:])
     if args and args[0] == "doctor":
-        from dora_doctor import main as doctor_main
+        from arquilo_doctor import main as doctor_main
         return doctor_main(args[1:])
     if args and args[0] == "capabilities":
         from run_todos import main as run_main

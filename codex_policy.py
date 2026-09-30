@@ -1,6 +1,6 @@
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
-"""Invocation policy shared by the DORA starters and Codex transport.
+"""Invocation policy shared by the ARQUILO starters and Codex transport.
 
 No environment or configuration is read here. The caller grants shell network
 access explicitly; task configuration can only narrow that grant. Codex config
@@ -15,7 +15,7 @@ from typing import Mapping, Sequence
 
 
 class CodexPolicyError(ValueError):
-    """An invocation requests authority outside DORA's fixed boundary."""
+    """An invocation requests authority outside ARQUILO's fixed boundary."""
 
 
 # Fixed execution restrictions, independent of the CLI version string. The
@@ -99,7 +99,7 @@ def validate_sandbox(value: str | None, *, starter: bool = False) -> str:
     allowed = ("workspace-write",) if starter else ("workspace-write", "read-only")
     if value not in allowed:
         raise CodexPolicyError(
-            "DORA startet fest mit workspace-write; unsandboxed, danger-full-access "
+            "ARQUILO startet fest mit workspace-write; unsandboxed, danger-full-access "
             "und fehlende Sandbox sind nicht erlaubt. Nur interne Leseaufrufe dürfen read-only verwenden."
         )
     return value
@@ -127,7 +127,7 @@ def validate_config_profile(value: str | None) -> str | None:
                               or ".." in value):
         raise CodexPolicyError("Codex-Profil muss ein einfacher Profilname ohne Pfad oder Optionen sein.")
     if value is not None and value.lower().replace("_", "-") in {
-        "dora", "dev", "yolo", "unsandboxed", "danger-full-access", "full-access",
+        "dora", "dev", "yolo", "unsandboxed", "danger-full-access", "full-access",  # historical-name: retired security profiles
     }:
         raise CodexPolicyError(f"Codex-Profil {value!r} ist ein entfernter Sicherheitsprofilname. {POLICY_MIGRATION}")
     return value

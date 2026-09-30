@@ -168,9 +168,9 @@ def _start_process(command: Sequence[str], *, cwd: Path, env: Mapping[str, str])
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=False, bufsize=0, **tree.popen_options,
         )
-        proc.dora_process_tree = tree
-        proc.dora_launcher = launcher.metadata()
-        proc.dora_argv = argv
+        proc.arquilo_process_tree = tree
+        proc.arquilo_launcher = launcher.metadata()
+        proc.arquilo_argv = argv
         tree.bind(proc)
     except BaseException:
         tree.abort_start(proc)
@@ -211,10 +211,10 @@ def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
         raise
     finally:
         cleanup = _terminate_process_group(proc, grace_seconds=0.1, reason=f"{probe}_probe_exit")
-        finish_cleanup(proc.dora_process_tree.close, cleanup)
+        finish_cleanup(proc.arquilo_process_tree.close, cleanup)
         if cleanup.errors:
             raise ProcessTreeError("; ".join(cleanup.errors))
-    return subprocess.CompletedProcess(getattr(proc, "dora_argv", command), proc.returncode,
+    return subprocess.CompletedProcess(getattr(proc, "arquilo_argv", command), proc.returncode,
                                        stdout.decode("utf-8"), stderr.decode("utf-8"))
 
 
@@ -531,7 +531,7 @@ def _terminate_process_group(
     reason: str = "requested_termination",
 ):
     """Compatibility name; real launches always have a process-tree owner."""
-    tree = getattr(proc, "dora_process_tree", None)
+    tree = getattr(proc, "arquilo_process_tree", None)
     if isinstance(tree, ProcessTree):
         return tree.terminate(reason=reason, grace_seconds=grace_seconds)
     # Older callers use lightweight process doubles without an OS pid. Never
@@ -540,7 +540,7 @@ def _terminate_process_group(
         if proc.poll() is None:
             proc.terminate()
         return None
-    raise ProcessTreeError("Process has no DORA process-tree owner")
+    raise ProcessTreeError("Process has no ARQUILO process-tree owner")
 
 
 class ProcessStopMonitor:
@@ -626,7 +626,7 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
     parent = request.raw_log.parent / (safe_component(request.raw_log.name) + ".calls")
     acc.capture_dir = unique_directory(parent, prefix="call")
     acc.capture = {
-        "schema_version": "dora.codex.io_capture.v1", "phase": request.phase,
+        "schema_version": "arquilo.codex.io_capture.v1", "phase": request.phase,
         "cwd": str(request.cwd), "argv": build_command(request),
         "stdin": {"expected_bytes": None, "archived_bytes": 0, "written_bytes": 0, "closed": False},
         "stdout": {"received_bytes": 0, "archived_bytes": 0, "eof": False, "invalid_utf8_bytes": 0},
@@ -684,7 +684,7 @@ def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes) -> RunR
         # collector's event-loop finally block has been reached.
         cleanup = _terminate_process_group(proc, grace_seconds=kill_grace, reason="transport_scope_exit")
         try:
-            finish_cleanup(proc.dora_process_tree.close, cleanup)
+            finish_cleanup(proc.arquilo_process_tree.close, cleanup)
             for stream in (proc.stdin, proc.stdout, proc.stderr):
                 if stream is not None and not stream.closed:
                     finish_cleanup(stream.close, cleanup)
@@ -707,12 +707,12 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
     post_turn_grace, stall_timeout = request.timeouts.post_turn_grace, request.timeouts.stall
     kill_grace = request.timeouts.kill_grace
     _redact_prompt_for_pretty_log = request.log_redactor or (lambda value: value)
-    acc.capture["launcher"] = getattr(proc, "dora_launcher", None)
-    acc.capture["resolved_argv"] = getattr(proc, "dora_argv", None)
+    acc.capture["launcher"] = getattr(proc, "arquilo_launcher", None)
+    acc.capture["resolved_argv"] = getattr(proc, "arquilo_argv", None)
     stream_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
     shutdown_requested = threading.Event()
     io_stop = threading.Event()
-    proc.dora_process_tree.prepare_pipes()
+    proc.arquilo_process_tree.prepare_pipes()
 
     def _io_error(kind: str, source: str, exc: Exception) -> None:
         stream_queue.put(("io_error", {"type": kind, "source": source,
@@ -992,7 +992,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
             while any(thread.is_alive() for thread in threads) and time.monotonic() < cancel_deadline:
                 for thread in threads:
                     try:
-                        finish_cleanup(lambda: proc.dora_process_tree.cancel_io(thread), cleanup)
+                        finish_cleanup(lambda: proc.arquilo_process_tree.cancel_io(thread), cleanup)
                     except OSError as exc:
                         acc.stream_errors.append({"type": "io_cleanup_error", "source": thread.name,
                                                   "message": str(exc)})

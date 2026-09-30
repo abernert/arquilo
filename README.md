@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Initial public preview: 0.1.0.** Suitable for supervised evaluation in disposable
+**Initial public preview: 0.2.0.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
@@ -99,9 +99,11 @@ that per-task budget. Read [SECURITY.md](SECURITY.md) before real project use.
 | `python3 arquilo.py capabilities` | Machine-readable capability contracts |
 | `python3 arquilo.py package` | Allowlisted runtime ZIP and SHA-256 sidecar |
 
-The existing `run_todos.py`, `dora_doctor.py`, `DORA_*` environment variables and
-`dora.*` schema identifiers remain supported. This release changes the public
-name, not those integration contracts. See [compatibility](docs/compatibility.md).
+Use `run_todos.py` or `arquilo.py run` for tasks and `arquilo_doctor.py` or
+`arquilo.py doctor` for diagnostics. New configuration uses `ARQUILO_*`
+environment variables; JSON output uses `arquilo.*` schema identifiers.
+Historical input aliases remain migration-only compatibility support; see
+[naming history and migration](docs/compatibility.md).
 There is no official PyPI package in this release; use this repository or its
 release ZIP, not an unrelated similarly named package.
 
@@ -118,7 +120,7 @@ and 3.13. These tests use simulated Codex executions where relevant; a green CI
 run is not proof of real model access, native sandbox enforcement or unattended
 production suitability. The [testing guide](docs/testing.md) separates these checks.
 
-Detailed runtime reference material inherited from DORA is currently in German:
+Detailed ARQUILO runtime reference material is currently in German:
 [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md),
 [preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md)
 and [workflow limits](documents/WORKFLOW_LIMITS.md).

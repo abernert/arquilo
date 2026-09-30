@@ -3,10 +3,10 @@
 **Markdown-Aufträge ausführen, Ergebnisse unabhängig prüfen, kontrolliert fortsetzen.**
 
 ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
-Orchestration**. Das Projekt führt den bisherigen DORA-Lean-Kern unter einem
-neuen öffentlichen Namen fort.
+Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
+[historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.1.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.2.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
@@ -31,10 +31,11 @@ separaten Review, steuert begrenzte Korrekturen und setzt erst nach Abnahme auf
 DONE. Ein separater Review kann trotzdem denselben Modellfehler wiederholen.
 Die tatsächlichen Dateien und fachlichen Prüfkriterien bleiben entscheidend.
 
-Die bisherigen Einstiegspunkte `run_todos.py` und `dora_doctor.py`,
-`DORA_*`-Umgebungsvariablen, `.codex_runs` und `dora.*`-Schemas bleiben aus
-Kompatibilitätsgründen erhalten. Bestehende Integrationen benötigen keine
-pauschale Umbenennung.
+Die direkten Einstiegspunkte heißen `run_todos.py` und `arquilo_doctor.py`.
+Neue Konfigurationen verwenden `ARQUILO_*`, neue JSON-Ausgaben `arquilo.*`.
+Unterstützte historische Eingabealiase werden mit Migrationshinweis gelesen;
+Details stehen in der [Kompatibilitätsdokumentation](docs/compatibility.md).
+Die Laufprotokolle bleiben unverändert unter `.codex_runs`.
 
 ## Referenz
 

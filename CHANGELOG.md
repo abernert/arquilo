@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.0 — 2026-09-30 (public preview)
+
+- Rename the direct diagnostic entry point to `arquilo_doctor.py`; update the
+  CLI wrapper, examples, help, diagnostics, imports, tests and package manifest.
+- Make `ARQUILO_*` environment names and `arquilo.*` JSON schemas canonical.
+  Historical input aliases are documented and warn on use; matching original
+  runtime-profile, package-manifest and call-budget inputs remain readable.
+- Rename the doctor JSON version field to `arquilo_version`. Downstream output
+  consumers and direct Python imports must follow the naming migration.
+- Preserve existing call budgets, run archives, safety checks and mandatory
+  review. No widening of sandbox permissions or automatic deletion of user data.
+- Add naming and compatibility regressions and a release-time naming guard.
+  Clearly separate historical notes from active configuration documentation.
+
+
 ## 0.1.0 — 2026-09-30 (public preview)
 
 Initial public release as **ARQUILO**, a renamed continuation of DORA Lean.

@@ -1,6 +1,10 @@
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
-"""Explicit migration errors for retired runtime features."""
+"""Rejection-only migration errors for retired historical DORA runtime features.
+
+ARQUILO is the active project. None of the predecessor names below enables a
+feature; both historical and renamed spellings are rejected.
+"""
 from __future__ import annotations
 
 import argparse
@@ -37,7 +41,7 @@ REMOVED_POLICY_OPTIONS = frozenset({
 })
 POLICY_MIGRATION = (
     "YOLO, Full Access, --full-auto, --no-check und die Sicherheitsprofile dora/dev "
-    "sind entfernt. Option entfernen, auch bei false. DORA verwendet höchstens "
+    "sind entfernt. Option entfernen, auch bei false. ARQUILO verwendet höchstens "
     "workspace-write und immer Pflichtreviews; --network-access erweitert nur "
     "die Netzwerkfreigabe. Allgemeine --runtime-profile und Codex-Modellprofile "
     "ändern diese Grenzen nicht. Zugriffsfehler werden ohne Rechteerweiterung gemeldet."
@@ -107,6 +111,11 @@ def reject_bridge_wait_conditions(expression: str) -> None:
 
 def check_removed_environment(env: Mapping[str, str] | None = None) -> None:
     environment = os.environ if env is None else env
+    # Normalize only removed-feature lookups; never mutate the caller environment.
+    environment = dict(environment) | {
+        "DORA_" + key[len("ARQUILO_"):]: value
+        for key, value in environment.items() if key.startswith("ARQUILO_")
+    }
     for keys, migration in ((ACE_ENVIRONMENT, ACE_MIGRATION), (BRIDGE_ENVIRONMENT, BRIDGE_MIGRATION),
                             (IACT_ENVIRONMENT, IACT_MIGRATION),
                             (SERVICE_ENVIRONMENT, SERVICE_MIGRATION)):
@@ -117,6 +126,8 @@ def check_removed_environment(env: Mapping[str, str] | None = None) -> None:
 
 def migration_for(key: str) -> str | None:
     normalized = key.lstrip("-").replace("-", "_").lower().split(".", 1)[0]
+    if normalized.startswith("arquilo_"):
+        normalized = "dora_" + normalized[len("arquilo_"):]
     if normalized in ACE_OPTIONS or normalized.upper() in ACE_ENVIRONMENT:
         return ACE_MIGRATION
     if normalized in BRIDGE_OPTIONS or normalized.upper() in BRIDGE_ENVIRONMENT:

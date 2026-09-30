@@ -9,7 +9,7 @@ Fehlern oder qualifiziertem Ergebnis vollständig; der Controller prüft den Sta
 Korrigiere lokale Fehler innerhalb des jeweiligen Auftrags und dokumentiere sie.
 
 ***CFG network_access=false web_search=disabled***
-1. ***Task***: Erstelle die UTF-8-Datei `beispiel.txt` mit genau einer Zeile `Hallo DORA!` und dokumentiere das Ergebnis in `todo_result_1.md`.
+1. ***Task***: Erstelle die UTF-8-Datei `beispiel.txt` mit genau einer Zeile `Hallo ARQUILO!` und dokumentiere das Ergebnis in `todo_result_1.md`.
     Abnahme: Die Datei enthält genau den vorgegebenen Text mit abschließendem Zeilenumbruch. Ergebnisbericht mit tatsächlichem Dateivergleich.
 
 ***CFG network_access=false web_search=disabled***

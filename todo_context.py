@@ -17,7 +17,7 @@ TODO_PREAMBLE_CONTRACT_VERSION = 1
 PREAMBLE_MODES = ("auto", "off", "required")
 MAX_PREAMBLE_BYTES = 65536
 
-SEMANTICS = """DORA – Semantik des bearbeitbaren Markdown-Arbeitsplans (v1):
+SEMANTICS = """ARQUILO – Semantik des bearbeitbaren Markdown-Arbeitsplans (v1):
 - Die Vorbemerkung beschreibt das Gesamtziel, Regeln und Qualitätsmaßstäbe des Projekts. Der aktuelle Einzelauftrag beschreibt den jetzt zu erbringenden Beitrag. Ein Planungsauftrag ist NICHT schon deshalb unvollständig, weil spätere Projektarbeiten noch offen sind.
 - Ausführbare Überschriften: '<id>. Auftrag: ...', '<id>. Task: ...' oder '<id>. ***Task***: ...'. Erledigt: DONE bzw. ***DONE***. Entfallen: OBSOLETE bzw. ***OBSOLETE***. Beispiele in Codeblöcken und HTML-Kommentaren sind keine ausführbaren Aufträge.
 - Der Text bis zur nächsten echten Aufgabenüberschrift gehört zur aktuellen Aufgabe. Zeilen mit ***CFG ...*** und ***WAIT ...*** steuern den jeweils folgenden Auftrag, nicht pauschal das ganze Projekt. ***SYNTAX marked-en*** am Dateianfang wählt markierte englische Kommandowörter. ***STOP*** vor einem Auftrag beendet die Auswahl an dieser Stelle; es ist kein Wartezustand.
@@ -91,8 +91,8 @@ def augment_with_preamble(task_text: str, todo_file: Path, *, mode: str = "auto"
     return (
         SEMANTICS + "\n"
         f"Projektkontext aus {todo_file.name}; UTF-8-Bytes={size}\n"
-        "BEGIN DORA PROJECT PREAMBLE\n" + prefix +
+        "BEGIN ARQUILO PROJECT PREAMBLE\n" + prefix +
         ("" if prefix.endswith("\n") else "\n") +
-        "END DORA PROJECT PREAMBLE\n\n"
+        "END ARQUILO PROJECT PREAMBLE\n\n"
         "AKTUELLER EINZELAUFTRAG / KONTROLLAUFTRAG\n" + task_text
     )

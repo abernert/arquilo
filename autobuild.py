@@ -16,7 +16,7 @@ Erfordert: Codex CLI im PATH, Login bereits erfolgt.
 
 from __future__ import annotations
 
-DORA_DIRECT_REPAIR_REVIEW_CONTRACT_VERSION = 1
+ARQUILO_DIRECT_REPAIR_REVIEW_CONTRACT_VERSION = 1
 
 import argparse
 from runtime_config import (
@@ -81,8 +81,8 @@ from execution_budget import CallBudget, BudgetExhausted, DEFAULT_MAX_CALLS
 from removed_features import reject_removed_options, check_removed_environment, SERVICE_MIGRATION
 from todo_ids import extract_todo_id
 from runtime_profile import (
-    DORA_CODEX_MODEL_ENV,
-    DORA_CODEX_REASONING_EFFORT_ENV,
+    ARQUILO_CODEX_MODEL_ENV,
+    ARQUILO_CODEX_REASONING_EFFORT_ENV,
     RuntimeProfileError,
     load_runtime_profile,
 )
@@ -96,12 +96,12 @@ except ImportError as exc:  # Report when a semantic choice is actually required
 else:
     _DECISION_IMPORT_ERROR = None
 
-CODEX_MODEL_ENV = DORA_CODEX_MODEL_ENV
-CODEX_REASONING_EFFORT_ENV = DORA_CODEX_REASONING_EFFORT_ENV
+CODEX_MODEL_ENV = ARQUILO_CODEX_MODEL_ENV
+CODEX_REASONING_EFFORT_ENV = ARQUILO_CODEX_REASONING_EFFORT_ENV
 
 CODEX_INVOCATION_OVERRIDE_CONTRACT_VERSION = 1
 SUMMARY_SCHEMA_VERSION = "mpa.autobuild.summary.v1"
-DORA_AUTOBUILD_LIFECYCLE_CONTRACT_VERSION = 1
+ARQUILO_AUTOBUILD_LIFECYCLE_CONTRACT_VERSION = 1
 AUTOBUILD_REVIEW_CONTRACT_VERSION = 4
 AUTOBUILD_FINAL_FAILURE_CONTRACT_VERSION = 1
 AUTOBUILD_PARENT_REVIEW_CONTRACT_VERSION = 1
@@ -188,11 +188,11 @@ class ProcessStopActiveError(RuntimeError):
 
 
 def _decision_model() -> Optional[str]:
-    return environment_value("DORA_DECISION_MODEL")
+    return environment_value("ARQUILO_DECISION_MODEL")
 
 
 def _decision_system_prompt() -> str:
-    return environment_value("DORA_DECISION_SYSTEM_PROMPT") or _DEFAULT_DECISION_SYSTEM_PROMPT
+    return environment_value("ARQUILO_DECISION_SYSTEM_PROMPT") or _DEFAULT_DECISION_SYSTEM_PROMPT
 
 
 # ------------------ Utility / Logging ------------------
@@ -1104,7 +1104,7 @@ def start(
                 # Pin the first task contract through local correction attempts.
                 # Decide retains its separate per-attempt evidence contract.
                 review_contract_text = json.dumps({
-                    "schema_version": "dora.review_contract.v1",
+                    "schema_version": "arquilo.review_contract.v1",
                     "original_request": original_task,
                     "task_text": decision_snapshot.task_text,
                     "source": decision_snapshot.source,

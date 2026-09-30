@@ -46,8 +46,9 @@ Unterstuetzte Schluessel:
 - `agent=<name>`: Agentenhinweis fuer den Prompt dieses ToDos.
   Default: nicht gesetzt (kein zusaetzlicher Agentenhinweis und kein Profil-Override).
   - Derselbe geprüfte Name wird als `config_profile` übergeben und erzeugt
-    `codex exec --profile <name>`. Die alten Sicherheitsprofilnamen `dora`,
-    `dev`, `yolo`, `unsandboxed` und Full-Access-Namen werden zurückgewiesen.
+    `codex exec --profile <name>`. Historische Sicherheitsprofile aus dem
+    Vorgängerprojekt sowie `dev`, `yolo`, `unsandboxed` und Full-Access-Namen
+    werden zurückgewiesen; siehe [historische Migration](HISTORICAL_MIGRATION.md).
     Andere Modell-/Werkzeugprofile können die feste Sandbox nicht ersetzen.
 - `model=<modell_id>`: Modell-Override fuer dieses ToDo.
   Ein explizites globales Modell aus `run_todos.py --model` beziehungsweise
@@ -122,7 +123,7 @@ Integrierte Websuche wird separat durch `web_search=live|cached|disabled`
 konfiguriert. `network_access` betrifft vom Agenten gestartete Shellbefehle
 in `workspace-write`; Providerkommunikation und MCP/Apps sind ebenfalls
 getrennte Wege. Deshalb behauptet `network_access=false` keine vollständige
-Offline-Ausführung. Es gibt keinen unbeschränkten Sandboxmodus in DORA Lean.
+Offline-Ausführung. Es gibt keinen unbeschränkten Sandboxmodus in ARQUILO.
 
 Hinweis:
 - Die Directive-Optionen `web_search` und `network_access` werden als temporaere Codex-Config-Overrides (`-c ...`) je ToDo gesetzt.
@@ -146,13 +147,13 @@ Hinweis:
 ## Empfohlener Laufaufruf
 
 ```text
-python3 /programme/dora-lean/run_todos.py --todo-file /projekt/aufgaben.md --workdir /projekt
+python3 /programme/arquilo-lean/run_todos.py --todo-file /projekt/aufgaben.md --workdir /projekt
 ```
 
 Natives Windows/PowerShell:
 
 ```powershell
-py -3.11 C:\Dora\lean\run_todos.py --todo-file C:\Projekt\aufgaben.md --workdir C:\Projekt
+py -3.11 C:\Arquilo\lean\run_todos.py --todo-file C:\Projekt\aufgaben.md --workdir C:\Projekt
 ```
 
 Für Shellnetzwerk muss der Starter zusätzlich `--network-access` erhalten.

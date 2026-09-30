@@ -44,3 +44,12 @@ It includes licenses, documentation, examples and its own build tools. Tests
 verify that an extracted ZIP can display help and be repackaged without access
 to the original checkout. SHA-256 sidecars are integrity checks, not proof of
 origin, chronology or code quality.
+
+## Naming regression guard
+
+Release checks also reject the former project name in active source, examples
+and documentation. Explicitly historical attribution, migration notes and
+input-compatibility tests are allowlisted; rejected predecessor options remain
+rejection-only. Tests cover the doctor entry point and output, canonical
+configuration precedence, same-version schema aliases, budget preservation and
+package contents. These are offline checks, not live model or sandbox claims.

@@ -120,7 +120,7 @@ def atomic_write_text(path: Path, text: str) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(mode="wb", dir=path.parent,
-                                         prefix=".dora-write-", suffix=".pending", delete=False) as handle:
+                                         prefix=".arquilo-write-", suffix=".pending", delete=False) as handle:
             temporary = Path(handle.name)
             if handle.write(data) != len(data):
                 raise OSError("Incomplete UTF-8 staging write")

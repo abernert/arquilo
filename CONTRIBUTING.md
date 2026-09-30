@@ -22,7 +22,7 @@ opted into and clearly described separately from simulated tests.
 
 ## Change discipline
 
-Preserve the existing `DORA_*` and `dora.*` integration contracts unless an
+Use the current `ARQUILO_*` and `arquilo.*` integration contracts unless an
 intentional migration is part of the change. Keep review criteria pinned to the
 original request, preserve failed-attempt evidence, and never fix a test by
 weakening an execution boundary or bypassing review. Add new distributed files

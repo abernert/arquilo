@@ -7,6 +7,6 @@ Python 3.11 oder neuer genügt für den Kern. Echte Aufträge benötigen eine se
 installierte und angemeldete Codex-CLI. Die öffentliche Version 0.1.0 ist eine
 Vorschau, keine Freigabe für unbeaufsichtigte Produktion.
 
-Bestehende Einstiegspunkte und DORA-Schemas bleiben kompatibel. Siehe
+Aktuelle Einstiegspunkte und Schema-Namen sowie historische Eingabealiase sind dokumentiert. Siehe
 [deutsches README](../README.de.md), [Konfiguration](CONFIGURATION.md),
 [Migration](MIGRATION.md) und [Sicherheit](../SECURITY.md).

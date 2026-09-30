@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Lint run_todos-compatible ToDo files and their CFG/WAIT/STOP directives.
 
-This file is a drop-in replacement for dora_agent/todo_lint.py.  It keeps the
+This file validates ARQUILO Markdown task lists. It keeps the
 existing linter contract and adds the CFG keys introduced by the minimal
 breakdown implementation:
 

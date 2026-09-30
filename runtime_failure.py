@@ -33,7 +33,7 @@ def execution_error(message: str, *, code: str = "execution_failed", phase: str 
     if code == "invalid_review":
         category = "review_protocol"
     return {
-        "schema_version": "dora.execution_error.v1",
+        "schema_version": "arquilo.execution_error.v1",
         "code": code, "category": category, "phase": phase,
         "message": message, "process_exit_code": process_exit_code,
         "exit_code": EXIT_INVALID_REVIEW if code == "invalid_review" else EXIT_EXECUTION_ERROR,

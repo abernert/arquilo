@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, UTC
 import json
 from pathlib import Path
+from legacy_naming import schema_matches
 
 DEFAULT_MAX_CALLS = 100
 
@@ -36,11 +37,14 @@ class CallBudget:
             raise ValueError("Budget root_id must be nonempty text")
         self.root_id = root_id
         self.directory.mkdir(parents=True, exist_ok=True)
-        contract = {"schema_version": "dora.call_budget.v1", "root_id": root_id, "limit": limit}
+        contract = {"schema_version": "arquilo.call_budget.v1", "root_id": root_id, "limit": limit}
         try:
             stream = (self.directory / "budget.json").open("x", encoding="utf-8")
         except FileExistsError:
-            if json.loads((self.directory / "budget.json").read_text(encoding="utf-8")) != contract:
+            saved = json.loads((self.directory / "budget.json").read_text(encoding="utf-8"))
+            if isinstance(saved, dict) and schema_matches(saved.get("schema_version"), contract["schema_version"]):
+                saved = saved | {"schema_version": contract["schema_version"]}
+            if saved != contract:
                 raise ValueError("Shared call budget cannot change its root or limit")
         else:
             with stream:
@@ -54,7 +58,7 @@ class CallBudget:
                 stream = path.open("x", encoding="utf-8")
             except FileExistsError:
                 continue
-            record = {"schema_version": "dora.call_claim.v1", "number": number,
+            record = {"schema_version": "arquilo.call_claim.v1", "number": number,
                       "root_id": self.root_id, "task_id": task_id, "phase": phase,
                       "limit": self.limit, "claimed_at": datetime.now(UTC).isoformat()}
             with stream:
@@ -67,6 +71,6 @@ class CallBudget:
         # worker's partial log and never reuse a claim after a failed write.
         used = sum((self.directory / f"call_{n:06d}.json").exists()
                    for n in range(1, self.limit + 1))
-        return {"schema_version": "dora.call_budget.v1", "root_id": self.root_id,
+        return {"schema_version": "arquilo.call_budget.v1", "root_id": self.root_id,
                 "directory": str(self.directory), "limit": self.limit,
                 "used": used, "remaining": self.limit - used}

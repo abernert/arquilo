@@ -1,6 +1,6 @@
 # Projektvorbemerkung und dynamische Markdown-Arbeitspläne
 
-Der normale DORA-Lauf arbeitet weiter in einem gemeinsamen, fortgeschriebenen
+Der normale ARQUILO-Lauf arbeitet weiter in einem gemeinsamen, fortgeschriebenen
 Workspace. Die ToDo-Datei bleibt editierbar. Produktionsagent und Reviewer
 können Projektdateien, frühere `todo_result`-Berichte und neue Artefakte lesen.
 Der Produktionsauftrag verweist weiterhin auf ToDo-Datei, Nummer und
@@ -39,7 +39,7 @@ Folgeaufträge anlegen. Das Gesamtziel ist noch nicht seine Abnahmebedingung.
 | `off` | Keine automatische Einbettung. Der Referenzprompt und die Markdown-Prüfungen bleiben aktiv. |
 | `required` | Fehlende inhaltliche Vorbemerkung ist ein Fehler vor dem Modellaufruf. |
 
-Die CLI übersteuert `DORA_TODO_PREAMBLE`; direkte Python-Aufrufe verwenden
+Die CLI übersteuert `ARQUILO_TODO_PREAMBLE`; direkte Python-Aufrufe verwenden
 `TodoRunner(..., todo_preamble="auto")` und lesen diese Variable nicht implizit.
 Unbekannte Modi werden abgewiesen. Im CLI-Weg erfolgt die Vorprüfung sogar vor
 dem optionalen Codex-Preflight. Die Capability heißt `run_todos.preamble: 1`;

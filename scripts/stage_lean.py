@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if __package__ in (None, ""):
     sys.path.insert(0, str(ROOT))
 from runtime_files import validate_component, validate_path
+from legacy_naming import schema_matches
 
 MANIFEST = "documents/lean_package.json"
 SELECTION_REMOVED = (
@@ -43,12 +44,12 @@ def _check_source_file(source: Path, name: str) -> None:
 def package_files(source: Path, *removed_selection: object, **removed_options: object) -> list[str]:
     _reject_selection(removed_selection, removed_options)
     if sys.version_info < (3, 11):
-        raise ValueError("DORA Lean benötigt Python >=3.11.")
+        raise ValueError("ARQUILO benötigt Python >=3.11.")
     validate_path(source, label="Paketquelle")
     source = source.resolve()
     _check_source_file(source, MANIFEST)
     manifest = json.loads((source / MANIFEST).read_text(encoding="utf-8"))
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != "dora.lean.package.v1":
+    if not isinstance(manifest, dict) or not schema_matches(manifest.get("schema_version"), "arquilo.lean.package.v1"):
         raise ValueError("Unbekannte Paket-Positivliste.")
     if "optional_groups" in manifest:
         raise ValueError(SELECTION_REMOVED + " Veraltete Positivliste aktualisieren.")
@@ -89,7 +90,7 @@ def stage_package(destination: Path, *, source: Path = ROOT,
                     for p in destination.rglob("*") if p.is_file())
     if actual != names:
         raise ValueError("Paketinhalt stimmt nicht mit der Positivliste überein.")
-    return {"schema_version": "dora.lean.staging.v1", "source": str(source),
+    return {"schema_version": "arquilo.lean.staging.v1", "source": str(source),
             "destination": str(destination), "file_count": len(names), "files": names, "status": "PASS"}
 
 
@@ -117,7 +118,7 @@ def zip_package(destination: Path, *, source: Path = ROOT,
             output.close()
             destination.unlink()
             raise
-    return {"schema_version": "dora.lean.distribution.v1", "format": "zip",
+    return {"schema_version": "arquilo.lean.distribution.v1", "format": "zip",
             "source": str(source), "destination": str(destination),
             "file_count": len(names), "files": names, "status": "PASS"}
 

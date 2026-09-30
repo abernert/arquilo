@@ -3,5 +3,5 @@ Copyright 2026 Alexander Bernert
 
 Licensed under the Apache License, Version 2.0. See LICENSE.
 
-ARQUILO is a renamed continuation of the author's DORA Lean runtime.
-Compatibility identifiers and filenames are retained where necessary.
+Historically named DORA Lean, this runtime is now developed as ARQUILO.
+The former name is retained only in historical records and input compatibility.

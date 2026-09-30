@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
-"""Generic, declarative runtime-profile support for DORA.
+"""Generic, declarative runtime-profile support for ARQUILO.
 
 The core deliberately knows nothing about the domain that authored a profile.
 A profile may tighten prompt contracts, protect marked blocks and run a
-fail-closed preflight command.  It cannot disable DORA security controls or
+fail-closed preflight command.  It cannot disable ARQUILO security controls or
 change the fixed sandbox, network grant or mandatory review.
 """
 from __future__ import annotations
@@ -17,19 +17,20 @@ import sys
 import codex_policy
 from removed_features import check_removed_fields, check_removed_environment
 from runtime_files import PathValidationError, native_path, read_utf8
-from runtime_config import DORA_CODEX_MODEL_ENV, DORA_CODEX_REASONING_EFFORT_ENV
+from runtime_config import ARQUILO_CODEX_MODEL_ENV, ARQUILO_CODEX_REASONING_EFFORT_ENV, environment_value
+from legacy_naming import schema_matches
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
-DORA_RUNTIME_VERSION = "0.1.0"
-DORA_RUNTIME_PROFILE_SCHEMA_VERSION = "dora.runtime_profile.v1"
-DORA_RUNTIME_PROFILE_ENV = "DORA_RUNTIME_PROFILE"
-DORA_RUNTIME_PROFILE_CONTRACT_VERSION = 1
-DORA_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION = 1
-DORA_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION = 1
-DORA_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION = 1
+ARQUILO_RUNTIME_VERSION = "0.2.0"
+ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION = "arquilo.runtime_profile.v1"
+ARQUILO_RUNTIME_PROFILE_ENV = "ARQUILO_RUNTIME_PROFILE"
+ARQUILO_RUNTIME_PROFILE_CONTRACT_VERSION = 1
+ARQUILO_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION = 1
+ARQUILO_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION = 1
+ARQUILO_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION = 1
 
 
 class RuntimeProfileError(RuntimeError):
@@ -48,8 +49,8 @@ class PreflightSpec:
 
 @dataclass(frozen=True)
 class RuntimeProfile:
-    schema_version: str = DORA_RUNTIME_PROFILE_SCHEMA_VERSION
-    profile_id: str = "dora.default"
+    schema_version: str = ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION
+    profile_id: str = "arquilo.default"
     profile_version: str = "1"
     source_path: Optional[Path] = None
     activation_markers: Tuple[str, ...] = ()
@@ -213,7 +214,7 @@ def resolve_runtime_profile_path(
         raw = str(explicit_path)
     else:
         env = os.environ if environ is None else environ
-        raw = env.get(DORA_RUNTIME_PROFILE_ENV)
+        raw = environment_value(ARQUILO_RUNTIME_PROFILE_ENV, environ=env)
     if not raw or not str(raw).strip():
         return None
     try:
@@ -245,10 +246,10 @@ def load_runtime_profile(
     schema_version = _as_non_empty_string(
         raw.get("schema_version"), label="schema_version", required=True
     )
-    if schema_version != DORA_RUNTIME_PROFILE_SCHEMA_VERSION:
+    if not schema_matches(schema_version, ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION):
         raise RuntimeProfileError(
             f"Unsupported runtime profile schema {schema_version!r}; expected "
-            f"{DORA_RUNTIME_PROFILE_SCHEMA_VERSION!r}"
+            f"{ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION!r}"
         )
     profile_id = _as_non_empty_string(
         raw.get("profile_id"), label="profile_id", required=True
@@ -272,7 +273,7 @@ def load_runtime_profile(
     )
     assert profile_id is not None and profile_version is not None
     return RuntimeProfile(
-        schema_version=schema_version,
+        schema_version=ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION,
         profile_id=profile_id,
         profile_version=profile_version,
         source_path=path,

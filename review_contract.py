@@ -132,7 +132,7 @@ def build_review_context_reference(path: str, *, contract_text: str | None = Non
 
     The path-only form remains for compatibility. Runtime reviewers should pass
     the controller snapshot inline so review correctness does not depend on
-    platform-specific sandbox access to DORA's archived run logs.
+    platform-specific sandbox access to ARQUILO's archived run logs.
     """
     if contract_text is None:
         return (
@@ -149,11 +149,11 @@ def build_review_context_reference(path: str, *, contract_text: str | None = Non
     inline = contract_text.rstrip("\n")
     return (
         "\n\nCaptured original contract (authoritative controller snapshot):\n"
-        "Use the inline UTF-8 JSON below directly. DORA archives an identical copy separately for audit; "
+        "Use the inline UTF-8 JSON below directly. ARQUILO archives an identical copy separately for audit; "
         "do not use shell or filesystem access to locate or read that archive for this review.\n"
-        "----- BEGIN DORA REVIEW CONTRACT -----\n"
+        "----- BEGIN ARQUILO REVIEW CONTRACT -----\n"
         f"{inline}\n"
-        "----- END DORA REVIEW CONTRACT -----\n"
+        "----- END ARQUILO REVIEW CONTRACT -----\n"
         "Use its task_text and original_request as the recorded requirements, including the effective "
         "preamble. Later edits of the task file do not retroactively change this review's criteria. "
         "Inspect current artifacts and prior result reports in the shared workspace. "

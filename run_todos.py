@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 RUN_TODOS_INPUT_READY_CONTRACT_VERSION = 1
-DORA_DIRECT_REPAIR_RUNNER_CONTRACT_VERSION = 1
-DORA_CAPABILITIES_SCHEMA_VERSION = "dora.capabilities.v1"
+ARQUILO_DIRECT_REPAIR_RUNNER_CONTRACT_VERSION = 1
+ARQUILO_CAPABILITIES_SCHEMA_VERSION = "arquilo.capabilities.v1"
 
 import argparse
 from runtime_config import (
+    environment_value,
     CODEX_REASONING_EFFORT_CHOICES,
     resolve_model as _resolve_codex_model,
     resolve_reasoning_effort as _resolve_codex_reasoning_effort,
@@ -65,13 +66,13 @@ from decision_request import read_input_text, snapshot_todo
 from todo_lint import lint_todo_file
 from todo_ids import extract_todo_id
 from runtime_profile import (
-    DORA_CODEX_MODEL_ENV,
-    DORA_CODEX_REASONING_EFFORT_ENV,
-    DORA_RUNTIME_PROFILE_CONTRACT_VERSION,
-    DORA_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION,
-    DORA_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION,
-    DORA_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION,
-    DORA_RUNTIME_VERSION,
+    ARQUILO_CODEX_MODEL_ENV,
+    ARQUILO_CODEX_REASONING_EFFORT_ENV,
+    ARQUILO_RUNTIME_PROFILE_CONTRACT_VERSION,
+    ARQUILO_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION,
+    ARQUILO_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION,
+    ARQUILO_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION,
+    ARQUILO_RUNTIME_VERSION,
     RuntimeProfile,
     RuntimeProfileError,
     empty_runtime_profile,
@@ -79,12 +80,12 @@ from runtime_profile import (
     run_runtime_profile_preflight,
 )
 
-RUN_CONFIG_SCHEMA_VERSION = "dora.run_config.v1"
-CODEX_MODEL_ENV = DORA_CODEX_MODEL_ENV
-CODEX_REASONING_EFFORT_ENV = DORA_CODEX_REASONING_EFFORT_ENV
+RUN_CONFIG_SCHEMA_VERSION = "arquilo.run_config.v1"
+CODEX_MODEL_ENV = ARQUILO_CODEX_MODEL_ENV
+CODEX_REASONING_EFFORT_ENV = ARQUILO_CODEX_REASONING_EFFORT_ENV
 
 CODEX_INVOCATION_OVERRIDE_CONTRACT_VERSION = 1
-DORA_RUNTIME_PROFILE_RUNNER_CONTRACT_VERSION = 1
+ARQUILO_RUNTIME_PROFILE_RUNNER_CONTRACT_VERSION = 1
 RUN_TODOS_BREAKDOWN_CONTRACT_VERSION = 3
 RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION = 1
 RUN_TODOS_PARENT_REVIEW_CONTRACT_VERSION = 1
@@ -151,22 +152,22 @@ def validate_removed_directives(text: str) -> None:
                     reject_bridge_wait_conditions(value)
 
 
-def dora_capabilities_payload() -> Dict[str, Any]:
+def arquilo_capabilities_payload() -> Dict[str, Any]:
     return {
-        "schema_version": DORA_CAPABILITIES_SCHEMA_VERSION,
-        "runtime_version": DORA_RUNTIME_VERSION,
+        "schema_version": ARQUILO_CAPABILITIES_SCHEMA_VERSION,
+        "runtime_version": ARQUILO_RUNTIME_VERSION,
         "retained_core_options": ["CFG parallel", "runtime_profile", "--git"],
         "features": {
             "run_todos.breakdown": RUN_TODOS_BREAKDOWN_CONTRACT_VERSION,
             "run_todos.final_failure": RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION,
             "run_todos.parent_review": RUN_TODOS_PARENT_REVIEW_CONTRACT_VERSION,
             "run_todos.process_stop_policy": RUN_TODOS_PROCESS_STOP_POLICY_CONTRACT_VERSION,
-            "run_todos.direct_repair": DORA_DIRECT_REPAIR_RUNNER_CONTRACT_VERSION,
+            "run_todos.direct_repair": ARQUILO_DIRECT_REPAIR_RUNNER_CONTRACT_VERSION,
             "run_todos.preamble": TODO_PREAMBLE_CONTRACT_VERSION,
-            "runtime_profile": DORA_RUNTIME_PROFILE_CONTRACT_VERSION,
-            "runtime_profile.preflight": DORA_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION,
-            "runtime_profile.protected_blocks": DORA_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION,
-            "runtime_profile.prompt_policy": DORA_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION,
+            "runtime_profile": ARQUILO_RUNTIME_PROFILE_CONTRACT_VERSION,
+            "runtime_profile.preflight": ARQUILO_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION,
+            "runtime_profile.protected_blocks": ARQUILO_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION,
+            "runtime_profile.prompt_policy": ARQUILO_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION,
             "autobuild.final_failure": AUTOBUILD_FINAL_FAILURE_CONTRACT_VERSION,
             "autobuild.review_policy": AUTOBUILD_REVIEW_POLICY_CONTRACT_VERSION,
         },
@@ -344,7 +345,7 @@ def _codex_missing_message(detail: Optional[str] = None) -> str:
     if detail:
         lines.append(f"Detail: {detail}")
     lines.append(
-        "DORA lockert die Sandbox bei Fehlern nicht. Prüfe die Codex-Sandboxinstallation."
+        "ARQUILO lockert die Sandbox bei Fehlern nicht. Prüfe die Codex-Sandboxinstallation."
     )
     return "\n".join(lines)
 
@@ -416,7 +417,7 @@ def _codex_workspace_write_known_hints(output: str, *, platform_name: str) -> Li
     )
     if any(token in normalized for token in auth_tokens):
         hints.append(
-            "Codex-Authentisierung: pruefe die Codex-Anmeldung und die vom CLI gemeldete Providerkonfiguration. DORA benoetigt keinen eigenen API-Key."
+            "Codex-Authentisierung: pruefe die Codex-Anmeldung und die vom CLI gemeldete Providerkonfiguration. ARQUILO benoetigt keinen eigenen API-Key."
         )
 
     if "unexpected argument" in normalized and "--skip-git-repo-check" in normalized:
@@ -463,7 +464,7 @@ def _format_codex_preflight_process_failure(
         lines.append("Codex-Ausgabe:")
         lines.append(_tail_text(combined_output))
     lines.append(
-        "DORA lockert die Sandbox bei Fehlern nicht. Prüfe die Codex-Sandboxinstallation."
+        "ARQUILO lockert die Sandbox bei Fehlern nicht. Prüfe die Codex-Sandboxinstallation."
     )
     return "\n".join(lines)
 
@@ -548,7 +549,7 @@ def run_codex_workspace_write_preflight(
             _format_codex_preflight_version_failure(version_process)
         )
 
-    with tempfile.TemporaryDirectory(prefix="dora-codex-preflight-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="arquilo-codex-preflight-") as tmpdir:
         temp_workspace = Path(tmpdir).resolve()
         try:
             request = codex_transport.CodexExecRequest(
@@ -1276,7 +1277,7 @@ class TodoRunner:
         record.input_sources.extend(sorted(todo_file.parent.glob("todo_result_*.md")))
         if result_file is not None:
             record.input_sources.append(result_file)
-        record.payload = {"schema_version": "dora.task_log.v1", "run_id": self.run_id,
+        record.payload = {"schema_version": "arquilo.task_log.v1", "run_id": self.run_id,
                           "identifier": identifier, "status": "preparing", "completed": False}
         if not self.dry_run:
             write_log_json(log_dir / "task_log.json", record.payload)
@@ -1314,7 +1315,7 @@ class TodoRunner:
         log_record.outputs = copy_log_files(log_record.log_dir, "outputs", paths,
                                            workspace=log_record.workspace)
         log_record.payload = {
-            "schema_version": "dora.task_log.v1", "run_id": self.run_id,
+            "schema_version": "arquilo.task_log.v1", "run_id": self.run_id,
             "identifier": log_record.identifier, "todo_id": log_record.todo_id,
             "workspace": str(log_record.workspace), "completed": outcome.completed,
             "status": "failed" if outcome.execution_error else "completed" if outcome.completed else "incomplete",
@@ -1346,7 +1347,7 @@ class TodoRunner:
         if self.dry_run:
             return
         write_log_json(self.run_dir / "run_log.json", {
-            "schema_version": "dora.run_log.v1", "run_id": self.run_id,
+            "schema_version": "arquilo.run_log.v1", "run_id": self.run_id,
             "status": run_status, "exit_code": self.exit_code,
             "completed": sorted(self.completed), "incomplete": sorted(self.incomplete),
             "failed": sorted(self.failed), "execution_error": self.terminal_execution_error,
@@ -2853,7 +2854,7 @@ class TodoRunner:
                 source=str(todo_file),
             )
             contract_text = json.dumps({
-                "schema_version": "dora.review_contract.v1",
+                "schema_version": "arquilo.review_contract.v1",
                 "original_request": task_text, "task_text": snapshot.task_text,
                 "source": str(todo_file),
             }, ensure_ascii=False, indent=2) + "\n"
@@ -4065,16 +4066,16 @@ class TodoRunner:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Automatisiert ToDos über AutoBuild.", allow_abbrev=False,
-        epilog="Kostenfreie Installationsdiagnose: python dora_doctor.py --help. Anleitung: documents/QUICKSTART.md.")
+        epilog="Kostenfreie Installationsdiagnose: python arquilo_doctor.py --help. Anleitung: documents/QUICKSTART.md.")
     add_removed_arguments(parser)
     parser.add_argument(
         "--todo-syntax", choices=("auto", "legacy", "marked-en"),
-        default=os.environ.get("DORA_TODO_SYNTAX", "auto"),
+        default=environment_value("ARQUILO_TODO_SYNTAX") or "auto",
         help="Schreibweise für neue Task-Kommandos: auto (Datei), legacy oder marked-en (***Task***). Bestehende Listen bleiben lesbar.",
     )
     parser.add_argument(
         "--todo-preamble", choices=("auto", "off", "required"),
-        default=os.environ.get("DORA_TODO_PREAMBLE", "auto"),
+        default=environment_value("ARQUILO_TODO_PREAMBLE") or "auto",
         help="Projektvorbemerkung und Dateisemantik in AutoBuild-Aufträge einbetten: auto (wenn vorhanden), off oder required.",
     )
     parser.add_argument(
@@ -4225,7 +4226,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--print-capabilities",
         action="store_true",
-        help="DORA-Kernverträge und erhaltene Kernoptionen als JSON anzeigen; keine Modellaufrufe.",
+        help="ARQUILO-Kernverträge und erhaltene Kernoptionen als JSON anzeigen; keine Modellaufrufe.",
     )
     return parser.parse_args(argv)
 
@@ -4241,7 +4242,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args = parse_args(argv)
         if args.print_capabilities:
             should_beep = False
-            print(json.dumps(dora_capabilities_payload(), ensure_ascii=False, sort_keys=True))
+            print(json.dumps(arquilo_capabilities_payload(), ensure_ascii=False, sort_keys=True))
             return 0
         try:
             for name in ("todo_file", "workdir", "runtime_profile", "dry_run_file"):

@@ -29,9 +29,9 @@ from scripts.build_runtime_zip import build_distribution
 from scripts.check_release import check_release
 from scripts.stage_lean import package_files, stage_package
 
-BEGIN = "----- BEGIN DORA REVIEW CONTRACT -----\n"
-END = "\n----- END DORA REVIEW CONTRACT -----"
-CONTRACT = json.dumps({"schema_version": "dora.review_contract.v1", "task_text": "Create hello.txt; Prüfung.",
+BEGIN = "----- BEGIN ARQUILO REVIEW CONTRACT -----\n"
+END = "\n----- END ARQUILO REVIEW CONTRACT -----"
+CONTRACT = json.dumps({"schema_version": "arquilo.review_contract.v1", "task_text": "Create hello.txt; Prüfung.",
                        "original_request": "Create an empty file. Do not change task status.", "source": "tasks.md"}, ensure_ascii=False) + "\n"
 PASS = {"verdict": "PASS", "short_summary": "Verified actual output.", "blocking_issues": [],
         "non_blocking_observations": [], "breakdown_recommended": False, "breakdown_reason": None}
@@ -211,7 +211,7 @@ class CliTests(unittest.TestCase):
         run.assert_called_once_with(['--workdir','somewhere'])
 
     def test_doctor_dispatch(self):
-        with patch('dora_doctor.main', return_value=1) as run:
+        with patch('arquilo_doctor.main', return_value=1) as run:
             self.assertEqual(arquilo.main(['doctor','--json']), 1)
         run.assert_called_once_with(['--json'])
 
@@ -231,7 +231,7 @@ class CliTests(unittest.TestCase):
                                   capture_output=True, text=True, encoding='utf-8', timeout=30)
             self.assertEqual(proc.returncode,0,proc.stderr)
         data = json.loads(proc.stdout)
-        self.assertEqual(data['schema_version'], 'dora.capabilities.v1')
+        self.assertEqual(data['schema_version'], 'arquilo.capabilities.v1')
 
     def test_dry_run_does_not_execute_task(self):
         with tempfile.TemporaryDirectory() as t:

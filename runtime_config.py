@@ -7,18 +7,19 @@ import math
 import os
 from typing import Mapping
 import warnings
+from legacy_naming import historical_environment_aliases
 
-DORA_CODEX_MODEL_ENV = "DORA_CODEX_MODEL"
-DORA_CODEX_REASONING_EFFORT_ENV = "DORA_CODEX_REASONING_EFFORT"
+ARQUILO_CODEX_MODEL_ENV = "ARQUILO_CODEX_MODEL"
+ARQUILO_CODEX_REASONING_EFFORT_ENV = "ARQUILO_CODEX_REASONING_EFFORT"
 CODEX_REASONING_EFFORT_CHOICES = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
-# Compatibility only. New configurations use CLI options or the DORA names.
+# Compatibility only. New configurations use CLI options or the ARQUILO names.
 LEGACY_ENV = {
-    "DORA_DECISION_MODEL": ("AUTOBUILD_DECISION_MODEL", "METACODEX_DECISION_MODEL"),
-    "DORA_DECISION_SYSTEM_PROMPT": ("AUTOBUILD_DECISION_SYSTEM_PROMPT", "METACODEX_DECISION_SYSTEM_PROMPT"),
-    "DORA_CODEX_POST_TURN_EXIT_GRACE_SECONDS": ("AUTOBUILD_CODEX_POST_TURN_EXIT_GRACE_SECONDS",),
-    "DORA_CODEX_STALL_TIMEOUT_SECONDS": ("AUTOBUILD_CODEX_STALL_TIMEOUT_SECONDS",),
-    "DORA_CODEX_KILL_GRACE_SECONDS": ("AUTOBUILD_CODEX_KILL_GRACE_SECONDS",),
+    "ARQUILO_DECISION_MODEL": ("AUTOBUILD_DECISION_MODEL", "METACODEX_DECISION_MODEL"),
+    "ARQUILO_DECISION_SYSTEM_PROMPT": ("AUTOBUILD_DECISION_SYSTEM_PROMPT", "METACODEX_DECISION_SYSTEM_PROMPT"),
+    "ARQUILO_CODEX_POST_TURN_EXIT_GRACE_SECONDS": ("AUTOBUILD_CODEX_POST_TURN_EXIT_GRACE_SECONDS",),
+    "ARQUILO_CODEX_STALL_TIMEOUT_SECONDS": ("AUTOBUILD_CODEX_STALL_TIMEOUT_SECONDS",),
+    "ARQUILO_CODEX_KILL_GRACE_SECONDS": ("AUTOBUILD_CODEX_KILL_GRACE_SECONDS",),
 }
 
 
@@ -32,7 +33,7 @@ def optional_text(value: str | None) -> str | None:
 
 def environment_value(name: str, *, environ: Mapping[str, str] | None = None) -> str | None:
     env = os.environ if environ is None else environ
-    aliases = LEGACY_ENV.get(name, ())
+    aliases = (*historical_environment_aliases(name), *LEGACY_ENV.get(name, ()))
     used = [alias for alias in aliases if optional_text(env.get(alias)) is not None]
     if used:
         warnings.warn(f"{', '.join(used)} deprecated; use {name}. {name} takes precedence.",
@@ -45,11 +46,11 @@ def environment_value(name: str, *, environ: Mapping[str, str] | None = None) ->
 
 
 def resolve_model(value: str | None, *, environ: Mapping[str, str] | None = None) -> str | None:
-    return optional_text(value) or environment_value(DORA_CODEX_MODEL_ENV, environ=environ)
+    return optional_text(value) or environment_value(ARQUILO_CODEX_MODEL_ENV, environ=environ)
 
 
 def resolve_reasoning_effort(value: str | None, *, environ: Mapping[str, str] | None = None) -> str | None:
-    resolved = optional_text(value) or environment_value(DORA_CODEX_REASONING_EFFORT_ENV, environ=environ)
+    resolved = optional_text(value) or environment_value(ARQUILO_CODEX_REASONING_EFFORT_ENV, environ=environ)
     if resolved is None:
         return None
     resolved = resolved.lower()
@@ -62,9 +63,9 @@ def resolve_reasoning_effort(value: str | None, *, environ: Mapping[str, str] | 
 def transport_timeout_values(*, environ: Mapping[str, str] | None = None) -> dict[str, float]:
     result = {}
     for field, name, default in (
-        ("post_turn_grace", "DORA_CODEX_POST_TURN_EXIT_GRACE_SECONDS", 120.0),
-        ("stall", "DORA_CODEX_STALL_TIMEOUT_SECONDS", 7200.0),
-        ("kill_grace", "DORA_CODEX_KILL_GRACE_SECONDS", 10.0),
+        ("post_turn_grace", "ARQUILO_CODEX_POST_TURN_EXIT_GRACE_SECONDS", 120.0),
+        ("stall", "ARQUILO_CODEX_STALL_TIMEOUT_SECONDS", 7200.0),
+        ("kill_grace", "ARQUILO_CODEX_KILL_GRACE_SECONDS", 10.0),
     ):
         raw = environment_value(name, environ=environ)
         try:

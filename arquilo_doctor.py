@@ -53,7 +53,7 @@ def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[st
         )
         settings = decide.DecisionExecSettings(
             project_root=workspace, trusted_codex_home=Path.home() / ".codex", env=env,
-            log_root=workspace / ".codex_runs" / "dora_doctor", launcher=launcher.source,
+            log_root=workspace / ".codex_runs" / "arquilo_doctor", launcher=launcher.source,
             timeouts=TransportTimeouts(total=timeout), max_attempts=1,
             process_stop_path=workspace / "process_stop",
         )
@@ -127,12 +127,12 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
     environment = dict(os.environ if env is None else env)
     root = Path(__file__).resolve().parent
     report = {
-        "schema_version": "dora.doctor.v1",
+        "schema_version": "arquilo.doctor.v1",
         "recorded_at": datetime.now().astimezone().isoformat(),
         "status": "FAIL", "checks_status": "FAIL",
         "python": {"version": sys.version.split()[0], "executable": sys.executable,
                    "platform": sys.platform, "minimum": "3.11"},
-        "dora_version": None, "codex_version": None, "launcher": None,
+        "arquilo_version": None, "codex_version": None, "launcher": None,
         "codex_compatibility": "functional_contract",
         "paths": {"installation": str(root), "caller_cwd": str(Path.cwd())},
         "checks": [], "probes": [], "exec_flags": {}, "decision_features": {},
@@ -154,8 +154,8 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
 
     check("python", sys.version_info >= (3, 11), "Python >=3.11 erforderlich.")
     try:
-        report["dora_version"] = (root / "VERSION").read_text(encoding="utf-8").strip()
-        check("runtime_version", bool(report["dora_version"]), "VERSION aus dieser Installation.")
+        report["arquilo_version"] = (root / "VERSION").read_text(encoding="utf-8").strip()
+        check("runtime_version", bool(report["arquilo_version"]), "VERSION aus dieser Installation.")
     except (OSError, UnicodeError):
         check("runtime_version", False, "VERSION fehlt oder ist nicht als UTF-8 lesbar.")
     try:
@@ -248,9 +248,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, ensure_ascii=True, indent=2))
     else:
-        print(f"DORA Doctor: {report['status']} (lokale Prüfungen: {report['checks_status']})")
+        print(f"ARQUILO Doctor: {report['status']} (lokale Prüfungen: {report['checks_status']})")
         print(f"Python: {report['python']['version']} ({report['python']['executable']})")
-        print(f"DORA: {report['dora_version']}; Codex: {report['codex_version'] or 'nicht erkannt'}")
+        print(f"ARQUILO: {report['arquilo_version']}; Codex: {report['codex_version'] or 'nicht erkannt'}")
         for key, value in report["paths"].items():
             print(f"{key}: {value}")
         if report["launcher"]:

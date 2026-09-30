@@ -14,12 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if __package__ in (None, ""):
     sys.path.insert(0, str(ROOT))
 from scripts.stage_lean import package_files
+from scripts.check_naming import check_naming
 
 
 def check_release(source: Path = ROOT) -> dict:
     source = source.resolve()
     names = package_files(source)
-    required = {"LICENSE", "NOTICE", "VERSION", "README.md", "arquilo.py", "SECURITY.md"}
+    check_naming(source, names)
+    required = {"LICENSE", "NOTICE", "VERSION", "README.md", "arquilo.py", "arquilo_doctor.py", "SECURITY.md"}
     if not required.issubset(names):
         raise ValueError("Missing required distribution files: " + ", ".join(sorted(required - set(names))))
     version = (source / "VERSION").read_text(encoding="utf-8").strip()
@@ -28,7 +30,7 @@ def check_release(source: Path = ROOT) -> dict:
     tree = ast.parse((source / "runtime_profile.py").read_text(encoding="utf-8"))
     runtime_versions = [ast.literal_eval(node.value) for node in tree.body
                         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name)
-                        and t.id == "DORA_RUNTIME_VERSION" for t in node.targets)]
+                        and t.id == "ARQUILO_RUNTIME_VERSION" for t in node.targets)]
     if runtime_versions != [version]:
         raise ValueError("VERSION and runtime version disagree")
     citation = (source / "CITATION.cff").read_text(encoding="utf-8")
@@ -69,7 +71,7 @@ def check_release(source: Path = ROOT) -> dict:
         raise ValueError("Broken local links: " + "; ".join(bad_links))
     return {"status": "PASS", "version": version, "runtime_files": len(names),
             "python_files": code_count, "checks": ["allowlist", "license", "attribution",
-            "version", "python_syntax", "headers", "local_document_links"]}
+            "version", "python_syntax", "headers", "local_document_links", "active_naming"]}
 
 
 def main(argv=None) -> int:

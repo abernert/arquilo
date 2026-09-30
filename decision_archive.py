@@ -46,7 +46,7 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
     from codex_transport import TransportTimeouts
 
     return {
-        "schema_version": "dora.decision_attempt.v1",
+        "schema_version": "arquilo.decision_attempt.v1",
         "identity": {"run_id": request.run_id, "task_id": request.task_id,
                      "phase": request.phase, "input_attempt_id": request.attempt_id,
                      "decision_id": decision_id, "attempt_number": number},
