@@ -146,6 +146,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         "notes": ["CLI-Version ist Metadatum; keine Versionsliste oder Mindestversion.",
                   "Ohne --check-decide nur --version, exec --help und features list, kein Modellprompt.",
                   "--check-decide: höchstens ein Modellaufruf; keine automatische Wiederholung.",
+                  "--check-decide ohne --model nutzt das von Codex/Provider konfigurierte Default-Modell.",
                   "Keine Auth-Datei oder Umgebungs-/Konfigurationsdumps im Bericht.",
                   "ToDo-Inhalt und Profil-Preflight separat mit --dry-run prüfen.",
                   "Runner logs live under the default external controller state root (or --state-dir); the runner prints the exact per-plan path.",
