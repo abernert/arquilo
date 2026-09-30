@@ -244,7 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="Strukturierten Bericht auf stdout ausgeben, auch bei Fehlern.")
     parser.add_argument("--check-decide", action="store_true",
                         help="Decide tatsächlich prüfen: höchstens ein Modellaufruf, kann Kosten verursachen.")
-    parser.add_argument("--model", help="Expliziter Modell-Override für --check-decide; ohne Angabe nutzt Codex sein konfiguriertes/default Modell.")
+    parser.add_argument("--model", help="Expliziter Modell-Override für --check-decide; ohne Angabe übergibt ARQUILO kein --model und Codex/Provider wählt den Default.")
     parser.add_argument("--reasoning-effort", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
                         help="Reasoning-Effort für --check-decide.")
     parser.add_argument("--decide-timeout", type=float, default=None,
