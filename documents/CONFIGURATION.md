@@ -33,11 +33,21 @@ Runner und AutoBuild verwenden denselben Resolver in `runtime_config.py`.
 Werte werden pro Invocation übergeben; Codex-Konfigurationsdateien werden
 nicht geändert. Profile und CFG dürfen die feste Startpolicy nicht erweitern.
 
-Decide übernimmt das wirksame Auftragsmodell/Effort, sofern eines ausdrücklich
-gesetzt ist. Sind weder Auftrags- noch Decide-Modell gesetzt, übergibt ARQUILO
-kein `--model`; Codex beziehungsweise der aktive Provider wählt dann unter der
-isolierten Decide-Konfiguration sein Default-Modell. Für reproduzierbare Läufe
-Modell/Effort explizit angeben; die Distribution legt kein bestimmtes Modell fest.
+Decide übernimmt explizite Auftrags-/Decide-Modell- und Effortwerte. Ohne Override
+bleiben Modell, Provider, Endpunkt, Authentifizierung und weitere Provisioning-
+Parameter der Codex-Hostkonfiguration überlassen. `CODEX_HOME` und die gesamte
+vertrauenswürdige Prozessumgebung einschließlich Proxy/CA/Provider-Token bleiben
+wirksam; ARQUILO liest/kopiert keine Zugangsdaten oder TOML-Dateien.
+Der Doctor unterstützt optional `--model-provider <ID>` und `--profile <Name>`
+für `--check-decide`; ohne Angabe wird kein entsprechender Override erzeugt.
+Dasselbe gilt für `model_provider`/`config_profile` in der Decide-Python-API.
+Ein explizit gewähltes AutoBuild-Codex-Profil wird auch an Decide übergeben.
+
+Die vielen Feature-Overrides und die doppelte Feature-Abfrage entfallen ab 0.4.0.
+Decide verwendet einen frischen Arbeitsordner und `read-only`/`never`, validiert
+Antwort/Schema/Optionen und lehnt Tool-Events ab. Konfigurierte Integrationen
+bleiben aber Host-Vertrauen; die Eventprüfung verhindert nicht präventiv einen
+bereits ausgelösten Tool-/Hook-Aufruf. Siehe [Konfiguration und Grenzen](../docs/decide-configuration.md).
 
 Erhaltene Spezialoptionen:
 

@@ -46,7 +46,7 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
     from codex_transport import TransportTimeouts
 
     return {
-        "schema_version": "arquilo.decision_attempt.v1",
+        "schema_version": "arquilo.decision_attempt.v2",
         "identity": {"run_id": request.run_id, "task_id": request.task_id,
                      "phase": request.phase, "input_attempt_id": request.attempt_id,
                      "decision_id": decision_id, "attempt_number": number},
@@ -59,13 +59,14 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
             "model": request.model, "reasoning_effort": request.reasoning_effort,
             "max_input_bytes": request.max_input_bytes,
             "timeouts": asdict(settings.timeouts or TransportTimeouts(total=120)),
-            "sandbox": "workspace-write", "network_access": False,
-            "enforced_cli_arguments": None,  # Set only after verified negotiation.
-            "requested_policy_arguments": (
-                codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
-                + codex_policy.decision_arguments(network_access=False, config_profile=None, extra_args=())),
-            "environment": "OS allowlist only; values and credentials are not archived",
-            "auth": "explicit trusted Codex home; credentials are not read or copied",
+            "sandbox": "read-only", "network_access": False,
+            "model_provider": settings.model_provider, "config_profile": settings.config_profile,
+            "configuration_policy": "inherit-trusted-host",
+            "enforced_cli_arguments": None,
+            "requested_policy_arguments": codex_policy.decision_arguments(
+                network_access=False, config_profile=settings.config_profile, extra_args=()),
+            "environment": "trusted host environment inherited; values are not archived",
+            "auth": "Codex configuration/CODEX_HOME inherited; credentials not read or copied",
         },
         "cli_version": None, "cwd": None,
         "cleanup_policy": "retain workdir; explicit cleanup only after all attempts are archived",
@@ -120,14 +121,12 @@ def finish_manifest(manifest: dict, *, directory: Path, result: DecisionResult,
     status = ("succeeded" if result.valid else "invalid_response" if result.failure
               else result.execution.status.value)
     settings = dict(manifest["settings"])
-    compatibility = capture.get("decision_feature_compatibility", {})
+    compatibility = capture.get("decision_cli_compatibility", {})
     if compatibility.get("status") == "PASS":
-        settings["enforced_cli_arguments"] = (
-            codex_policy.sandbox_arguments(sandbox="workspace-write", network_access=False)
-            + codex_policy.decision_arguments(network_access=False, config_profile=None,
-                                             extra_args=(), features=compatibility["selected_features"]))
+        settings["enforced_cli_arguments"] = codex_policy.decision_arguments(
+            network_access=False, config_profile=settings.get("config_profile"), extra_args=())
     return manifest | {
-        "settings": settings, "feature_compatibility": compatibility,
+        "settings": settings, "cli_compatibility": compatibility,
         "finished_at": timestamp(), "status": status, "archive_complete": True,
         "result": asdict(result), "artifacts": artifacts,
         "retry": manifest["retry"] | {"scheduled": retry_scheduled},

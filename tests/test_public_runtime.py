@@ -162,12 +162,11 @@ class EventPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             codex_policy.parse_decision_event('{"type":"turn.started","type":"error"}')
 
-    def test_warning_suppression_is_owned_by_decide(self):
-        self.assertIn("suppress_unstable_features_warning=true", codex_policy.DECISION_CONFIG)
-        self.assertIn("features.skip_host_skill_discovery=true", codex_policy.DECISION_CONFIG)
+    def test_decide_keeps_host_config_and_does_not_toggle_features(self):
         args = codex_policy.decision_arguments(network_access=False, config_profile=None, extra_args=())
-        self.assertIn("--ignore-user-config", args)
-        self.assertIn("features.shell_tool=false", args)
+        self.assertEqual(args, ["--sandbox", "read-only", "-c", 'approval_policy="never"'])
+        self.assertNotIn("--ignore-user-config", args)
+        self.assertFalse(any(arg.startswith("features.") for arg in args))
 
     def test_top_level_error_is_fatal_but_item_warning_is_not(self):
         with tempfile.TemporaryDirectory() as t, redirect_stdout(io.StringIO()):

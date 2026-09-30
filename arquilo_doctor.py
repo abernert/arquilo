@@ -18,22 +18,19 @@ from typing import Mapping, Sequence
 from uuid import uuid4
 
 from codex_launcher import CodexLauncher, resolve_launcher
-from codex_transport import (TransportTimeouts, metadata_probe_arguments, probe_cli_metadata,
-                             inspect_decision_features)
+from codex_transport import TransportTimeouts, metadata_probe_arguments, probe_cli_metadata
+import codex_policy
 from runtime_files import validate_path
 
 
-REQUIRED_EXEC_FLAGS = (
-    "--json", "--output-schema", "--output-last-message", "--skip-git-repo-check",
-    "--sandbox", "--config", "--model", "--profile", "--ephemeral",
-    "--ignore-user-config", "--ignore-rules", "--strict-config",
-)
+REQUIRED_EXEC_FLAGS = codex_policy.DECISION_REQUIRED_EXEC_FLAGS
 PROBE_TIMEOUT_SECONDS = 10
 DECIDE_TIMEOUT_SECONDS = 120
 
 
 def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[str, str],
-                    model: str | None, reasoning_effort: str | None, timeout: float) -> dict:
+                    model: str | None, reasoning_effort: str | None, timeout: float,
+                    model_provider: str | None = None, config_profile: str | None = None) -> dict:
     """One public Decide call with normal isolation, validation and full logs.
 
     A valid but wrong choice is a failed smoke test. Never retry, weaken the
@@ -53,7 +50,8 @@ def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[st
             model=model, reasoning_effort=reasoning_effort,
         )
         settings = decide.DecisionExecSettings(
-            project_root=workspace, trusted_codex_home=Path.home() / ".codex", env=env,
+            project_root=workspace, env=env,
+            model_provider=model_provider, config_profile=config_profile,
             log_root=workspace / ".codex_runs" / "arquilo_doctor", launcher=launcher.source,
             timeouts=TransportTimeouts(total=timeout), max_attempts=1,
             process_stop_path=workspace / "process_stop",
@@ -66,6 +64,9 @@ def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[st
         probe["archive"] = str(call.directory) if call.directory is not None else None
         probe["model"] = call.request.model if call.request is not None else model
         probe["reasoning_effort"] = reasoning_effort
+        probe["model_provider"] = model_provider
+        probe["config_profile"] = config_profile
+        probe["configuration_policy"] = "inherit-trusted-host"
         probe["model_calls"] = sum(
             row.attempt is not None and "launcher" in row.attempt.result.trace.capture
             for row in call.attempts
@@ -110,6 +111,7 @@ def _probe(name: str, launcher: CodexLauncher, *, cwd: Path, env: Mapping[str, s
 def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None,
                    env: Mapping[str, str] | None = None, check_decide: bool = False,
                    model: str | None = None, reasoning_effort: str | None = None,
+                   model_provider: str | None = None, config_profile: str | None = None,
                    decide_timeout: float = DECIDE_TIMEOUT_SECONDS) -> dict:
     """Resolve paths like run_todos; metadata by default, Decide only by opt-in.
 
@@ -122,13 +124,16 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
     if (type(decide_timeout) not in (int, float) or not math.isfinite(decide_timeout)
             or decide_timeout <= 0):
         raise ValueError("decide_timeout muss eine endliche positive Sekundenzahl sein.")
+    codex_policy.validate_model_provider(model_provider)
+    codex_policy.validate_config_profile(config_profile)
     if not check_decide and (model is not None or reasoning_effort is not None
+                             or model_provider is not None or config_profile is not None
                              or decide_timeout != DECIDE_TIMEOUT_SECONDS):
         raise ValueError("Decide-Optionen benötigen --check-decide.")
     environment = dict(os.environ if env is None else env)
     root = Path(__file__).resolve().parent
     report = {
-        "schema_version": "arquilo.doctor.v1",
+        "schema_version": "arquilo.doctor.v2",
         "recorded_at": datetime.now().astimezone().isoformat(),
         "status": "FAIL", "checks_status": "FAIL",
         "python": {"version": sys.version.split()[0], "executable": sys.executable,
@@ -136,17 +141,20 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         "arquilo_version": None, "codex_version": None, "launcher": None,
         "codex_compatibility": "functional_contract",
         "paths": {"installation": str(root), "caller_cwd": str(Path.cwd())},
-        "checks": [], "probes": [], "exec_flags": {}, "decision_features": {},
-        "decision_feature_details": {}, "unavailable_optional_features": [],
+        "checks": [], "probes": [], "exec_flags": {},
+        "configuration_policy": "inherit-trusted-host",
         "model_calls": 0,
         "decision_probe": {"status": "NOT_RUN", "requested": check_decide,
                            "detail": "Funktionsprobe nur mit --check-decide; kann Modellkosten verursachen."},
         "not_verified": ["Decide-Funktion, Codex-Anmeldung und Modellzugang", "native Sandboxwirkung",
                          "Windows-Sandbox-Einrichtung", "Live-Werkzeugausführung und andere Modellaufgaben"],
         "notes": ["CLI-Version ist Metadatum; keine Versionsliste oder Mindestversion.",
-                  "Ohne --check-decide nur --version, exec --help und features list, kein Modellprompt.",
+                  "Ohne --check-decide nur --version und exec --help, kein Modellprompt.",
                   "--check-decide: höchstens ein Modellaufruf; keine automatische Wiederholung.",
-                  "--check-decide ohne --model übergibt kein --model; Codex/Provider wählt den Default.",
+                  "Modell/Provider/Profil/Effort: ohne expliziten Override entscheidet die bestehende Codex-Konfiguration.",
+                  "CODEX_HOME, Provider-, Proxy- und Zertifikatsumgebung werden vom Host übernommen.",
+                  "Decide fordert read-only/never an; Tool-Events werden nicht als Entscheidung akzeptiert.",
+                  "Konfigurierte Tools/Hooks bleiben vertrauenswürdige Host-Konfiguration; kein präventiver No-Tools-Nachweis.",
                   "Keine Auth-Datei oder Umgebungs-/Konfigurationsdumps im Bericht.",
                   "ToDo-Inhalt und Profil-Preflight separat mit --dry-run prüfen.",
                   "Runner logs live under the default external controller state root (or --state-dir); the runner prints the exact per-plan path.",
@@ -198,31 +206,15 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         report["codex_version"] = version
     # Unknown version banners are not a compatibility verdict; do not expose
     # arbitrary output (potential credentials) when the banner is unrecognised.
-    flags = set(re.findall(r"^\s*(?:-[A-Za-z],\s*)?(--[a-z-]+)(?=\s|$)", outputs["help"], re.MULTILINE))
-    report["exec_flags"] = {flag: flag in flags for flag in REQUIRED_EXEC_FLAGS}
+    flags = codex_policy.exec_help_flags(outputs["help"])
+    required_flags = codex_policy.decision_required_flags(model=model, config_profile=config_profile)
+    report["exec_flags"] = {flag: flag in flags for flag in required_flags}
     check("exec_flags", all(report["exec_flags"].values()), "Alle benötigten Exec-Schalter im lokalen --help.")
-    if not report.get("interrupted") and all(row["status"] == "PASS" for row in report["probes"]):
-        compatibility = inspect_decision_features(
-            launcher=(launcher.source,), cwd=workspace, env=environment,
-            timeout=PROBE_TIMEOUT_SECONDS,
-        )
-        report["probes"].extend(compatibility["probes"])
-        for record in compatibility["probes"]:
-            check("probe_" + record["name"], record["status"] == "PASS",
-                  record.get("error", "Lokale CLI-Leseprobe."))
-        report["decision_feature_details"] = compatibility["features"]
-        report["decision_features"] = {name: row["status"] in {"verified", "unavailable_optional"}
-                                       for name, row in compatibility["features"].items()}
-        report["unavailable_optional_features"] = compatibility["unavailable_optional"]
-        if compatibility["interrupted"]:
-            report["interrupted"] = True
-        check("decision_features", compatibility["status"] == "PASS", compatibility["detail"])
-    else:
-        check("decision_features", False, "Nicht geprüft: CLI-Metadaten fehlen oder Diagnose abgebrochen.")
     if check_decide and all(item["status"] == "PASS" for item in report["checks"]):
         report["decision_probe"] = _decision_probe(
             workspace=workspace, launcher=launcher, env=environment, model=model,
             reasoning_effort=reasoning_effort, timeout=decide_timeout,
+            model_provider=model_provider, config_profile=config_profile,
         ) | {"requested": True}
         report["model_calls"] = report["decision_probe"]["model_calls"]
         passed = report["decision_probe"]["status"] == "PASS"
@@ -245,17 +237,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--check-decide", action="store_true",
                         help="Decide tatsächlich prüfen: höchstens ein Modellaufruf, kann Kosten verursachen.")
     parser.add_argument("--model", help="Expliziter Modell-Override für --check-decide; ohne Angabe übergibt ARQUILO kein --model und Codex/Provider wählt den Default.")
+    parser.add_argument("--model-provider", help="Optionaler Provider-ID-Override; Standard aus Codex-Konfiguration.")
+    parser.add_argument("--profile", dest="config_profile", help="Optionales vorhandenes Codex-Profil; keine automatische Auswahl.")
     parser.add_argument("--reasoning-effort", choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
                         help="Reasoning-Effort für --check-decide.")
     parser.add_argument("--decide-timeout", type=float, default=None,
                         help=f"Zeitlimit der Funktionsprobe in Sekunden (Standard {DECIDE_TIMEOUT_SECONDS}, plus Metadaten/Prozessbereinigung).")
     args = parser.parse_args(argv)
-    if not args.check_decide and any(value is not None for value in (args.model, args.reasoning_effort, args.decide_timeout)):
-        parser.error("--model, --reasoning-effort und --decide-timeout benötigen --check-decide.")
+    if not args.check_decide and any(value is not None for value in (args.model, args.reasoning_effort, args.decide_timeout, args.model_provider, args.config_profile)):
+        parser.error("Modell-, Provider-, Profil-, Effort- und Timeout-Overrides benötigen --check-decide.")
     if args.decide_timeout is not None and (not math.isfinite(args.decide_timeout) or args.decide_timeout <= 0):
         parser.error("--decide-timeout muss eine endliche positive Sekundenzahl sein.")
     report = collect_report(workdir=args.workdir, todo_file=args.todo_file, check_decide=args.check_decide,
                             model=args.model, reasoning_effort=args.reasoning_effort,
+                            model_provider=args.model_provider, config_profile=args.config_profile,
                             decide_timeout=DECIDE_TIMEOUT_SECONDS if args.decide_timeout is None else args.decide_timeout)
     if args.json:
         print(json.dumps(report, ensure_ascii=True, indent=2))
@@ -271,14 +266,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Exec {flag}: {'vorhanden' if supported else 'fehlt'}")
         for check in report["checks"]:
             print(f"[{check['status']}] {check['name']}: {check['detail']}")
-        for name, feature in report.get("decision_feature_details", {}).items():
-            if feature["status"] == "unavailable_optional":
-                print(f"[INFO] {name}: in dieser CLI nicht verfügbar; optionaler Override entfällt.")
-            elif feature["status"] != "verified":
-                print(f"[FAIL] {name}: {feature['status']}; erwartet={feature['expected']}, "
-                      f"beobachtet={feature['observed']}")
         if any(probe.get("stderr_present") for probe in report["probes"]):
             print("CLI hat Diagnosehinweise auf stderr ausgegeben; Details lokal prüfen.")
+        print("Decide-Konfiguration: bestehende Codex-Hostkonfiguration; keine automatische Modell-/Providerwahl.")
         print("Nicht verifiziert: " + "; ".join(report["not_verified"]))
         probe = report["decision_probe"]
         print(f"Decide: {probe['status']}. {probe['detail']}")

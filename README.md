@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.3.1.** Suitable for supervised evaluation in disposable
+**Public preview: 0.4.0.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
@@ -89,6 +89,16 @@ provide its own OS security boundary: enforcement depends on Codex and the host.
 Shell network access and Git actions are explicit opt-ins. The call budget is
 not a currency or token cap, and the runner's preliminary Codex probe is outside
 that per-task budget. Read [SECURITY.md](SECURITY.md) before real project use.
+
+## Use your existing Codex provider
+
+Decide inherits the trusted Codex configuration and host environment, including
+custom provider authentication, `CODEX_HOME`, proxies and certificates. With no
+explicit model/provider/profile override, ARQUILO sends none. It never chooses
+an OpenAI fallback. See [Decide configuration](docs/decide-configuration.md) for
+minimal argv, explicit overrides and the changed trust boundary in 0.4.0.
+Configured integrations are trusted; rejecting a tool event is not prevention
+of a tool/hook having run. Decide now requests `read-only` with no escalation.
 
 ## Controller safety and upgrading to 0.3.0
 

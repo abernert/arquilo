@@ -44,7 +44,7 @@ class DoctorNamingTests(unittest.TestCase):
     def test_report_schema_and_version_key_are_current(self):
         with patch('arquilo_doctor.resolve_launcher', side_effect=OSError('CLI unavailable')):
             report = arquilo_doctor.collect_report(workdir=ROOT, env={})
-        self.assertEqual(report['schema_version'], 'arquilo.doctor.v1')
+        self.assertEqual(report['schema_version'], 'arquilo.doctor.v2')
         self.assertEqual(report['arquilo_version'], arquilo.__version__)
         self.assertNotIn('dora_version', report)
         self.assertEqual(report['model_calls'], 0)

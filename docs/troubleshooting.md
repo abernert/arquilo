@@ -20,8 +20,7 @@ Do not use a world-writable shared directory for sensitive workloads.
 ## A diagnostic `error` item aborts Decide
 
 The runtime distinguishes a nonfatal item notification from a top-level fatal
-error. The public code includes the fix allowing diagnostic items and suppresses
-the unstable-feature warning caused by its own host-skill-discovery setting.
+error. The public code includes the fix allowing diagnostic items without enabling the historical unstable host-skill-discovery setting.
 Unknown items and tool execution events remain rejected for Decide.
 
 ## The file was created, but the review stopped
@@ -99,21 +98,28 @@ Correct the documented cause first. Preserve the marker as a timestamped file
 outside the active marker path, then rerun consciously. A fresh test is often
 best done in a new disposable workspace rather than by deleting evidence.
 
-## Doctor reports `decision_features` with an older Codex CLI
+## Direct Codex works, but Decide fails (provider/model/proxy)
 
-Update ARQUILO to 0.2.1 or later; updating Codex is not required merely because
-`daemon_auto_start` is absent. The Doctor reports this as an optional unavailable
-control and omits that override. On newer CLIs the same control must be disabled.
+Update ARQUILO to 0.4.0. The old Decide path forced a provider, ignored user
+configuration and filtered provider/proxy/CA environment variables. Merely
+removing the model name in 0.3.1 did not fix these differences. Current Decide
+inherits trusted host configuration without bulk feature overrides. Start it
+from the same approved shell environment as the working CLI. Set `--profile`
+only when a saved named profile is actually needed. No endpoint or model is
+selected automatically. [Configuration details](decide-configuration.md).
 
-Run `python3 arquilo_doctor.py --json` for `decision_feature_details` (expected,
-observed, availability and per-control status). `unavailable_optional` is an
-accepted absence, not proof of a disabled feature. `missing_required`,
-`not_confirmed`, `wrong_value` and `catalog_changed` prevent Decide execution.
-Do not remove mandatory controls or `--strict-config` to make a test pass.
+`codex_decision_cli_failed` means required Exec flags could not be confirmed
+before the model started. The Doctor no longer requires `features list` or
+new experimental flags. `--model`/`--profile` support is needed only when those
+selectors are used. Review the bounded diagnostics, not a complete config dump.
 
-The actual Decide transport independently repeats this verification. A
-`codex_decision_features_failed` result means no model process was started;
-its archive retains bounded capability diagnostics, not a user config dump.
+## Decide rejected a tool event under the configured provider
+
+The prompt asks for a decision from supplied evidence only, and ARQUILO rejects
+tool/unknown events. In 0.4.0 the host's configured integrations remain trusted;
+the event gate cannot prevent or undo their execution. Inspect local Codex
+configuration and use an IT-approved restricted profile where appropriate.
+Do not bypass the sandbox or change a failed review to PASS.
 
 ## Controller integrity failures (0.3.0)
 

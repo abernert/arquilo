@@ -56,22 +56,42 @@ package contents. These are offline checks, not live model or sandbox claims.
 
 ## Real Codex metadata compatibility (opt-in locally; no model calls)
 
-The `Codex metadata compatibility` workflow checks upstream 0.154.0 (without
-`daemon_auto_start`) and 0.159.1 (with it) on Linux, Windows and macOS using
-Python 3.12 and isolated temporary homes. CI downloads an exact upstream release
-asset and verifies its SHA-256 digest before extracting only the CLI executable.
-It does not update a user's installation, load personal credentials, or send
-model prompts. The workflow runs on pushes and pull requests to main and can
-also be triggered manually. Outcomes must be read from the exact CI run.
+The `Codex metadata compatibility` workflow checks actual upstream 0.154.0 and
+0.159.1 on Linux, Windows and macOS with Python 3.12 and temporary homes. CI
+verifies the release digest before extracting the executable. It verifies the
+minimal Exec contract and parses synthetic custom-provider/named-profile
+configuration with `features list` and `mcp list` (no MCP servers), without
+overrides, real credentials or a model prompt. A malformed selected profile must
+fail. This metadata-only fixture is not the runtime Decide path.
 
-See `scripts/install_test_codex.py` and `scripts/check_codex_features.py`; run
-these locally only when intentionally testing external executables. The
-standard offline unit-test command does not download or execute these binaries.
+See `scripts/install_test_codex.py` and `scripts/check_codex_configuration.py`.
+The standard offline test command downloads/executes no upstream binaries.
+`tests/test_decide_configuration.py` replaces tests of the retired bulk feature
+negotiation with configuration inheritance, exact argv, explicit-only selectors,
+proxy/CA/token forwarding without archival, cancellation/no-fallback behavior,
+format retry and full archive tests. Neither proves a real Databricks tenant
+connection or complete native sandbox enforcement.
 
-Offline tests separately simulate wrong values, ignored overrides, malformed and
-duplicate catalogs, missing mandatory controls, interruptions, no-model failures,
-independent per-call negotiation and the full decision archive path. These tests
-cannot prove live model access or native sandbox behavior.
+## Real CLI against a loopback fake provider (no billed model)
+
+The same compatibility jobs also execute `scripts/check_codex_provider.py`.
+This is a real Codex process and full Decide result/archive flow, but the
+Responses endpoint is a local HTTP test server with synthetic credentials.
+Six cases cover config defaults, model-only override, provider-only override,
+a named profile, explicit selectors overriding that profile, and provider
+rejection without selecting another model/provider. The fixture checks the
+actual URL, deployment name, bearer/header values, query parameters, inherited
+reasoning effort, unchanged configuration and structured response acceptance.
+
+No personal config, Databricks account or external model service is used. No
+MCP servers or hooks are configured in this fixture: their startup remains
+trusted Codex behavior, not an ARQUILO prevention guarantee. This test does not
+validate corporate TLS/proxies, VM installation or native sandbox enforcement.
+Run it locally only with an explicitly approved Codex binary:
+
+```sh
+python3 -B scripts/check_codex_provider.py --codex /absolute/path/to/codex
+```
 
 ## Controller hardening (0.3.0)
 
