@@ -1,0 +1,213 @@
++The cwd is still outside the task workspace, so project-local model settings
++are not imported. Put provider provisioning in the user/managed Codex config.
++There is no new ARQUILO profile/config-file dialect or automatic profile choice.
++
++The remaining fixed overrides restrict tools: read-only sandbox, no approval
++escalation, disabled web search, no AGENTS document discovery/notify hook, and
++the existing disabled tool features grouped in **one** TOML `features` table.
++Features are still discovered and their effective values verified per call.
++No `model_provider="openai"`, `--ignore-user-config`, `--ignore-rules`, or
++`--strict-config` is added to Decide. Production/review policies are unchanged.
++
++Loading normal config also exposes configured MCP integrations. Merely passing
++`mcp_servers={}` would not clear them: Codex merges configuration tables.
++Decide therefore asks Codex for `mcp list --json`, adds one compact table that
++disables the listed servers for this call, and verifies the disabled state when
++servers exist. Missing/invalid introspection or ineffective disable controls
++stop before the model starts. Raw MCP configuration is neither displayed nor
++archived; it may contain headers or credentials. No provider parsing is needed.
++
++These metadata checks make no model request, but Codex may consult configured
++MCP authentication endpoints or trusted credential helpers. They are not
++promised to be offline or free of every host-side effect. Trusted configuration
++and host environment are intentional inputs, not an isolation boundary from the
++machine owner. Do not run untrusted Codex configurations or edit them mid-call.
++An unexpected tool event is rejected, but event validation is not a pre-tool
++interceptor or substitute for Codex's native sandbox.
++
++## Testing limits
++
++Offline tests cover forwarding, environment preservation, no-fallback behavior,
++redacted metadata failures and retained acceptance/tool controls. The opt-in
++`scripts/check_codex_provider.py` runs real Codex against a local fake gateway
++with dummy credentials. It checks configured endpoint/model/header selection,
++explicit overrides, disabled MCP, response validation and a rejected request.
++It does not use a real model or validate your Databricks account, corporate
++proxy, certificate chain, Windows install layout or every native sandbox path.
+diff --git a/docs/testing.md b/docs/testing.md
+index 3adcc9e..f9fb705 100644
+--- a/docs/testing.md
++++ b/docs/testing.md
+@@ -64 +64 @@ It does not update a user's installation, load personal credentials, or send
+-model prompts. The workflow runs on pushes and pull requests to main and can
++prompts to a real provider. The workflow runs on pushes and pull requests to main and can
+@@ -82,0 +83,10 @@ These are controller regressions, not live model or comprehensive sandbox tests.
++
++## Real CLI, simulated corporate gateway (0.3.2)
++
++The compatibility workflow also runs `scripts/check_codex_provider.py` against a
++loopback HTTP test server and synthetic config/credentials. It verifies normal
++config model/provider/header selection, independent explicit overrides, disabled
++MCP startup, structured response acceptance and rejection without fallback.
++No real model is called; this does not verify a Databricks service, corporate
++proxy/TLS, or native sandbox enforcement. The standard unittest command uses
++only fakes; the native integration requires an explicitly selected CLI.
+diff --git a/docs/troubleshooting.md b/docs/troubleshooting.md
+index 2817544..1da2180 100644
+--- a/docs/troubleshooting.md
++++ b/docs/troubleshooting.md
+@@ -112 +112,2 @@ accepted absence, not proof of a disabled feature. `missing_required`,
+-Do not remove mandatory controls or `--strict-config` to make a test pass.
++Do not remove mandatory tool controls to make a test pass. From 0.3.2 Decide
++does not itself force strict-config or suppress user config.
+@@ -122,0 +124,9 @@ explicit owner adoption, Git selection and no-overwrite dry-run reports.
++
++## Direct Codex works but corporate Decide fails
++
++Use 0.3.2 or newer: older Decide calls could override the provider and omit
++proxy/credential environment even after the fixed model default was removed.
++Verify that the same approved CLI and user/managed `CODEX_HOME` configuration
++are used. Do not dump credential files or redirect a corporate task to another
++provider to obtain a PASS. Configured gateway/authentication errors remain
++errors, without fallback. See [Decide configuration](decide-configuration.md).
+diff --git a/documents/CONFIGURATION.md b/documents/CONFIGURATION.md
+index f46aa1f..c7d45c6 100644
+--- a/documents/CONFIGURATION.md
++++ b/documents/CONFIGURATION.md
+@@ -38,2 +38,2 @@ gesetzt ist. Sind weder Auftrags- noch Decide-Modell gesetzt, übergibt ARQUILO
+-kein `--model`; Codex beziehungsweise der aktive Provider wählt dann unter der
+-isolierten Decide-Konfiguration sein Default-Modell. Für reproduzierbare Läufe
++kein `--model`; Codex beziehungsweise der aktive Provider wählt dann aus der normalen
++Benutzer-/verwalteten Codex-Konfiguration sein Default-Modell. Für reproduzierbare Läufe
+@@ -101,0 +102,11 @@ Berichte werden nie überschrieben. Vorhandene Policy-Lesefehler stoppen den Lau
++
++## Decide und Firmenprovider ab 0.3.2
++
++Decide erzwingt weder `model_provider="openai"` noch einen Modellnamen. Es
++verwendet den konfigurierten `CODEX_HOME` und behält die Host-Umgebung für
++Provider-Token, Proxys und Zertifikate bei. `--ignore-user-config`,
++`--ignore-rules` und `--strict-config` werden für Decide nicht gesetzt.
++Der Doctor sowie die Decide-Python-APIs unterstützen zusätzlich einen expliziten
++`model_provider` (Doctor: `--model-provider`); sonst bleibt die Providervorgabe
++Codex überlassen. Sicherheitsvorgaben betreffen nur Tools/Abnahme, nicht Routing.
++[Details und Grenzen](../docs/decide-configuration.md).
+diff --git a/documents/lean_package.json b/documents/lean_package.json
+index 94be02e..6edd65a 100644
+--- a/documents/lean_package.json
++++ b/documents/lean_package.json
+@@ -6 +6 @@
+-  "runtime_file_count": 73,
++  "runtime_file_count": 74,
+@@ -43,0 +44 @@
++    "docs/decide-configuration.md",
+diff --git a/runtime_config.py b/runtime_config.py
+index 26793c5..5289228 100644
+--- a/runtime_config.py
++++ b/runtime_config.py
+@@ -7,0 +8 @@ import os
++from pathlib import Path
+@@ -78,0 +80,24 @@ def transport_timeout_values(*, environ: Mapping[str, str] | None = None) -> dic
++
++
++def resolve_codex_home(*, environ: Mapping[str, str] | None = None) -> Path:
++    """Use the owner's Codex home, not an ARQUILO-specific credential store.
++
++    The result is validated against the task workspace by decision_environment.
++    Values are host configuration; never accept them from task/model output.
++    """
++    env = os.environ if environ is None else environ
++    values = [value for key, value in env.items()
++              if key == "CODEX_HOME" or (os.name == "nt" and key.upper() == "CODEX_HOME")]
++    if any(not isinstance(value, str) or "\0" in value for value in values):
++        raise ValueError("CODEX_HOME must be a NUL-free path")
++    if len(set(values)) > 1:
++        raise ValueError("Conflicting CODEX_HOME values")
++    value = values[0] if values else None
++    if value is not None and (not isinstance(value, str) or "\0" in value):
++        raise ValueError("CODEX_HOME must be a NUL-free path")
++    if not value or not value.strip():
++        return Path.home() / ".codex"
++    path = Path(value).expanduser()
++    if not path.is_absolute():
++        raise ValueError("CODEX_HOME must be absolute")
++    return path
+diff --git a/runtime_profile.py b/runtime_profile.py
+index 6c8c9e6..e9c38b0 100644
+--- a/runtime_profile.py
++++ b/runtime_profile.py
+@@ -28 +28 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
+-ARQUILO_RUNTIME_VERSION = "0.3.1"
++ARQUILO_RUNTIME_VERSION = "0.3.2"
+diff --git a/scripts/check_codex_features.py b/scripts/check_codex_features.py
+index d314b5a..5d4690f 100644
+--- a/scripts/check_codex_features.py
++++ b/scripts/check_codex_features.py
+@@ -10,0 +11 @@ import tempfile
++import tomllib
+@@ -51 +52,2 @@ def main() -> int:
+-        if ('features.daemon_auto_start=false' in command) == absent:
++        config = tomllib.loads('\n'.join(command[i+1] for i, a in enumerate(command[:-1]) if a == '-c'))
++        if ('daemon_auto_start' in config['features']) == absent:
+@@ -53 +55,3 @@ def main() -> int:
+-        if not {'--strict-config', '--ignore-user-config', 'features.shell_tool=false'}.issubset(command):
++        if (config['features']['shell_tool'] is not False or
++                '--strict-config' in command or '--ignore-user-config' in command or
++                'model_provider' in config or command[command.index('--sandbox')+1] != 'read-only'):
+diff --git a/scripts/check_codex_provider.py b/scripts/check_codex_provider.py
+new file mode 100644
+index 0000000..c615045
+--- /dev/null
++++ b/scripts/check_codex_provider.py
+@@ -0,0 +1,148 @@
++# Copyright 2026 Alexander Bernert
++# SPDX-License-Identifier: Apache-2.0
++"""Opt-in real Codex CLI against a loopback fake provider; no real model or credentials.
++
++Verifies configuration selection and the full Decide response path, NOT Databricks,
++corporate proxy/TLS infrastructure, model quality, or native tool sandboxing.
++"""
++from __future__ import annotations
++import argparse
++from contextlib import redirect_stdout, redirect_stderr
++import io
++import json
++import os
++from pathlib import Path
++import sys
++import tempfile
++import threading
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++import decide
++from decision_request import DecisionRequest
++from codex_transport import TransportTimeouts
++
++
++class FakeProvider(BaseHTTPRequestHandler):
++    requests_seen = []
++    reject = False
++
++    def log_message(self, *args):
++        pass
++
++    def do_GET(self):
++        self.send_error(404)
++
++    def do_POST(self):
++        size = int(self.headers.get('Content-Length', 0))
++        data = self.rfile.read(size)
++        # Codex may compress requests in some versions.
++        if self.headers.get('Content-Encoding') == 'zstd':
++            # CI only; no decompression dependency is shipped with ARQUILO.
++            self.send_error(415, 'Use uncompressed synthetic request')
++            return
++        request = json.loads(data)
++        type(self).requests_seen.append({'path':self.path, 'request':request,
++            'authorization':self.headers.get('Authorization'),
++            'tenant':self.headers.get('X-Corp-Tenant'), 'fixed':self.headers.get('X-Fixed')})
++        if type(self).reject:
++            body = b'{"error":{"message":"synthetic provider rejection","type":"invalid_request_error"}}'
++            self.send_response(400); self.send_header('Content-Type','application/json')
++            self.send_header('Content-Length',str(len(body))); self.end_headers()
