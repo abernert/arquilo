@@ -1,0 +1,142 @@
+name: Publish tested v0.4.0 preview
+on:
+  push:
+    branches: [release/publish-v0.4.0]
+    paths: [.github/workflows/publish-v040-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: publish-arquilo-v0.4.0
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'abernert/arquilo' && github.actor == 'abernert'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: 8ba3375dd82f2b6c8eda1a40a5de490ec2116281
+      EXPECTED_ZIP_SHA256: 977dfd667064b2a3a2ada9d9dff4e97cf82eee7c4e09a7fb091cf814e93a513e
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 8ba3375dd82f2b6c8eda1a40a5de490ec2116281
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+      - name: Require exact main, version, successful checks, and unused release tag
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          repo = 'repos/abernert/arquilo'
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', repo + path], text=True))
+          sha = os.environ['SOURCE_SHA']
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == sha
+          assert Path('VERSION').read_text().strip() == '0.4.0'
+          assert api('/git/ref/heads/main')['object']['sha'] == sha, 'main has moved; recheck release target'
+          for run_id, count in ((36770166789, 9), (36770166812, 6)):
+              run = api('/actions/runs/' + str(run_id))
+              assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
+              jobs = api('/actions/runs/' + str(run_id) + '/jobs?per_page=100')['jobs']
+              assert len(jobs) == count and all(job['conclusion'] == 'success' for job in jobs)
+          assert not any(r['ref'] == 'refs/tags/v0.4.0' for r in api('/git/matching-refs/tags/v0.4.0'))
+          assert not any(r['tag_name'] == 'v0.4.0' for r in api('/releases?per_page=100'))
+          print('Exact tested main and all fifteen checks verified; v0.4.0 is unused.')
+      - name: Re-run offline tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Validate distribution
+        run: python -B scripts/check_release.py
+      - name: Build release assets
+        run: python -B scripts/build_runtime_zip.py
+      - name: Verify package and prepare release notes
+        shell: python
+        run: |
+          import hashlib, os, zipfile
+          from pathlib import Path
+          archive = Path('dist/arquilo-0.4.0.zip')
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          assert digest == os.environ['EXPECTED_ZIP_SHA256'], 'ZIP differs from the already checked CI package'
+          assert Path(str(archive) + '.sha256').read_text().split()[0] == digest
+          with zipfile.ZipFile(archive) as z:
+              assert z.read('VERSION').decode().strip() == '0.4.0'
+              assert {'LICENSE', 'NOTICE', 'arquilo_doctor.py', 'docs/decide-configuration.md'} <= set(z.namelist())
+              assert not any(n.startswith(('.github/', '.maintenance/', '.git/')) for n in z.namelist())
+          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
+          changes = changelog.split('## 0.4.0', 1)[1].split('## 0.3.0', 1)[0]
+          changes = '## 0.4.0' + changes
+          notes = '# ARQUILO 0.4.0 — public preview\n\n' + changes.strip() + '\n\n'
+          notes += ('## Configuration and migration\n\n'
+                    'Decide now inherits trusted Codex user/managed configuration and the parent environment. '
+                    'No model, provider, profile or reasoning-effort selector is supplied unless explicitly requested. '
+                    'CODEX_HOME, corporate proxy/CA settings and provider token variables are preserved. '
+                    'There is no automatic fallback to OpenAI or another provider. '
+                    'See `docs/decide-configuration.md`.\n\n'
+                    '**Changed trust boundary:** configured hooks, MCP servers and other integrations may initialize '
+                    'according to Codex rules; they are no longer disabled en masse. '
+                    'The retained read-only/never settings and tool-event rejection do not prevent or undo all '
+                    'host-side effects. Use trusted, IT-approved configuration. '
+                    'Schema/option validation, budgets, timeouts, process cleanup and complete archives remain.\n\n'
+                    'Doctor and decision-attempt diagnostics use `arquilo.doctor.v2` and '
+                    '`arquilo.decision_attempt.v2`; old archives are not rewritten. '
+                    'Existing 0.3.0 controller-state and explicit Git-selection semantics remain in place.\n\n'
+                    '## Validation and limits\n\n'
+                    'The 158-test offline suite passed all applicable tests on Windows, macOS and Linux with '
+                    'Python 3.11, 3.12 and 3.13. OS-specific cases are skipped on other systems. '
+                    'Actual Codex CLI 0.154.0 and 0.159.1 passed metadata/configuration checks plus six '
+                    'loopback fake-gateway routing/profile cases each on all three systems. '
+                    'No company credentials or billed model services were used. '
+                    'Real Databricks, corporate proxy/TLS and native sandbox acceptance still require local testing.\n\n'
+                    'This remains a public preview for supervised evaluation, not a production or sandbox certification.\n\n')
+          notes += 'Source commit: `' + os.environ['SOURCE_SHA'] + '` (merged PR #7).\n\n'
+          notes += 'Runtime ZIP SHA-256: `' + digest + '`.\n'
+          Path('release-notes-040.md').write_text(notes, encoding='utf-8')
+          print('Release ZIP matches the already verified CI package:', digest)
+      - name: Create tag, upload draft, verify downloads, then publish
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          repo = 'abernert/arquilo'
+          sha = os.environ['SOURCE_SHA']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', 'repos/' + repo + path], text=True))
+          assert api('/git/ref/heads/main')['object']['sha'] == sha, 'main moved during build'
+          assert not any(r['ref'] == 'refs/tags/v0.4.0' for r in api('/git/matching-refs/tags/v0.4.0'))
+          assert not any(r['tag_name'] == 'v0.4.0' for r in api('/releases?per_page=100'))
+          subprocess.run(['gh', 'api', '--method', 'POST', 'repos/' + repo + '/git/refs',
+                          '-f', 'ref=refs/tags/v0.4.0', '-f', 'sha=' + sha], check=True)
+          assert api('/git/ref/tags/v0.4.0')['object']['sha'] == sha
+          assets = ['arquilo-0.4.0.zip', 'arquilo-0.4.0.zip.sha256']
+          subprocess.run(['gh', 'release', 'create', 'v0.4.0',
+                          *['dist/' + name for name in assets], '--repo', repo, '--target', sha,
+                          '--verify-tag', '--draft', '--prerelease', '--latest=false',
+                          '--title', 'ARQUILO 0.4.0 — public preview',
+                          '--notes-file', 'release-notes-040.md'], check=True)
+          draft = json.loads(subprocess.check_output(['gh', 'release', 'view', 'v0.4.0', '--repo', repo,
+                      '--json', 'isDraft,isPrerelease,targetCommitish,assets'], text=True))
+          assert draft['isDraft'] and draft['isPrerelease'] and draft['targetCommitish'] == sha
+          assert {a['name'] for a in draft['assets']} == set(assets)
+          subprocess.run(['gh', 'release', 'download', 'v0.4.0', '--repo', repo,
+                          '--dir', 'verify-release-040', '--pattern', 'arquilo-0.4.0*'], check=True)
+          for name in assets:
+              assert (Path('verify-release-040') / name).read_bytes() == (Path('dist') / name).read_bytes()
+          assert api('/git/ref/tags/v0.4.0')['object']['sha'] == sha
+          subprocess.run(['gh', 'release', 'edit', 'v0.4.0', '--repo', repo,
+                          '--draft=false', '--prerelease', '--latest=false', '--verify-tag'], check=True)
+          published = api('/releases/tags/v0.4.0')
+          assert not published['draft'] and published['prerelease']
+          assert published['target_commitish'] == sha
+          assert {a['name'] for a in published['assets']} == set(assets)
+          print(json.dumps({'release': published['html_url'], 'tag': 'v0.4.0', 'source': sha,
+                            'draft': published['draft'], 'prerelease': published['prerelease'],
+                            'assets': assets, 'download_verified': True}, indent=2))
