@@ -13,6 +13,7 @@ Process-tree lifetime is owned through a per-call operating-system adapter.
 """
 from __future__ import annotations
 import safe_io
+from project_logs import numbered_directory
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -668,8 +669,8 @@ def _write_bytes(stream: Any, data: bytes, progress: Callable[[int], None]) -> N
 
 
 def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
-    parent = request.raw_log.parent / (safe_component(request.raw_log.name) + ".calls")
-    acc.capture_dir = unique_directory(parent, prefix="call")
+    role = {"auftrag": "production"}.get(request.phase, request.phase)
+    acc.capture_dir = numbered_directory(request.raw_log.parent, role)
     acc.capture = {
         "schema_version": "arquilo.codex.io_capture.v1", "phase": request.phase,
         "cwd": str(request.cwd), "argv": build_command(request),

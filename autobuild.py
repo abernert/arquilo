@@ -257,7 +257,10 @@ class AutoBuildSummary:
 def run_result_error(result: RunResult, phase: str) -> Optional[Dict[str, Any]]:
     """Also honour error signals from custom runners / test doubles."""
     if isinstance(result.execution_error, dict):
-        return {**result.execution_error, "phase": phase}
+        paths = ({"capture_directory": str(result.capture_dir),
+                  "stderr_file": str(result.capture_dir / "stderr.bin")}
+                 if result.capture_dir is not None else {})
+        return {**result.execution_error, "phase": phase, **paths}
     if result.turn_failed or result.stream_errors:
         return execution_error(
             json.dumps(result.turn_failed or result.stream_errors, ensure_ascii=False),
@@ -577,7 +580,9 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
     payload["execution_attempts"] = [
         {"phase": phase, "index": index, "turn_completed": run.turn_completed,
          "turn_failed": run.turn_failed, "process_exit_code": run.process_exit_code,
-         "execution_error": run.execution_error, "post_turn_cleanup": run.post_turn_cleanup}
+         "execution_error": run.execution_error, "post_turn_cleanup": run.post_turn_cleanup,
+         "capture_directory": str(run.capture_dir) if run.capture_dir is not None else None,
+         "stderr_file": str(run.capture_dir / "stderr.bin") if run.capture_dir is not None else None}
         for phase, history in (("task", summary.run_history), ("review", summary.review_history))
         for index, run in enumerate(history, start=1)
     ]
@@ -1222,7 +1227,7 @@ def start(
                 if settings is None:
                     settings = DecisionExecSettings(
                         project_root=workspace, config_profile=config_profile,
-                        env=dict(os.environ), log_root=workspace / ".codex_runs",
+                        env=dict(os.environ), log_root=pretty_log.parent,
                         process_stop_path=process_stop_full,
                     )
                 elif not isinstance(settings, DecisionExecSettings) or settings.project_root != workspace:
@@ -1265,6 +1270,10 @@ def start(
             else:
                 runtime_error = execution_error(str(exc), code=exc.code, phase="decide",
                     process_exit_code=execution.process_exit_code if execution is not None else None)
+                if call is not None and call.attempt is not None:
+                    trace_dir = call.attempt.result.trace.capture_dir
+                    if trace_dir is not None:
+                        runtime_error.update(capture_directory=str(trace_dir), stderr_file=str(trace_dir / "stderr.bin"))
             append(pretty_log, f"[{ts()}] [decision_error] {json.dumps(decision_payload, ensure_ascii=False)}\n")
             break
         _record_decision_payload(decision)
@@ -1338,6 +1347,19 @@ def start(
         run_history=auftrag_history,
         review_history=review_history,
     )
+    if runtime_error is not None and not runtime_error.get("stderr_file"):
+        trace = None
+        if runtime_error.get("phase") == "decide" and decision_payload:
+            # Decision errors already retain their own archive; never guess a
+            # production stderr path for a failure in another process.
+            archived = decision_payload.get("archive") or {}
+            runtime_error["decision_archive"] = archived.get("directory")
+        else:
+            history = review_history if runtime_error.get("phase") == "review" else auftrag_history
+            trace = history[-1] if history else None
+        if trace is not None and trace.capture_dir is not None:
+            runtime_error.update(capture_directory=str(trace.capture_dir),
+                                 stderr_file=str(trace.capture_dir / "stderr.bin"))
     summary_obj.execution_error = runtime_error
     summary_obj.call_budget = call_budget.snapshot()
     summary_obj.budget_exhausted = budget_exhausted

@@ -100,3 +100,12 @@ tests normal completion, restart and parent review. Windows junction and POSIX
 parent-swap cases are platform-specific; symlink tests explicitly skip when the
 host cannot create symlinks. Git push tests use disposable local bare repos only.
 These are controller regressions, not live model or comprehensive sandbox tests.
+
+## Project log layout
+
+`tests/test_project_logs.py` checks portable ID validation and workspace binding,
+multiple independent task plans in one project, unchanged legacy journals and
+budgets, remembered IDs, timestamp collisions, concurrent numbered captures,
+latest-started pointers, terminal run state, exact error-file pointers, dry-run
+non-mutation and symlink/hardlink/native Windows junction rejection. These are
+synthetic filesystem/controller checks, not live model or MDE tests.

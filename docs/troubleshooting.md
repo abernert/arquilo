@@ -70,6 +70,19 @@ that works, repair/reinstall the public launcher or put that matching release's
 different release. Upstream examples include openai/codex issues #30829, #32359
 and #38039.
 
+## Find a run or failed Codex process
+
+With `--project-id`, start with `<state-root>/<project-id>/latest-run.txt`,
+then inspect that run's `run.json` and `overview.log`. The failure output names
+its exact `stderr_file` / `capture_directory` when available. Each capture has
+`capture.json`, `stdout.bin` and `stderr.bin` under a short numbered phase folder,
+not an additional `.jsonl.calls/call-<uuid>` chain. `CAPTURE:` in the Pretty log
+also gives the actual path. [PowerShell walkthrough](project-logs.md).
+
+A run marked `preparing`/`running` without `finished_at` may have been killed;
+do not count it as completed. The latest pointer means latest **started**, not
+latest successful. Old archive locations and contents stay unchanged.
+
 ## Extract a small diagnostic locally
 
 In PowerShell, from the failing workspace:

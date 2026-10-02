@@ -10,6 +10,7 @@ ARQUILO_CAPABILITIES_SCHEMA_VERSION = "arquilo.capabilities.v1"
 import argparse
 import safe_io
 from controller_state import PlanAuthority, PlanIntegrityError, state_directory, default_state_root
+from project_logs import project_logs, validate_project_id, timestamp_name, reserve_directory
 from reviewed_git import ReviewedGit, ReviewedGitError
 from runtime_config import (
     environment_value,
@@ -762,6 +763,7 @@ class TodoRunner:
         git_paths: Sequence[str] = (),
         git_push: bool = False,
         state_dir: Optional[Path] = None,
+        project_id: Optional[str] = None,
         accept_plan_changes: bool = False,
         breakdown_policy: str = "minimal",
         breakdown_max_children: int = 4,
@@ -784,6 +786,9 @@ class TodoRunner:
         reject_removed_options(removed_options, source="TodoRunner")
         check_removed_environment()
         codex_policy.validate_start_policy(sandbox=sandbox, network_access=network_access)
+        self.project_id = validate_project_id(project_id)
+        self.project_logs = None
+        self.log_lock = threading.RLock()
         self.network_access = network_access
         self.run_started_at = datetime.now(UTC)
         self.todo_syntax = normalize_syntax(todo_syntax)
@@ -859,8 +864,8 @@ class TodoRunner:
             self.git_repo_root = self._assert_git_repository()
             if not self.dry_run:
                 self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir, push=git_push)
-        self.run_dir = (self.runs_dir / safe_component(self.run_id) if self.dry_run
-                        else unique_directory(self.runs_dir, prefix=self.run_id))
+        # The run is allocated only after the authoritative plan lock is held.
+        self.run_dir = self.runs_dir / timestamp_name(self.run_started_at)
         self.autobuild_runs_dir = self.run_dir
         self.python_version = platform.python_version()
         self.run_config_path = self.run_dir / "run_config.json"
@@ -872,6 +877,21 @@ class TodoRunner:
             self._read_policy_text()
         self.plan_authority = PlanAuthority(self.todo_file, None if self.dry_run else self.state_dir,
                                             accept_changes=accept_plan_changes)
+        if not self.dry_run:
+            try:
+                self.project_logs = project_logs(self.state_dir, self.workdir,
+                                                 self.todo_workspace_file, self.project_id)
+                self.project_id = self.project_logs.project_id
+                self.runs_dir = self.project_logs.directory / "runs"
+                self.run_dir = self.project_logs.new_run(self.run_started_at, run_id=self.run_id,
+                    workspace=self.workdir, todo=self.todo_workspace_file)
+                if run_id is None:
+                    self.run_id = self.run_dir.name
+                self.autobuild_runs_dir = self.run_dir
+                self.run_config_path = self.run_dir / "run_config.json"
+            except BaseException:
+                self.close()
+                raise
         self.run_config_payload = self._build_run_config_payload()
         if not self.dry_run:
             self._write_run_config()
@@ -1144,10 +1164,16 @@ class TodoRunner:
 
 
     def run(self) -> None:
+        if self.project_id:
+            print(f"[info] Projekt: {self.project_id}")
+        if self.project_logs is not None:
+            print(f"[info] Letzter Lauf: {self.project_logs.directory / 'latest-run.txt'}")
         print(f"[info] Run-ID: {self.run_id}")
         print(f"[info] Laufprotokolle: {self.run_dir}")
+        print(f"[info] Uebersicht: {self.run_dir / 'overview.log'}")
         run_status = "completed"
         try:
+            self._write_run_log(run_status="running")
             if self._process_stop_active():
                 details = (
                     self._read_process_stop_details()
@@ -1265,6 +1291,10 @@ class TodoRunner:
                 if outstanding:
                     print("[warn] Ausgewählte Aufgaben bleiben offen: " + ", ".join(outstanding))
                     self.exit_code = EXIT_INCOMPLETE
+        except KeyboardInterrupt:
+            run_status = "cancelled"
+            self.exit_code = 130
+            raise
         except Exception as exc:
             run_status = "failed"
             if self.exit_code == 0:
@@ -1278,8 +1308,10 @@ class TodoRunner:
                 }
             raise
         finally:
-            if run_status != "failed":
-                if self.aborted:
+            if run_status == "completed":
+                if self.terminal_execution_error:
+                    run_status = "failed"
+                elif self.aborted:
                     run_status = "aborted"
                 elif self.stop_triggered or self.process_stop_detected:
                     run_status = "stopped"
@@ -1296,7 +1328,7 @@ class TodoRunner:
         base = (
             provided.strip()
             if provided
-            else datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex
+            else timestamp_name(self.run_started_at)
         )
         sanitized = re.sub(r"[^A-Za-z0-9_.-]", "_", base)
         sanitized = sanitized.strip("._-")
@@ -1316,9 +1348,9 @@ class TodoRunner:
                           workspace: Path, todo_file: Path, result_file: Optional[Path] = None
                           ) -> Tuple[str, TaskLogRecord, Path]:
         todo_id = self._derive_todo_id_from_identifier(identifier)
-        parent = self.run_dir / "todo" / self._sanitize_identifier(todo_id)
-        log_dir = (parent / safe_component(session_stamp) if self.dry_run
-                   else unique_directory(parent, prefix=session_stamp))
+        name = "task-" + self._sanitize_identifier(todo_id)
+        log_dir = (self.run_dir / name if self.dry_run
+                   else reserve_directory(self.run_dir, name))
         record = TaskLogRecord(identifier, todo_id, log_dir, workspace)
         self.task_log_records[str(log_dir)] = record
         record.input_sources = [todo_file, todo_file.parent / "todo_fragen.md",
@@ -1336,7 +1368,7 @@ class TodoRunner:
 
     def _attempt_log_paths(self, log_dir: Path, attempt: int, *,
                            ensure_directories: bool) -> Tuple[Path, Path, Path]:
-        attempt_dir = log_dir / "autobuild" / f"attempt_{attempt}"
+        attempt_dir = log_dir if attempt == 1 else log_dir / f"attempt-{attempt:02d}"
         if ensure_directories:
             safe_io.mkdir(attempt_dir)
         return (attempt_dir / "autobuild_pretty.log", attempt_dir / "autobuild_raw.jsonl",
@@ -1377,6 +1409,9 @@ class TodoRunner:
             "decision": outcome.decision, "aborted": bool(outcome.abort),
         }
         write_log_json(log_record.log_dir / "task_log.json", log_record.payload)
+        self._overview(f"Task {log_record.identifier}: {log_record.payload['status']}; logs={log_record.log_dir}")
+        if outcome.execution_error or outcome.process_stop_triggered or outcome.abort:
+            self._show_failure_logs(outcome)
 
     def _finalize_post_todo_log(self, outcome: TaskOutcome) -> None:
         if self.dry_run or outcome.log_dir is None:
@@ -1395,14 +1430,45 @@ class TodoRunner:
     def _write_run_log(self, *, run_status: str) -> None:
         if self.dry_run:
             return
-        write_log_json(self.run_dir / "run_log.json", {
-            "schema_version": "arquilo.run_log.v1", "run_id": self.run_id,
+        payload = {
+            "schema_version": "arquilo.run_log.v2", "run_id": self.run_id,
+            "project_id": self.project_id, "run_directory": str(self.run_dir),
+            "workspace": str(self.workdir), "todo_file": str(self.todo_workspace_file),
+            "controller_state": str(self.state_dir),
+            "started_at": self.run_started_at.isoformat(),
+            "finished_at": None if run_status in {"preparing", "running"} else datetime.now(UTC).isoformat(),
             "status": run_status, "exit_code": self.exit_code,
             "completed": sorted(self.completed), "incomplete": sorted(self.incomplete),
             "failed": sorted(self.failed), "execution_error": self.terminal_execution_error,
             "tasks": [str(r.log_dir / "task_log.json") for r in self.task_log_records.values()],
             "call_budgets": {key: budget.snapshot() for key, budget in self.call_budgets.items()},
-        })
+        }
+        write_log_json(self.run_dir / "run.json", payload)
+        # Keep the old filename/schema for existing tooling (additive fields).
+        write_log_json(self.run_dir / "run_log.json", {**payload, "schema_version": "arquilo.run_log.v1"})
+        self._overview(f"Run {run_status}; exit={self.exit_code}")
+
+    def _overview(self, message: str) -> None:
+        if self.dry_run:
+            return
+        with self.log_lock, safe_io.open_file(self.run_dir / "overview.log", "a") as stream:
+            stream.write(f"{_format_timestamp()} {message}\n")
+
+    def _show_failure_logs(self, outcome: TaskOutcome) -> None:
+        paths = {}
+        error = outcome.execution_error or {}
+        for name in ("capture_directory", "stderr_file", "decision_archive"):
+            if isinstance(error.get(name), str):
+                paths[name] = error[name]
+        if outcome.pretty_log:
+            paths["pretty_log"] = str(outcome.pretty_log)
+        if outcome.raw_log:
+            paths["raw_log"] = str(outcome.raw_log)
+        for name, path in paths.items():
+            print(f"[diagnose] {name}: {path}")
+        if paths:
+            self._overview("Failure logs: " + json.dumps(paths, ensure_ascii=False))
+
 
     def _prepare_workspace_documents(self) -> None:
         if self.workspace_equals_repo or self.todo_in_workspace:
@@ -2240,6 +2306,7 @@ class TodoRunner:
         self.failed.add(todo_id)
         self.incomplete.add(todo_id)
         if not already_recorded:
+            self._show_failure_logs(outcome)
             print(f"[fatal] ToDo {todo_id}: {error.get('category', 'technical')}: {error.get('message', '')}")
             print("[info] ToDo bleibt offen. Zwischenstände und Logs prüfen, bevor der Lauf erneut gestartet wird.")
         return replace(outcome, completed=False, abort=True)
@@ -3202,6 +3269,8 @@ class TodoRunner:
             "todo_file_source": str(self.todo_source_file),
             "workdir": str(self.workdir),
             "controller_state": str(self.state_dir),
+            "project_id": self.project_id,
+            "run_directory": str(self.run_dir),
             "sandbox": self.sandbox,
             "network_access": self.network_access,
             "dry_run": self.dry_run,
@@ -4283,7 +4352,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--git-path", action="append", default=[],
                         help="Einzelner relativer Dateipfad für geprüfte Commits (mehrfach, keine Globs).")
     parser.add_argument("--git-push", action="store_true", help="Zusätzlich ausgewählte Commits zum bestehenden Upstream pushen.")
-    parser.add_argument("--state-dir", type=Path, help="Privater Controller-Zustand außerhalb des Workspaces.")
+    parser.add_argument("--state-dir", type=Path, help="Privates Basisverzeichnis außerhalb des Workspaces; vorhandenen Zustand weiterverwenden.")
+    parser.add_argument("--project-id", type=validate_project_id, default=None,
+                        help="Lesbare Projekt-ID fuer Logs (1-48 Zeichen); wird dauerhaft diesem Workspace/Plan zugeordnet.")
     parser.add_argument("--accept-plan-changes", action="store_true",
                         help="Bewusst vom Eigentümer geprüfte externe Planänderungen übernehmen; Budgets bleiben erhalten.")
     parser.add_argument(
@@ -4384,7 +4455,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 run_id=run_id,
                 git_enabled=args.git,
                 git_paths=args.git_path, git_push=args.git_push,
-                state_dir=args.state_dir, accept_plan_changes=args.accept_plan_changes,
+                state_dir=args.state_dir, project_id=args.project_id,
+                accept_plan_changes=args.accept_plan_changes,
                 model=args.model,
                 reasoning_effort=args.reasoning_effort,
                 breakdown_policy=args.breakdown_policy,
@@ -4406,7 +4478,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     model=args.model, reasoning_effort=args.reasoning_effort)
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:
-            runner.close()
+            try:
+                runner.exit_code = 3
+                runner.terminal_execution_error = execution_error(str(exc), code="preflight_failed", phase="preflight")
+                runner._write_run_log(run_status="failed")
+            finally:
+                runner.close()
             print(str(exc), file=sys.stderr)
             return 3
         try:
