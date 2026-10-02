@@ -1,0 +1,23 @@
+name: Operator controls validation
+on:
+  push:
+    branches: [validation/operator-controls-060]
+    paths: [.github/workflows/operator-controls-validation.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: b5e4ff92872791a635ee9f5d06a0f8dadeed7361
+          persist-credentials: false
+      - run: git archive --format=zip --output=arquilo-source-050.zip HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: public-source-050
+          path: arquilo-source-050.zip
+          retention-days: 3
+          if-no-files-found: error
