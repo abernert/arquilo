@@ -1,0 +1,130 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index ef3caca..985583d 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,0 +3,14 @@
++## 0.5.0 — 2026-10-02 (public preview)
++
++- Add optional `--project-id` for readable, workspace-bound log namespaces.
++  Remember plan assignments without moving or resetting canonical state/budgets.
++- Allocate one UTC-millisecond run directory, with short collision suffixes,
++  latest-started text pointer, run status JSON and concise overview log.
++- Flatten task/AutoBuild/Codex capture paths into numbered phase folders;
++  retain identities inside manifests and keep old archives unchanged.
++- Print exact stderr/capture paths for failed processes; record startup failure
++  and caught cancellation without marking incomplete work successful.
++- Keep legacy `run_log.json` consumers supported. Add project-layout, restart,
++  concurrent-allocation and filesystem-boundary regression tests.
++- No Codex model/provider/permission flags or existing release tags change.
++
+diff --git a/CITATION.cff b/CITATION.cff
+index 35131e8..8e83ad5 100644
+--- a/CITATION.cff
++++ b/CITATION.cff
+@@ -9,2 +9,2 @@ authors:
+-version: "0.4.0"
+-date-released: 2026-09-30
++version: "0.5.0"
++date-released: 2026-10-02
+diff --git a/README.de.md b/README.de.md
+index 37bd528..408a2ba 100644
+--- a/README.de.md
++++ b/README.de.md
+@@ -9 +9 @@ Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
+-Die Version **0.4.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
++Die Version **0.5.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+@@ -76,0 +77,10 @@ Hostkonfiguration, nicht präventiv durch ARQUILO deaktiviert.
++
++## Auffindbare Projektlogs
++
++Ergänze den bestehenden Runner-Aufruf um `--project-id migration-pilot`.
++Die neuen Logs liegen unter `<state-root>/migration-pilot/runs/<UTC-Zeitstempel>/`.
++`latest-run.txt` zeigt auf den zuletzt gestarteten Lauf; `run.json` und
++`overview.log` zeigen Status und Übersicht. Fehler nennen die konkrete
++`stderr.bin`, soweit ein Prozessarchiv vorliegt. Behalte für bestehende Pläne
++denselben `--state-dir`: Aufgabenstände und Budgets bleiben unverändert.
++[Details und PowerShell-Beispiel](docs/project-logs.md).
+diff --git a/README.md b/README.md
+index 4ce44a9..3b389f4 100644
+--- a/README.md
++++ b/README.md
+@@ -16 +16 @@ available for inspection.
+-**Public preview: 0.4.0.** Suitable for supervised evaluation in disposable
++**Public preview: 0.5.0.** Suitable for supervised evaluation in disposable
+@@ -123,0 +124,9 @@ for state locations, recovery, Git examples and the limits of these checks.
++## Readable project logs
++
++Add `--project-id migration-pilot` to your existing runner command. New logs live
++under `<state-root>/migration-pilot/runs/<UTC-timestamp>/`, with a
++`latest-run.txt` pointer, `run.json` status and `overview.log` index. Individual
++Codex calls use short numbered phase folders and errors print their stderr path.
++Keep your existing `--state-dir` when continuing a plan: authoritative state and
++budgets stay in their current location. [Layout and migration](docs/project-logs.md).
++
+diff --git a/VERSION b/VERSION
+index 1d0ba9e..8f0916f 100644
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-0.4.0
++0.5.0
+diff --git a/docs/controller-safety.md b/docs/controller-safety.md
+index 655a70f..e84f74f 100644
+--- a/docs/controller-safety.md
++++ b/docs/controller-safety.md
+@@ -30,0 +31,5 @@ restore the plan from the controller evidence and rerun normally.
++For readable project IDs, timestamped run folders and direct failure-log paths,
++see [project logs](project-logs.md). `--project-id` changes the log namespace,
++not the persistent plan/budget directory. Keep the same state root on restart.
++
++
+diff --git a/docs/testing.md b/docs/testing.md
+index e8ae66a..d5ef7d4 100644
+--- a/docs/testing.md
++++ b/docs/testing.md
+@@ -102,0 +103,9 @@ These are controller regressions, not live model or comprehensive sandbox tests.
++
++## Project log layout
++
++`tests/test_project_logs.py` checks portable ID validation and workspace binding,
++multiple independent task plans in one project, unchanged legacy journals and
++budgets, remembered IDs, timestamp collisions, concurrent numbered captures,
++latest-started pointers, terminal run state, exact error-file pointers, dry-run
++non-mutation and symlink/hardlink/native Windows junction rejection. These are
++synthetic filesystem/controller checks, not live model or MDE tests.
+diff --git a/docs/troubleshooting.md b/docs/troubleshooting.md
+index 9b7fc24..c144fa3 100644
+--- a/docs/troubleshooting.md
++++ b/docs/troubleshooting.md
+@@ -72,0 +73,13 @@ and #38039.
++## Find a run or failed Codex process
++
++With `--project-id`, start with `<state-root>/<project-id>/latest-run.txt`,
++then inspect that run's `run.json` and `overview.log`. The failure output names
++its exact `stderr_file` / `capture_directory` when available. Each capture has
++`capture.json`, `stdout.bin` and `stderr.bin` under a short numbered phase folder,
++not an additional `.jsonl.calls/call-<uuid>` chain. `CAPTURE:` in the Pretty log
++also gives the actual path. [PowerShell walkthrough](project-logs.md).
++
++A run marked `preparing`/`running` without `finished_at` may have been killed;
++do not count it as completed. The latest pointer means latest **started**, not
++latest successful. Old archive locations and contents stay unchanged.
++
+diff --git a/documents/lean_package.json b/documents/lean_package.json
+index 6edd65a..2ac9f7e 100644
+--- a/documents/lean_package.json
++++ b/documents/lean_package.json
+@@ -6 +6 @@
+-  "runtime_file_count": 74,
++  "runtime_file_count": 76,
+@@ -44,0 +45 @@
++    "docs/project-logs.md",
+@@ -66,0 +68 @@
++    "project_logs.py",
+diff --git a/runtime_profile.py b/runtime_profile.py
+index 2606ba4..db5af3a 100644
+--- a/runtime_profile.py
++++ b/runtime_profile.py
+@@ -28 +28 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
+-ARQUILO_RUNTIME_VERSION = "0.4.0"
++ARQUILO_RUNTIME_VERSION = "0.5.0"
