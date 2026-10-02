@@ -1,0 +1,200 @@
+diff --git a/autobuild.py b/autobuild.py
+index dc5c69f..ab58738 100644
+--- a/autobuild.py
++++ b/autobuild.py
+@@ -260 +260,4 @@ def run_result_error(result: RunResult, phase: str) -> Optional[Dict[str, Any]]:
+-        return {**result.execution_error, "phase": phase}
++        paths = ({"capture_directory": str(result.capture_dir),
++                  "stderr_file": str(result.capture_dir / "stderr.bin")}
++                 if result.capture_dir is not None else {})
++        return {**result.execution_error, "phase": phase, **paths}
+@@ -580 +583,3 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
+-         "execution_error": run.execution_error, "post_turn_cleanup": run.post_turn_cleanup}
++         "execution_error": run.execution_error, "post_turn_cleanup": run.post_turn_cleanup,
++         "capture_directory": str(run.capture_dir) if run.capture_dir is not None else None,
++         "stderr_file": str(run.capture_dir / "stderr.bin") if run.capture_dir is not None else None}
+@@ -1225 +1230 @@ def start(
+-                        env=dict(os.environ), log_root=workspace / ".codex_runs",
++                        env=dict(os.environ), log_root=pretty_log.parent,
+@@ -1267,0 +1273,4 @@ def start(
++                if call is not None and call.attempt is not None:
++                    trace_dir = call.attempt.result.trace.capture_dir
++                    if trace_dir is not None:
++                        runtime_error.update(capture_directory=str(trace_dir), stderr_file=str(trace_dir / "stderr.bin"))
+@@ -1340,0 +1350,13 @@ def start(
++    if runtime_error is not None and not runtime_error.get("stderr_file"):
++        trace = None
++        if runtime_error.get("phase") == "decide" and decision_payload:
++            # Decision errors already retain their own archive; never guess a
++            # production stderr path for a failure in another process.
++            archived = decision_payload.get("archive") or {}
++            runtime_error["decision_archive"] = archived.get("directory")
++        else:
++            history = review_history if runtime_error.get("phase") == "review" else auftrag_history
++            trace = history[-1] if history else None
++        if trace is not None and trace.capture_dir is not None:
++            runtime_error.update(capture_directory=str(trace.capture_dir),
++                                 stderr_file=str(trace.capture_dir / "stderr.bin"))
+diff --git a/codex_transport.py b/codex_transport.py
+index 7de92f3..e4b0c3b 100644
+--- a/codex_transport.py
++++ b/codex_transport.py
+@@ -15,0 +16 @@ import safe_io
++from project_logs import numbered_directory
+@@ -671,2 +672,2 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
+-    parent = request.raw_log.parent / (safe_component(request.raw_log.name) + ".calls")
+-    acc.capture_dir = unique_directory(parent, prefix="call")
++    role = {"auftrag": "production"}.get(request.phase, request.phase)
++    acc.capture_dir = numbered_directory(request.raw_log.parent, role)
+diff --git a/decision_exec.py b/decision_exec.py
+index 8e779bf..83d6c84 100644
+--- a/decision_exec.py
++++ b/decision_exec.py
+@@ -20,0 +21,2 @@ import tempfile
++from project_logs import numbered_directory
++import safe_io
+@@ -268 +270,3 @@ def _attempt_directory(parent: Path, number: int) -> Path:
+-    directory.mkdir()  # Never reuse an old or concurrently occupied attempt.
++    # Allocate the fixed fresh name atomically through the no-follow layer.
++    with safe_io.directory(parent) as (base, fd):
++        os.mkdir(base / directory.name if fd is None else directory.name, 0o700, dir_fd=fd)
+@@ -286,6 +290 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
+-        branch = settings.log_root / "decide"
+-        for value in (request.run_id, request.task_id, request.phase):
+-            branch /= safe_component(value, limit=40)
+-        if not branch.resolve().is_relative_to(settings.log_root):
+-            raise OSError("Decision archive path escapes the configured log root")
+-        parent = unique_directory(branch, prefix="decision")
++        parent = numbered_directory(settings.log_root, "decide")
+diff --git a/run_todos.py b/run_todos.py
+index 916ffa6..7e29acf 100644
+--- a/run_todos.py
++++ b/run_todos.py
+@@ -12,0 +13 @@ from controller_state import PlanAuthority, PlanIntegrityError, state_directory,
++from project_logs import project_logs, validate_project_id, timestamp_name, reserve_directory
+@@ -764,0 +766 @@ class TodoRunner:
++        project_id: Optional[str] = None,
+@@ -786,0 +789,3 @@ class TodoRunner:
++        self.project_id = validate_project_id(project_id)
++        self.project_logs = None
++        self.log_lock = threading.RLock()
+@@ -862,2 +867,2 @@ class TodoRunner:
+-        self.run_dir = (self.runs_dir / safe_component(self.run_id) if self.dry_run
+-                        else unique_directory(self.runs_dir, prefix=self.run_id))
++        # The run is allocated only after the authoritative plan lock is held.
++        self.run_dir = self.runs_dir / timestamp_name(self.run_started_at)
+@@ -874,0 +880,15 @@ class TodoRunner:
++        if not self.dry_run:
++            try:
++                self.project_logs = project_logs(self.state_dir, self.workdir,
++                                                 self.todo_workspace_file, self.project_id)
++                self.project_id = self.project_logs.project_id
++                self.runs_dir = self.project_logs.directory / "runs"
++                self.run_dir = self.project_logs.new_run(self.run_started_at, run_id=self.run_id,
++                    workspace=self.workdir, todo=self.todo_workspace_file)
++                if run_id is None:
++                    self.run_id = self.run_dir.name
++                self.autobuild_runs_dir = self.run_dir
++                self.run_config_path = self.run_dir / "run_config.json"
++            except BaseException:
++                self.close()
++                raise
+@@ -1146,0 +1167,4 @@ class TodoRunner:
++        if self.project_id:
++            print(f"[info] Projekt: {self.project_id}")
++        if self.project_logs is not None:
++            print(f"[info] Letzter Lauf: {self.project_logs.directory / 'latest-run.txt'}")
+@@ -1148,0 +1173 @@ class TodoRunner:
++        print(f"[info] Uebersicht: {self.run_dir / 'overview.log'}")
+@@ -1150,0 +1176 @@ class TodoRunner:
++            self._write_run_log(run_status="running")
+@@ -1267,0 +1294,4 @@ class TodoRunner:
++        except KeyboardInterrupt:
++            run_status = "cancelled"
++            self.exit_code = 130
++            raise
+@@ -1281,2 +1311,4 @@ class TodoRunner:
+-            if run_status != "failed":
+-                if self.aborted:
++            if run_status == "completed":
++                if self.terminal_execution_error:
++                    run_status = "failed"
++                elif self.aborted:
+@@ -1299 +1331 @@ class TodoRunner:
+-            else datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex
++            else timestamp_name(self.run_started_at)
+@@ -1319,3 +1351,3 @@ class TodoRunner:
+-        parent = self.run_dir / "todo" / self._sanitize_identifier(todo_id)
+-        log_dir = (parent / safe_component(session_stamp) if self.dry_run
+-                   else unique_directory(parent, prefix=session_stamp))
++        name = "task-" + self._sanitize_identifier(todo_id)
++        log_dir = (self.run_dir / name if self.dry_run
++                   else reserve_directory(self.run_dir, name))
+@@ -1339 +1371 @@ class TodoRunner:
+-        attempt_dir = log_dir / "autobuild" / f"attempt_{attempt}"
++        attempt_dir = log_dir if attempt == 1 else log_dir / f"attempt-{attempt:02d}"
+@@ -1379,0 +1412,3 @@ class TodoRunner:
++        self._overview(f"Task {log_record.identifier}: {log_record.payload['status']}; logs={log_record.log_dir}")
++        if outcome.execution_error or outcome.process_stop_triggered or outcome.abort:
++            self._show_failure_logs(outcome)
+@@ -1398,2 +1433,7 @@ class TodoRunner:
+-        write_log_json(self.run_dir / "run_log.json", {
+-            "schema_version": "arquilo.run_log.v1", "run_id": self.run_id,
++        payload = {
++            "schema_version": "arquilo.run_log.v2", "run_id": self.run_id,
++            "project_id": self.project_id, "run_directory": str(self.run_dir),
++            "workspace": str(self.workdir), "todo_file": str(self.todo_workspace_file),
++            "controller_state": str(self.state_dir),
++            "started_at": self.run_started_at.isoformat(),
++            "finished_at": None if run_status in {"preparing", "running"} else datetime.now(UTC).isoformat(),
+@@ -1405 +1445,27 @@ class TodoRunner:
+-        })
++        }
++        write_log_json(self.run_dir / "run.json", payload)
++        # Keep the old filename/schema for existing tooling (additive fields).
++        write_log_json(self.run_dir / "run_log.json", {**payload, "schema_version": "arquilo.run_log.v1"})
++        self._overview(f"Run {run_status}; exit={self.exit_code}")
++
++    def _overview(self, message: str) -> None:
++        if self.dry_run:
++            return
++        with self.log_lock, safe_io.open_file(self.run_dir / "overview.log", "a") as stream:
++            stream.write(f"{_format_timestamp()} {message}\n")
++
++    def _show_failure_logs(self, outcome: TaskOutcome) -> None:
++        paths = {}
++        error = outcome.execution_error or {}
++        for name in ("capture_directory", "stderr_file", "decision_archive"):
++            if isinstance(error.get(name), str):
++                paths[name] = error[name]
++        if outcome.pretty_log:
++            paths["pretty_log"] = str(outcome.pretty_log)
++        if outcome.raw_log:
++            paths["raw_log"] = str(outcome.raw_log)
++        for name, path in paths.items():
++            print(f"[diagnose] {name}: {path}")
++        if paths:
++            self._overview("Failure logs: " + json.dumps(paths, ensure_ascii=False))
++
+@@ -2242,0 +2309 @@ class TodoRunner:
++            self._show_failure_logs(outcome)
+@@ -3204,0 +3272,2 @@ class TodoRunner:
++            "project_id": self.project_id,
++            "run_directory": str(self.run_dir),
+@@ -4286 +4355,3 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+-    parser.add_argument("--state-dir", type=Path, help="Privater Controller-Zustand außerhalb des Workspaces.")
++    parser.add_argument("--state-dir", type=Path, help="Privates Basisverzeichnis außerhalb des Workspaces; vorhandenen Zustand weiterverwenden.")
++    parser.add_argument("--project-id", type=validate_project_id, default=None,
++                        help="Lesbare Projekt-ID fuer Logs (1-48 Zeichen); wird dauerhaft diesem Workspace/Plan zugeordnet.")
+@@ -4387 +4458,2 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+-                state_dir=args.state_dir, accept_plan_changes=args.accept_plan_changes,
++                state_dir=args.state_dir, project_id=args.project_id,
++                accept_plan_changes=args.accept_plan_changes,
+@@ -4409 +4481,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+-            runner.close()
++            try:
++                runner.exit_code = 3
++                runner.terminal_execution_error = execution_error(str(exc), code="preflight_failed", phase="preflight")
++                runner._write_run_log(run_status="failed")
++            finally:
++                runner.close()
