@@ -1,0 +1,23 @@
+name: Project log layout validation
+on:
+  push:
+    branches: [validation/project-log-layout]
+    paths: [.github/workflows/project-log-validation.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 8ba3375dd82f2b6c8eda1a40a5de490ec2116281
+          persist-credentials: false
+      - run: git archive --format=zip --output=arquilo-source-040.zip HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: public-source-040
+          path: arquilo-source-040.zip
+          retention-days: 3
+          if-no-files-found: error
