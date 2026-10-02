@@ -1,10 +1,10 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.5.0)
+## Current names (ARQUILO 0.6.0)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.5.0. Individual schema version
+identifiers. The public package version is 0.6.0. Individual schema version
 suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean
@@ -98,3 +98,20 @@ New `run.json` uses `arquilo.run_log.v2`; `run_log.json` remains a v1-compatible
 snapshot. Capture paths are numbered phase folders, not `.jsonl.calls/call-*`.
 Use captured path metadata instead of hard-coded directory patterns. Old
 archives are unchanged. No Codex invocation or provider policy changes here.
+
+## Operator controls (from 0.6.0)
+
+Default `--max-calls` is 0 (unlimited), including existing finite runner budgets.
+Owner limit changes retain consumption; stale workers fail on a mismatch.
+New budget and claim output uses `arquilo.call_budget.v2` and
+`arquilo.call_claim.v2`. In v2 `limit=0`, `remaining=null`, `unlimited=true`
+represents unlimited. Valid finite v1 data (including historical input aliases)
+remains readable, without rewriting old claim files. Update summary consumers.
+
+New opt-ins `--logs-in-workdir` and `--allow-todo-modifications` are false by
+default. Run metadata adds `logs_location`, `todo_policy`, `plan_mutations`,
+`reviewed_this_run`, `stop_id` and `completion_scope`. The compatible run_log
+remains; model-written task statuses are not reviewed completions. A generated
+plan can remain in the original task file and halt with `--stop 2` for human
+inspection. See [operator controls](operator-controls.md) for exact semantics.
+These controls do not restore other removed predecessor modules.

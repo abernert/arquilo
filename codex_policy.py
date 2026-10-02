@@ -205,6 +205,7 @@ def reject_policy_keys(values: Mapping[str, object], *, source: str) -> None:
         "permissions", "default_permissions",
         "ask_for_approval", "approve_for_me", "sandbox_permissions",
         "skip_review", "no_review", "skip_checks", "review_required",
+        "logs_in_workdir", "allow_todo_modifications", "max_calls",
     }
     for key in values:
         normalized = key.replace("-", "_").lower().split(".", 1)[0]

@@ -87,3 +87,15 @@ A preliminary runner probe is outside that budget. `--network-access` and
 - A real task tests production, review, artifact handling and controller flow.
 
 None is a comprehensive security certification. [Testing details](testing.md).
+
+## Planning pause and optional workspace logs
+
+The default call budget is unlimited (`--max-calls 0`); the explicit limit of
+8 in the smoke examples is intentional. Existing finite runner budgets adopt
+unlimited on continuation unless a positive limit is supplied. This does not
+clear an existing stop file or remove other limits.
+
+Use `--allow-todo-modifications --stop 2` when task 2 should add future tasks to
+the same file and then pause for human review. `--logs-in-workdir` optionally
+writes live diagnostics under `.codex_runs/run_todos`. See
+[the complete planning/continuation example](operator-controls.md).

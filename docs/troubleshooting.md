@@ -139,3 +139,16 @@ Do not bypass the sandbox or change a failed review to PASS.
 Do not delete state or automatically accept modified plans. See
 [controller safety and recovery](controller-safety.md) for the new state roots,
 explicit owner adoption, Git selection and no-overwrite dry-run reports.
+
+## Old call budget blocks continuation
+
+Use the same workspace, task path and state root. The current default
+`--max-calls 0` adopts unlimited even for older exhausted budgets, preserving
+their counters. Do not delete controller state. If a separate `process_stop`
+file already exists, inspect its cause and partial work before deliberately
+removing it. It is never automatically ignored. Human task edits may need
+`--accept-plan-changes` for the next strict run.
+
+For a generator task that writes the rest of the same task file, use
+`--allow-todo-modifications --stop 2` for the planning phase. See
+[operator controls](operator-controls.md).

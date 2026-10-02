@@ -76,3 +76,18 @@ Review local runtime profiles and Codex integrations before granting access.
 CI deliberately has no model credentials and never runs live agent workloads.
 Its tests do not establish that the native sandbox correctly enforces every
 boundary on a user's installation.
+
+## Operator-selected trust boundaries
+
+Unlimited is the default call-count policy (`--max-calls 0`), not an assurance
+against provider cost. Configure a positive limit or provider-side caps when
+needed. The owner may change limits on continuation without resetting counters.
+`process_stop`, other loop limits and review requirements remain independent.
+
+`--logs-in-workdir` makes diagnostics agent-readable/writable. They are not
+tamper-proof evidence. Authoritative plan/budget/worker IPC stays external.
+`--allow-todo-modifications` permits observed valid task-plan edits, including
+statuses/removal. It does not certify those edits as reviewed work. Use the
+original-assignment `reviewed_this_run` and recorded plan mutations, and perform
+human review of generated plans. Both switches are off by default and neither
+changes Codex permission settings. See [details](docs/operator-controls.md).

@@ -5,13 +5,13 @@ It addresses unapproved task completion, redirected controller writes,
 Git over-staging, dry-run collisions, unreadable policies and preflight argv.
 It does not certify the host sandbox or make an LLM review infallible.
 
-## Plan authority and restart
+## Plan authority and restart (strict default)
 
 On first use, inspect the task file: its existing statuses are an owner-supplied
 baseline, not proof of a previous ARQUILO review. The runner then persists its
 exact text outside the model workspace. New `DONE`, `OBSOLETE`, deleted/hidden
 or reordered tasks and altered requirements/directives cannot silently remove
-work. A normal completed task requires its separate review and a controller
+work in the default strict mode. A normal completed task requires its separate review and a controller
 status transition. A breakdown may insert only open direct children in the
 correct block while preserving existing tasks and requirements. Parent
 acceptance still requires a separate review after the children complete.
@@ -60,9 +60,10 @@ AutoBuild logging options also remain separate from runner log placement.
 Do not delete controller state to bypass an error. A root task's monotonic call
 counter is shared by children/reviews and retained across restart. Deleting a
 diagnostic claim does not refund a reservation. Failed writes after reservation
-also retain the charge. Changing an existing root/limit is refused. Start a
-consciously new workspace/plan for a new execution budget, after reviewing the
-previous result. This counts launches, not tokens or currency.
+also retain the charge. Changing a root identity is refused. The owner may change its limit while
+retaining consumption; default 0 removes an older finite limit on continuation.
+Never switch state stores to reset a counter. An existing stop instruction is
+separate and remains effective. This counts attempts, not tokens or currency.
 
 Old 0.2.x workspace archives are retained and never rewritten or automatically
 trusted as authority. Existing work should be manually checked before starting
@@ -129,3 +130,18 @@ breakdown/restart/parent review, symlink and hardlink targets, a POSIX directory
 swap, a native Windows junction, dry-run aliases, unreadable policies, concurrent
 budget reservations, literal Git selection and disposable local-remote push tests.
 They do not require model credentials or transmit project contents to a provider.
+
+## Explicit operator choices
+
+The plan rules above are the strict default. `--allow-todo-modifications` permits
+valid primary-file changes, archives their before/after state externally, and
+keeps original current-task review requirements. A mutable plan may remove or
+mark tasks DONE without executing them; this is not independent verification.
+For task generation followed by human review, use `--stop 2` with the opt-in.
+
+`--logs-in-workdir` writes live diagnostics in the workspace while keeping plan,
+budget and private parallel-worker return paths external. Those visible logs
+can be model-edited and must not be consumed as trusted execution instructions.
+The default call limit is 0 (unlimited); counting and explicit finite limits
+remain. These settings never enable YOLO, extra sandbox roots or retries.
+See [operator controls and migration](operator-controls.md).

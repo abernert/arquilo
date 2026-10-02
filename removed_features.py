@@ -20,7 +20,7 @@ REMOVED_OPTIONS = frozenset({
 })
 MIGRATION = (
     "Evidence-, Hash- und Signaturmodus wurde entfernt. Option entfernen; "
-    "Laufprotokolle liegen unter <workdir>/.codex_runs/, Ergebnisse weiter im Workspace. "
+    "Laufprotokolle liegen standardmäßig im externen Controller-Verzeichnis; --logs-in-workdir wählt <workdir>/.codex_runs/run_todos/, Ergebnisse weiter im Workspace. "
     "Keine Schlüssel oder Guard-Initialisierung nötig. Allgemeine --runtime-profile "
     "und Codex-Modellprofile bleiben unabhängig davon nutzbar."
 )

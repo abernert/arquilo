@@ -109,3 +109,19 @@ budgets, remembered IDs, timestamp collisions, concurrent numbered captures,
 latest-started pointers, terminal run state, exact error-file pointers, dry-run
 non-mutation and symlink/hardlink/native Windows junction rejection. These are
 synthetic filesystem/controller checks, not live model or MDE tests.
+
+## Operator controls and planning pause
+
+`tests/test_operator_controls.py` covers unlimited default and explicit finite
+budgets, preserving older counters/claims on owner limit changes, stale worker
+rejection, process/thread reservation races, mutable primary plans, syntax and
+status evidence, original review snapshots across corrections, and human edits
+on strict restart. Real controller/AutoBuild functions are used with fake Codex
+outputs. The key scenario appends tasks in task 2, performs its separate review,
+stops before generated tasks, and executes them only on a later invocation.
+
+Additional tests exercise live workspace logs without moving control records,
+private worker IPC despite untrusted public summaries, opt-in precedence,
+retained process_stop, unchanged Codex policy, parallel batch stop boundaries,
+and independent log runs. No real model, Databricks tenant or native MDE
+acceptance is inferred from these regressions.

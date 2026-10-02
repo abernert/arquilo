@@ -144,3 +144,18 @@ filename/schema remains as a compatibility snapshot; `run.json` uses
 `arquilo.run_log.v2`. Code consuming capture paths should use `capture_directory`
 / `stderr_file` in errors or `CAPTURE:` in Pretty logs, not assume a `.calls`
 subdirectory. Dry-runs do not create a project registry or run archive.
+
+## Optional workspace log location
+
+`--logs-in-workdir` selects `<workdir>/.codex_runs/run_todos/<timestamp>/`.
+The timestamp goes directly below `run_todos`, even with a project ID. Its
+`latest-run.txt` contains a timestamp directory name without `runs/`. Existing
+external logs are untouched; the default remains external. Do not apply the
+external-pointer regex above to a workspace pointer. The new mode is a live
+log location, not an end-of-run export; common Raw/Pretty/Summary filenames are
+retained, not every legacy nested path. Plan/budget state and worker IPC remain
+external. See [operator controls](operator-controls.md) for scope and examples.
+
+Changing log location or project ID never resets reservations. Independently,
+the owning runner adopts `--max-calls` on continuation (default 0 removes older
+finite limits), preserving counters and auditing limit changes.
