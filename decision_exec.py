@@ -18,6 +18,8 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from project_logs import numbered_directory
+import safe_io
 from types import MappingProxyType
 from typing import Callable, Mapping
 
@@ -265,7 +267,9 @@ def _failure(request: DecisionRequest, code: str, message: str,
 
 def _attempt_directory(parent: Path, number: int) -> Path:
     directory = parent / f"attempt-{number:03d}"
-    directory.mkdir()  # Never reuse an old or concurrently occupied attempt.
+    # Allocate the fixed fresh name atomically through the no-follow layer.
+    with safe_io.directory(parent) as (base, fd):
+        os.mkdir(base / directory.name if fd is None else directory.name, 0o700, dir_fd=fd)
     return directory
 
 
@@ -283,12 +287,7 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
     prompt = request.to_prompt()
     parent = None
     try:
-        branch = settings.log_root / "decide"
-        for value in (request.run_id, request.task_id, request.phase):
-            branch /= safe_component(value, limit=40)
-        if not branch.resolve().is_relative_to(settings.log_root):
-            raise OSError("Decision archive path escapes the configured log root")
-        parent = unique_directory(branch, prefix="decision")
+        parent = numbered_directory(settings.log_root, "decide")
     except KeyboardInterrupt:
         result = DecisionResult(options=request.options, execution=ExecutionResult(
             status=ExecutionStatus.CANCELLED, cancellation_reason="KeyboardInterrupt allocating archive"))

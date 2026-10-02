@@ -6,7 +6,7 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.4.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.5.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
@@ -74,3 +74,13 @@ Feature-Overrides entfallen. `read-only`, nichtinteraktiver Betrieb und
 Ergebnisprüfung bleiben; konfigurierte Tools/Hooks sind vertrauenswürdige
 Hostkonfiguration, nicht präventiv durch ARQUILO deaktiviert.
 [Details und Grenzen](docs/decide-configuration.md).
+
+## Auffindbare Projektlogs
+
+Ergänze den bestehenden Runner-Aufruf um `--project-id migration-pilot`.
+Die neuen Logs liegen unter `<state-root>/migration-pilot/runs/<UTC-Zeitstempel>/`.
+`latest-run.txt` zeigt auf den zuletzt gestarteten Lauf; `run.json` und
+`overview.log` zeigen Status und Übersicht. Fehler nennen die konkrete
+`stderr.bin`, soweit ein Prozessarchiv vorliegt. Behalte für bestehende Pläne
+denselben `--state-dir`: Aufgabenstände und Budgets bleiben unverändert.
+[Details und PowerShell-Beispiel](docs/project-logs.md).

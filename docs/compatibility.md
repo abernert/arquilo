@@ -1,11 +1,11 @@
 # Compatibility and naming history
 
-## Current names (ARQUILO 0.4.0)
+## Current names (ARQUILO 0.5.0)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.4.0. Individual schema version
-suffixes describe their payload contracts, not the package version; see the 0.4.0 diagnostic migration below.
+identifiers. The public package version is 0.5.0. Individual schema version
+suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean
 
@@ -88,3 +88,13 @@ Doctor output is now `arquilo.doctor.v2`, and decision attempt manifests use
 `arquilo.decision_attempt.v2`. Update consumers of the removed feature metadata:
 use `configuration_policy`/`cli_compatibility` instead. Core decision request and
 result validation is unchanged. Old archives and release tags remain untouched.
+
+## Readable project logs (from 0.5.0)
+
+`--project-id` adds a workspace-bound readable log namespace while retaining
+existing plan journals and budgets at their canonical paths. Keep the same
+state root for an existing plan. See [project logs](project-logs.md).
+New `run.json` uses `arquilo.run_log.v2`; `run_log.json` remains a v1-compatible
+snapshot. Capture paths are numbered phase folders, not `.jsonl.calls/call-*`.
+Use captured path metadata instead of hard-coded directory patterns. Old
+archives are unchanged. No Codex invocation or provider policy changes here.

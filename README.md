@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.4.0.** Suitable for supervised evaluation in disposable
+**Public preview: 0.5.0.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
@@ -120,6 +120,15 @@ internal archives are not swept into commits. Pushing additionally requires
 `--git-push`; the default is a local commit only. Existing dry-run reports are
 never overwritten. See [controller safety and migration](docs/controller-safety.md)
 for state locations, recovery, Git examples and the limits of these checks.
+
+## Readable project logs
+
+Add `--project-id migration-pilot` to your existing runner command. New logs live
+under `<state-root>/migration-pilot/runs/<UTC-timestamp>/`, with a
+`latest-run.txt` pointer, `run.json` status and `overview.log` index. Individual
+Codex calls use short numbered phase folders and errors print their stderr path.
+Keep your existing `--state-dir` when continuing a plan: authoritative state and
+budgets stay in their current location. [Layout and migration](docs/project-logs.md).
 
 ## Commands and compatibility
 

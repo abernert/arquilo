@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 — 2026-10-02 (public preview)
+
+- Add optional `--project-id` for readable, workspace-bound log namespaces.
+  Remember plan assignments without moving or resetting canonical state/budgets.
+- Allocate one UTC-millisecond run directory, with short collision suffixes,
+  latest-started text pointer, run status JSON and concise overview log.
+- Flatten task/AutoBuild/Codex capture paths into numbered phase folders;
+  retain identities inside manifests and keep old archives unchanged.
+- Print exact stderr/capture paths for failed processes; record startup failure
+  and caught cancellation without marking incomplete work successful.
+- Keep legacy `run_log.json` consumers supported. Add project-layout, restart,
+  concurrent-allocation and filesystem-boundary regression tests.
+- No Codex model/provider/permission flags or existing release tags change.
+
 ## 0.4.0 — 2026-09-30 (public preview)
 
 - Inherit trusted Codex user/managed configuration and host environment in Decide.

@@ -28,6 +28,11 @@ restore the plan from the controller evidence and rerun normally.
 
 ## Where state and logs live
 
+For readable project IDs, timestamped run folders and direct failure-log paths,
+see [project logs](project-logs.md). `--project-id` changes the log namespace,
+not the persistent plan/budget directory. Keep the same state root on restart.
+
+
 The task runner prints its actual log paths. It keys a controller directory by
 the canonical workspace and task-file path under:
 
