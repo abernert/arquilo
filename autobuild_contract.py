@@ -58,8 +58,11 @@ class AutoBuildContext:
     review_policy_rules: tuple[str, ...] | None = None
     budget_directory: str | Path | None = None
     budget_root_id: str | None = None
+    allow_todo_modifications: bool = False
 
     def __post_init__(self):
+        if type(self.allow_todo_modifications) is not bool:
+            raise ValueError("allow_todo_modifications must be bool")
         if self.task_source not in ("inline", "todo"):
             raise ValueError("task_source muss inline oder todo sein.")
         for name in ("decision_attempt_id", "decision_phase"):
@@ -127,14 +130,21 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
         raise AutoBuildResultError("AutoBuild status/completed contradicts exit_code")
     budget = payload.get("call_budget")
     if budget is not None:
-        if (not isinstance(budget, dict) or not schema_matches(budget.get("schema_version"), "arquilo.call_budget.v1")
-                or any(type(budget.get(k)) is not int for k in ("limit", "used", "remaining"))
-                or not 0 <= budget["used"] <= budget["limit"] or budget["limit"] < 1
-                or budget["remaining"] != budget["limit"] - budget["used"]):
+        if (not isinstance(budget, dict) or not (budget.get("schema_version") == "arquilo.call_budget.v2"
+                    or schema_matches(budget.get("schema_version"), "arquilo.call_budget.v1"))
+                or any(type(budget.get(k)) is not int for k in ("limit", "used"))
+                or budget["limit"] < 0 or budget["used"] < 0 or "remaining" not in budget
+                or (budget.get("schema_version") != "arquilo.call_budget.v2" and budget["limit"] == 0)
+                or (budget["limit"] == 0 and budget.get("remaining") is not None)
+                or (budget["limit"] > 0 and (
+                    type(budget.get("remaining")) is not int or budget["used"] > budget["limit"]
+                    or budget["remaining"] != budget["limit"] - budget["used"]))
+                or ("unlimited" in budget and (type(budget["unlimited"]) is not bool
+                    or budget["unlimited"] != (budget["limit"] == 0)))):
             raise AutoBuildResultError("Invalid shared call budget")
     exhausted = payload.get("budget_exhausted")
     if exhausted is not None:
-        if (not isinstance(exhausted, dict) or budget is None or budget["remaining"] != 0
+        if (not isinstance(exhausted, dict) or budget is None or budget["limit"] == 0 or budget["remaining"] != 0
                 or exhausted.get("root_id") != budget.get("root_id") or code != 9
                 or not exhausted.get("blocked_phase")):
             raise AutoBuildResultError("Budget exhaustion contradicts AutoBuild result")

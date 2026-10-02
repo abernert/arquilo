@@ -77,8 +77,14 @@ class PlanAuthority:
     require the persisted snapshot; owner edits require explicit adoption. A
     pending *controller-approved* status write can recover after a crash.
     """
-    def __init__(self, todo: Path, directory: Path | None, *, accept_changes: bool = False):
+    def __init__(self, todo: Path, directory: Path | None, *, accept_changes: bool = False,
+                 allow_modifications: bool = False, workspace: Path | None = None):
+        if type(allow_modifications) is not bool:
+            raise ValueError('allow_modifications must be bool')
+        self.allow_modifications = allow_modifications
+        self.mutations = []
         self.todo = safe_io.lexical_path(todo)
+        self.workspace = workspace or self.todo.parent
         self.directory = directory
         self.mutex = threading.RLock()
         self._lock_context = None
@@ -118,14 +124,17 @@ class PlanAuthority:
                 current = pending
                 self._save(pending)
             if current != self.text:
-                if not accept_changes:
-                    raise PlanIntegrityError('Task plan changed outside the controller. Inspect it, restore it or explicitly use --accept-plan-changes; no task is accepted.')
-                _blocks(current)
-                # Preserve old evidence rather than silently resetting authority/budgets.
-                audit = safe_io.unique_directory(directory / 'owner-adoptions', 'change')
-                safe_io.write_text(audit / 'previous-plan.md', self.text, exclusive=True)
-                self.text = current
-                self._save(current)
+                if allow_modifications:
+                    self._adopt_mutation(current, source='startup')
+                else:
+                    if not accept_changes:
+                        raise PlanIntegrityError('Task plan changed outside the controller. Inspect it, restore it or explicitly use --accept-plan-changes; no task is accepted.')
+                    _blocks(current)
+                    # Preserve old evidence rather than silently resetting authority/budgets.
+                    audit = safe_io.unique_directory(directory / 'owner-adoptions', 'change')
+                    safe_io.write_text(audit / 'previous-plan.md', self.text, exclusive=True)
+                    self.text = current
+                    self._save(current)
             self.check()
         except BaseException:
             self.close()
@@ -147,12 +156,46 @@ class PlanAuthority:
                 'text': text, 'pending': pending,
             }, ensure_ascii=False, indent=2) + '\n').encode())
 
+    def _adopt_mutation(self, current: str, *, source: str):
+        # Observation/adoption is NOT independent verification of DONE or outputs.
+        before_pre, before = _blocks(self.text)
+        after_pre, after = _blocks(current)
+        from todo_lint import lint_todo_file
+        issues = lint_todo_file(self.todo, workdir=self.workspace)
+        if issues:
+            raise PlanIntegrityError("Mutable task plan is invalid: " + "; ".join(
+                f"line {issue.line}: {issue.message}" for issue in issues[:8]))
+        if safe_io.read_text(self.todo) != current:
+            raise PlanIntegrityError('Task file changed during validation; retry after the writer has stopped')
+        from datetime import datetime, UTC
+        record = {
+            'schema_version': 'arquilo.plan_mutation.v1',
+            'observed_at': datetime.now(UTC).isoformat(), 'source': source,
+            'added': [key for key in after if key not in before],
+            'removed': [key for key in before if key not in after],
+            'changed': [key for key in after if key in before and after[key] != before[key]],
+            'preamble_changed': before_pre != after_pre,
+            'independently_verified': False,
+        }
+        if self.directory is not None:
+            audit = safe_io.unique_directory(self.directory / 'plan-mutations', 'change')
+            safe_io.write_text(audit / 'before.md', self.text, exclusive=True)
+            safe_io.write_text(audit / 'after.md', current, exclusive=True)
+            safe_io.write_text(audit / 'change.json', json.dumps(record, indent=2) + '\n', exclusive=True)
+            record['archive'] = str(audit)
+            self._save(current)
+        self.text = current
+        self.mutations.append(record)
+
     def check(self):
         with self.mutex:
             current = safe_io.read_text(self.todo)
             _blocks(current)
             if current != self.text:
-                raise PlanIntegrityError('Unapproved task-plan mutation (status, task removal, requirements or directives); stopping before acceptance.')
+                if self.allow_modifications:
+                    self._adopt_mutation(current, source='runtime')
+                else:
+                    raise PlanIntegrityError('Unapproved task-plan mutation (status, task removal, requirements or directives); stopping before acceptance.')
 
     def replace_approved(self, text: str):
         with self.mutex:

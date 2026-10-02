@@ -6,7 +6,7 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.5.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.6.0 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
@@ -84,3 +84,17 @@ Die neuen Logs liegen unter `<state-root>/migration-pilot/runs/<UTC-Zeitstempel>
 `stderr.bin`, soweit ein Prozessarchiv vorliegt. Behalte für bestehende Pläne
 denselben `--state-dir`: Aufgabenstände und Budgets bleiben unverändert.
 [Details und PowerShell-Beispiel](docs/project-logs.md).
+
+## Operatoroptionen
+
+`--max-calls 0` bedeutet **unbegrenzt und ist der Standard**. Auch vorhandene
+endliche Budgets übernehmen ihn beim Weiterführen, ohne Verbrauch zu löschen.
+`--logs-in-workdir` legt neue Live-Protokolle unter `.codex_runs/run_todos` ab;
+maßgebliche Plan- und Budgetdateien bleiben extern.
+
+Für „Aufgabe 2 erstellt weitere Aufgaben in derselben Datei, danach menschliche
+Prüfung“: `--allow-todo-modifications --stop 2`. Ohne den ersten Schalter bleibt
+der laufende Plan geschützt. Nach der menschlichen Prüfung ohne den Schalter
+fortsetzen, bei eigenen Änderungen einmal `--accept-plan-changes` verwenden.
+Ein vorhandenes `process_stop` wird nicht automatisch entfernt.
+[Anleitung und Beispiele](docs/operator-controls.md).

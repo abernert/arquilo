@@ -208,7 +208,7 @@ class HistoricalSchemaTests(unittest.TestCase):
             with self.assertWarns(FutureWarning):
                 budget = CallBudget(p, 2, 'test')
             self.assertEqual(budget.snapshot()['used'], 1)
-            self.assertEqual(budget.snapshot()['schema_version'], 'arquilo.call_budget.v1')
+            self.assertEqual(budget.snapshot()['schema_version'], 'arquilo.call_budget.v2')
             self.assertEqual(budget.consume('test', 'review')['number'], 2)
             with self.assertRaises(BudgetExhausted):
                 budget.consume('test', 'extra')

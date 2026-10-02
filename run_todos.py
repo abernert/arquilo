@@ -161,7 +161,12 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         "schema_version": ARQUILO_CAPABILITIES_SCHEMA_VERSION,
         "runtime_version": ARQUILO_RUNTIME_VERSION,
         "retained_core_options": ["CFG parallel", "runtime_profile", "--git"],
+        "operator_controls": {
+            "default_max_calls": DEFAULT_MAX_CALLS, "unlimited_max_calls": 0,
+            "default_logs_in_workdir": False, "default_allow_todo_modifications": False,
+        },
         "features": {
+            "run_todos.operator_controls": 1,
             "run_todos.breakdown": RUN_TODOS_BREAKDOWN_CONTRACT_VERSION,
             "run_todos.final_failure": RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION,
             "run_todos.parent_review": RUN_TODOS_PARENT_REVIEW_CONTRACT_VERSION,
@@ -765,6 +770,8 @@ class TodoRunner:
         state_dir: Optional[Path] = None,
         project_id: Optional[str] = None,
         accept_plan_changes: bool = False,
+        logs_in_workdir: bool = False,
+        allow_todo_modifications: bool = False,
         breakdown_policy: str = "minimal",
         breakdown_max_children: int = 4,
         breakdown_max_rounds: int = 2,
@@ -787,6 +794,12 @@ class TodoRunner:
         check_removed_environment()
         codex_policy.validate_start_policy(sandbox=sandbox, network_access=network_access)
         self.project_id = validate_project_id(project_id)
+        for name, value in (("logs_in_workdir", logs_in_workdir), ("allow_todo_modifications", allow_todo_modifications)):
+            if type(value) is not bool:
+                raise ValueError(f"{name} must be bool")
+        self.logs_in_workdir = logs_in_workdir
+        self.allow_todo_modifications = allow_todo_modifications
+        self.reviewed_this_run: Set[str] = set()
         self.project_logs = None
         self.log_lock = threading.RLock()
         self.network_access = network_access
@@ -855,8 +868,8 @@ class TodoRunner:
         safe_io.check_path(self.workdir / ".codex_runs")
         self.state_dir = (state_directory(self.workdir, self.todo_workspace_file, state_dir)
                           if not self.dry_run else safe_io.lexical_path(state_dir or default_state_root()) / "dry-run")
-        self.runs_dir = (self.state_dir / "runs" if self.state_dir else
-                         self.workdir / ".codex_runs" / "run_todos")
+        self.runs_dir = (self.workdir / ".codex_runs" / "run_todos" if logs_in_workdir
+                         else self.state_dir / "runs")
         self.git_selection = None
         if git_push and not git_enabled:
             raise ValueError("--git-push requires --git")
@@ -876,13 +889,23 @@ class TodoRunner:
             self._ensure_support_documents()
             self._read_policy_text()
         self.plan_authority = PlanAuthority(self.todo_file, None if self.dry_run else self.state_dir,
-                                            accept_changes=accept_plan_changes)
+                                            accept_changes=accept_plan_changes,
+                                            allow_modifications=allow_todo_modifications,
+                                            workspace=self.workdir)
         if not self.dry_run:
             try:
                 self.project_logs = project_logs(self.state_dir, self.workdir,
                                                  self.todo_workspace_file, self.project_id)
                 self.project_id = self.project_logs.project_id
-                self.runs_dir = self.project_logs.directory / "runs"
+                if self.logs_in_workdir:
+                    self.project_logs = replace(self.project_logs,
+                        directory=self.workdir / ".codex_runs" / "run_todos", workspace_layout=True)
+                self.runs_dir = self.project_logs.runs_directory
+                # Apply owner policy to existing budgets, including exhausted
+                # 0.5.x budgets, without resetting counts or moving state.
+                for budget_dir in sorted((self.state_dir / "call_budgets").glob("task_*")):
+                    if re.fullmatch(r"task_[0-9]+", budget_dir.name):
+                        self._call_budget_for(budget_dir.name.removeprefix("task_"))
                 self.run_dir = self.project_logs.new_run(self.run_started_at, run_id=self.run_id,
                     workspace=self.workdir, todo=self.todo_workspace_file)
                 if run_id is None:
@@ -924,6 +947,8 @@ class TodoRunner:
             ids = list(initial_status_map)
             if ids.index(start_id) > ids.index(stop_id):
                 raise ValueError("--start muss vor oder gleich --stop liegen.")
+        self._initial_stop_scope = (set(list(initial_status_map)[:list(initial_status_map).index(stop_id) + 1])
+                                    if stop_id else None)
         self.completed.update(
             identifier
             for identifier, status in initial_status_map.items()
@@ -1168,6 +1193,11 @@ class TodoRunner:
             print(f"[info] Projekt: {self.project_id}")
         if self.project_logs is not None:
             print(f"[info] Letzter Lauf: {self.project_logs.directory / 'latest-run.txt'}")
+        print(f"[info] Aufrufbudget je Aufgabenbaum: {'unbegrenzt (0)' if self.max_calls == 0 else self.max_calls}")
+        if self.logs_in_workdir:
+            print("[info] Logs im Workdir; Plan/Budget/Sperren bleiben extern. Workspace-Logs sind nicht manipulationsgeschützt.")
+        if self.allow_todo_modifications:
+            print("[info] Veränderlicher Aufgabenplan; Planänderungen sind keine unabhängig geprüften Abschlüsse.")
         print(f"[info] Run-ID: {self.run_id}")
         print(f"[info] Laufprotokolle: {self.run_dir}")
         print(f"[info] Uebersicht: {self.run_dir / 'overview.log'}")
@@ -1183,6 +1213,9 @@ class TodoRunner:
                 self.process_stop_details = details
                 self.stop_triggered = True
                 self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
+                if self.max_calls == 0 and "shared_call_budget_exhausted" in details:
+                    print("[info] Das Aufrufbudget ist jetzt unbegrenzt. Eine vorhandene process_stop-Datei "
+                          "bleibt ein separater Stopp: Zwischenstände prüfen und die Datei bewusst entfernen.")
                 print(
                     f"[fatal] process_stop erkannt ({self._path_for_prompt(self.process_stop_path)}) – "
                     f"Lauf startet nicht. {details}"
@@ -1265,14 +1298,14 @@ class TodoRunner:
                         "[fatal] ToDo-Lauf wird beendet: " + outcome.message
                     )
                     break
+                # Owner stop is a scheduling barrier, even if this task added
+                # more tasks/children. Its own AutoBuild review has already run.
+                if self.stop_id and todo.identifier == self.stop_id:
+                    print(f"[info] Stop-Marke {self.stop_id} erreicht – keine weiteren Aufgaben werden gestartet.")
+                    self.stop_triggered = True
+                    break
                 self._maybe_run_pending_reviews(trigger_parent=todo.identifier)
                 if self.process_stop_detected or self.stop_triggered:
-                    break
-                if self.stop_id and todo.identifier == self.stop_id:
-                    print(
-                        f"[info] Stop-Marke {self.stop_id} erreicht – Ablauf endet nach diesem ToDo."
-                    )
-                    self.stop_triggered = True
                     break
             if not self.aborted and not self.stop_triggered:
                 self._maybe_run_pending_reviews(force=True)
@@ -1435,6 +1468,12 @@ class TodoRunner:
             "project_id": self.project_id, "run_directory": str(self.run_dir),
             "workspace": str(self.workdir), "todo_file": str(self.todo_workspace_file),
             "controller_state": str(self.state_dir),
+            "logs_location": "workdir" if self.logs_in_workdir else "external",
+            "todo_policy": "mutable" if self.allow_todo_modifications else "guarded",
+            "reviewed_this_run": sorted(self.reviewed_this_run),
+            "plan_mutations": list(self.plan_authority.mutations),
+            "completion_scope": "selected execution; plan DONE markers are not independent review evidence",
+            "stop_id": self.stop_id,
             "started_at": self.run_started_at.isoformat(),
             "finished_at": None if run_status in {"preparing", "running"} else datetime.now(UTC).isoformat(),
             "status": run_status, "exit_code": self.exit_code,
@@ -1626,6 +1665,12 @@ class TodoRunner:
                 else _DEFAULT_TASK_CONTRACT_INSTRUCTION
             ),
             (
+                "Der Betreiber erlaubt Änderungen an derselben ToDo-Datei: ergänze oder überarbeite "
+                "Aufgaben, soweit der Auftrag dies verlangt. Neue Aufgaben müssen eindeutige IDs "
+                "haben und offen (TASK/Auftrag) sein. Lass den aktuell bearbeiteten Auftrag offen; "
+                "seine Abnahme erfolgt separat gegen die ursprünglichen Anforderungen. "
+                "Führe neu erzeugte Aufgaben nicht selbst aus, sofern du nur den Plan erstellen sollst. "
+                if self.allow_todo_modifications else
                 'Ändere den Status eines ToDos nie von "Auftrag" auf "DONE". '
                 "Das ist ausschließlich einer separaten Kontrollinstanz vorbehalten. "
                 'Ebenfalls ändere nie einen Status von "DONE" zurück auf "Auftrag". '
@@ -1633,6 +1678,10 @@ class TodoRunner:
                 'gehe davon aus, dass das die Kontrollinstanz gewesen ist.'
             ),
         ]
+        if self.stop_id:
+            instructions.append(f"Der Betreiber hat --stop {self.stop_id} gewählt: Nach dieser Aufgabe "
+                                "darf keine nachfolgende oder neu erzeugte Aufgabe ausgeführt werden. "
+                                "Plane sie nur; der nächste Lauf wird vom Betreiber gestartet.")
         if self._task_command() == "***Task***":
             instructions.append(
                 "Neue ToDo-Überschriften verwenden '<id>. ***Task***: <Text>'. "
@@ -1794,6 +1843,22 @@ class TodoRunner:
             )
             return
         text = read_utf8(self.todo_file, preserve_newlines=True, preserve_bom=True)
+        self.reviewed_this_run.add(todo.identifier)
+        if self.allow_todo_modifications:
+            headers_now = _todo_line_map(text)
+            if todo.identifier not in headers_now or headers_now[todo.identifier][0] == "OBSOLETE":
+                self._overview(f"Reviewed original task {todo.identifier}; mutable plan removed/retired it; no DONE written")
+                return
+            frozen = getattr(self, "review_contracts", {}).get(todo.identifier)
+            if frozen is not None and headers_now[todo.identifier][0] != "DONE":
+                from decision_request import snapshot_todo
+                original = json.loads(frozen[1])
+                current_snapshot = snapshot_todo(text, task_id=todo.identifier,
+                    reference_prompt=original['original_request'],
+                    attempt_prompt=original['original_request'], source=str(self.todo_file))
+                if current_snapshot.task_text != original['task_text']:
+                    self._overview(f"Reviewed original task {todo.identifier}; changed revision remains open")
+                    return
         lines = text.splitlines(keepends=True)
         changed = False
         headers = dict(task_headers(text))
@@ -2122,12 +2187,20 @@ class TodoRunner:
             return [seed_todo]
         todos = self._parse_todo_file()
         batch: List[TodoItem] = []
+        ordered = list(_todo_line_map(read_utf8(self.todo_file)))
+        if self.stop_id and self.stop_id not in ordered:
+            raise RuntimeError(f"Stop-ToDo {self.stop_id} fehlt; Parallelgruppe wird nicht gestartet.")
+        stop_position = ordered.index(self.stop_id) if self.stop_id else None
         seed_found = False
         for item in todos:
             if not seed_found:
                 if item.identifier != seed_todo.identifier:
                     continue
                 seed_found = True
+            if stop_position is not None and ordered.index(item.identifier) > stop_position:
+                break
+            if self.allow_todo_modifications and self._initial_stop_scope is not None and item.identifier not in self._initial_stop_scope:
+                continue
             if item.identifier in self.processed:
                 continue
             if item.depth > self.max_depth:
@@ -2281,7 +2354,7 @@ class TodoRunner:
                 stop_requested = True
             if context.agent and outcome.completed:
                 self.completed_agents.add(context.agent)
-            if not stop_requested:
+            if not stop_requested and not (self.stop_id and todo.identifier == self.stop_id):
                 self._maybe_run_pending_reviews(trigger_parent=todo.identifier)
             if self.stop_id and todo.identifier == self.stop_id:
                 print(
@@ -2899,11 +2972,12 @@ class TodoRunner:
     def _autobuild_python_attempt(self, task_text, workdir, options, context):
         """One isolated worker for retained CFG parallel groups; never a TodoRunner."""
         summary_path = Path(options.summary_json)
-        request_path = summary_path.with_name(f"call_{uuid.uuid4().hex}.json")
+        control_dir = unique_directory(self.state_dir / "worker_calls", prefix="worker")
+        request_path = control_dir / "request.json"
+        authoritative_summary = control_dir / "summary.json"
+        worker_options = replace(options, summary_json=authoritative_summary)
         self._atomic_write_text(request_path, json.dumps(call_payload(
-            task=task_text, workdir=workdir, options=options, context=context), ensure_ascii=False, indent=2) + "\n")
-        if summary_path.exists():
-            summary_path.unlink()
+            task=task_text, workdir=workdir, options=worker_options, context=context), ensure_ascii=False, indent=2) + "\n")
         command = [sys.executable, str(self.repo_root / "autobuild.py"),
                    "--request-json", str(request_path)]
         process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -2918,7 +2992,11 @@ class TodoRunner:
         error_code = "invalid_autobuild_summary"
         payload = {}
         try:
-            payload = json.loads(summary_path.read_text(encoding="utf-8"), object_pairs_hook=strict_object)
+            returned_bytes = safe_io.read_bytes(authoritative_summary)
+            # Publish the byte-identical result for metarunners, but only parse
+            # the private worker return, never a workspace summary as authority.
+            safe_io.write_bytes(summary_path, returned_bytes)
+            payload = json.loads(returned_bytes.decode("utf-8"), object_pairs_hook=strict_object)
             validate_result(payload)
             error_code = "autobuild_exit_mismatch"
             validate_result(payload, process_exit_code=process.returncode)
@@ -2943,7 +3021,7 @@ class TodoRunner:
         with self.call_budget_lock:
             if root_id not in self.call_budgets:
                 directory = self.state_dir / "call_budgets" / f"task_{root_id}"
-                self.call_budgets[root_id] = CallBudget(directory, self.max_calls, root_id)
+                self.call_budgets[root_id] = CallBudget(directory, self.max_calls, root_id, allow_limit_change=True)
             return self.call_budgets[root_id]
 
     def _capture_original_contract(
@@ -2983,8 +3061,9 @@ class TodoRunner:
                 self.plan_authority.verify_children(self._derive_todo_id_from_identifier(identifier))
             else:
                 self.plan_authority.check()
-                if read_utf8(active_file) != before:
-                    raise PlanIntegrityError("Worker changed its copied task plan")
+                if read_utf8(active_file) != before and (
+                        not self.allow_todo_modifications or active_file != self.todo_file):
+                    raise PlanIntegrityError("Worker changed its copied task plan; edit the primary task file in a sequential task")
         except (PlanIntegrityError, safe_io.UnsafePathError, OSError) as exc:
             return replace(outcome, completed=False, abort=True,
                 message=str(exc), execution_error=execution_error(str(exc),
@@ -3152,6 +3231,7 @@ class TodoRunner:
                 review_policy_rules=(self.runtime_profile.autobuild_review_rules
                                      if self.runtime_profile_active else None),
                 budget_directory=budget.directory, budget_root_id=budget.root_id,
+                allow_todo_modifications=self.allow_todo_modifications,
             )
             try:
                 if use_cli_subprocess:
@@ -3269,6 +3349,8 @@ class TodoRunner:
             "todo_file_source": str(self.todo_source_file),
             "workdir": str(self.workdir),
             "controller_state": str(self.state_dir),
+            "logs_in_workdir": self.logs_in_workdir,
+            "allow_todo_modifications": self.allow_todo_modifications,
             "project_id": self.project_id,
             "run_directory": str(self.run_dir),
             "sandbox": self.sandbox,
@@ -3772,8 +3854,12 @@ class TodoRunner:
                 raise RuntimeError(f"Start-ToDo {self.start_id} wurde aus dem laufenden Plan entfernt.")
             self.start_reached = True
             self.skip_before_ids.update(ordered[:ordered.index(self.start_id)])
+        if self.stop_id and self.stop_id not in ordered:
+            raise RuntimeError(f"Stop-ToDo {self.stop_id} fehlt; keine weiteren Aufgaben werden gestartet.")
         stop_position = ordered.index(self.stop_id) if self.stop_id in ordered else None
         for item in todos:
+            if self.allow_todo_modifications and self._initial_stop_scope is not None and item.identifier not in self._initial_stop_scope:
+                continue
             if item.identifier in self.skip_before_ids or item.identifier in self.processed:
                 continue
             if stop_position is not None and ordered.index(item.identifier) > stop_position:
@@ -4247,7 +4333,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Fortsetzungsfaktor: maximal max-steps × max-retries Produktions-/Korrekturschritte; kein Gesamtauftrag-Replay.",
     )
     parser.add_argument("--max-calls", type=int, default=DEFAULT_MAX_CALLS,
-                        help="Gemeinsames Modellaufruflimit je Aufgabenbaum und Runnerlauf, inklusive Kinder/Reviews/Decide (Standard: 100).")
+                        help="Codex-Ausführungsversuche je Aufgabenbaum über Neustarts, inklusive Kinder/Reviews/Decide; 0 = unbegrenzt (Standard).")
     parser.add_argument(
         "--breakdown-policy",
         choices=list(BREAKDOWN_POLICIES),
@@ -4355,6 +4441,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--state-dir", type=Path, help="Privates Basisverzeichnis außerhalb des Workspaces; vorhandenen Zustand weiterverwenden.")
     parser.add_argument("--project-id", type=validate_project_id, default=None,
                         help="Lesbare Projekt-ID fuer Logs (1-48 Zeichen); wird dauerhaft diesem Workspace/Plan zugeordnet.")
+    parser.add_argument("--logs-in-workdir", action="store_true",
+                        help="Lauflogs unter <workdir>/.codex_runs/run_todos; Steuerzustand und Budgets bleiben extern.")
+    parser.add_argument("--allow-todo-modifications", action="store_true",
+                        help="Veränderliche ToDo-Liste erlauben und Änderungen protokollieren; --stop bleibt eine Ausführungsgrenze.")
     parser.add_argument("--accept-plan-changes", action="store_true",
                         help="Bewusst vom Eigentümer geprüfte externe Planänderungen übernehmen; Budgets bleiben erhalten.")
     parser.add_argument(
@@ -4457,6 +4547,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 git_paths=args.git_path, git_push=args.git_push,
                 state_dir=args.state_dir, project_id=args.project_id,
                 accept_plan_changes=args.accept_plan_changes,
+                logs_in_workdir=args.logs_in_workdir,
+                allow_todo_modifications=args.allow_todo_modifications,
                 model=args.model,
                 reasoning_effort=args.reasoning_effort,
                 breakdown_policy=args.breakdown_policy,

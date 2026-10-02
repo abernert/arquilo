@@ -16,3 +16,9 @@ compatible; use a separate workspace for it as well.
 
 Examples do not prove model accuracy or sandbox security. Their real outputs,
 reports and controller status must be checked after execution.
+
+`planning_todo.md` generates the remaining work in the **same file**. Copy it to
+`tasks.md` in a fresh workspace, run with `--allow-todo-modifications --stop 2`,
+and inspect the generated open tasks before a separate strict continuation.
+Do not use this example without the opt-in: strict mode rejects plan mutations.
+[Full commands and trust boundaries](../docs/operator-controls.md).

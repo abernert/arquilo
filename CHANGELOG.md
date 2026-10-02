@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0 — 2026-10-02 (public preview)
+
+- Default call budget to 0 (unlimited), including existing finite runner stores.
+  Preserve counters/claims and audit owner limit changes; workers cannot reset
+  or change limits. Emit budget/claim v2 and accept valid older finite records.
+- Add independent --logs-in-workdir and --allow-todo-modifications opt-ins.
+  Keep authoritative journals/budgets and worker IPC external; workspace logs
+  are live diagnostics, not trusted controller authority.
+- Support generating further tasks in the same primary file, followed by
+  --stop 2 and human inspection. Retain original-assignment review snapshots;
+  do not schedule generated tasks beyond the planning pause or parallel batch
+  stop boundary. Record observed changes separately from reviewed completions.
+- Keep strict plans/external logs by default, all stop instructions and other
+  limits, and existing model/provider/sandbox/technical retry policy unchanged.
+- Correct budget and log-location documentation and add operator regression
+  coverage plus a synthetic single-file planning example.
+
+
 ## 0.5.0 — 2026-10-02 (public preview)
 
 - Add optional `--project-id` for readable, workspace-bound log namespaces.

@@ -112,12 +112,17 @@ class ProjectLogs:
     project_id: str | None
     directory: Path
     state_directory: Path
+    workspace_layout: bool = False
+
+    @property
+    def runs_directory(self) -> Path:
+        return self.directory if self.workspace_layout else self.directory / 'runs'
 
     def new_run(self, started: datetime, *, run_id: str, workspace: Path, todo: Path) -> Path:
         # Use the same lock as project registration, so separate plans in a
         # project cannot race while updating the latest-started pointer.
         with index_lock(self.state_directory.parent):
-            path = reserve_directory(self.directory / 'runs', timestamp_name(started))
+            path = reserve_directory(self.runs_directory, timestamp_name(started))
             _json(path / 'run.json', {
                 'schema_version': 'arquilo.run_log.v2', 'run_id': run_id,
                 'project_id': self.project_id, 'run_directory': str(path),
@@ -133,9 +138,10 @@ class ProjectLogs:
                 current = safe_io.read_text(latest).strip()
             except FileNotFoundError:
                 pass
-            if current and not re.fullmatch(r'runs/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z(?:-\d{4})?', current):
+            prefix = '' if self.workspace_layout else 'runs/'
+            if current and not re.fullmatch(prefix + r'\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z(?:-\d{4})?', current):
                 raise ProjectLogError('Invalid latest-run.txt; inspect it rather than following arbitrary paths')
-            relative = 'runs/' + path.name
+            relative = prefix + path.name
             if relative > current:
                 safe_io.atomic_write(latest, (relative + '\n').encode())
             return path

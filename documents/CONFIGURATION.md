@@ -13,7 +13,9 @@ Der Import liest keine Laufkonfiguration; jeder Aufruf löst seine Werte neu auf
 | Modell | `--model <id>`; ohne Override bleibt der Codex-Default für Produktion/Review wirksam. |
 | Reasoning | `--reasoning-effort <wert>`; vorhandene Werte: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Ob das gewählte Modell den Wert unterstützt, entscheidet Codex. |
 | Shellnetzwerk | `--network-access`; standardmäßig aus. Sandbox maximal `workspace-write`, Review `read-only`. Kein Netzwerk-Env-Alias erteilt diese Freigabe. |
-| Gesamtbudget | `--max-calls <zahl>`; Standard 100, gemeinsam für Auftrag, Reviews, Korrekturen, Breakdown und Decide. Details: [WORKFLOW_LIMITS.md](WORKFLOW_LIMITS.md). |
+| Aufrufbudget | `--max-calls <zahl>`; Standard **0 = unbegrenzt**, positive Werte je Aufgabenbaum über Neustarts. Bereits gespeicherte endliche Budgets übernehmen den neuen Default unter Erhalt des Verbrauchs. [Details](WORKFLOW_LIMITS.md). |
+| Workdir-Protokolle | `--logs-in-workdir`; Standard aus. Live-Logs unter `<workdir>/.codex_runs/run_todos`, Steuerzustand/Budgets extern. |
+| Veränderlicher Plan | `--allow-todo-modifications`; Standard aus. Gültige Änderungen im selben Taskfile erlauben und protokollieren; `--stop 2` bleibt eine Ausführungsgrenze. [Beispiele](../docs/operator-controls.md). |
 | Trockenlauf | `--dry-run --dry-run-file <datei>`; schreibt die Befehlsvorschau, führt weder Codex noch den Profil-Preflight aus und verändert keinen ToDo-Status. |
 | Diagnose | `python arquilo_doctor.py --workdir <ordner> --json`; kostenfreie lokale Metadaten, keine Versionsbindung. Zusätzlich `--check-decide` für eine tatsächliche Funktionsprobe (ein möglicher kostenpflichtiger Modellaufruf); `--model`, `--reasoning-effort` und `--decide-timeout` nur für diese Probe. [Bedienung und Prüfgrenzen](QUICKSTART.md). |
 

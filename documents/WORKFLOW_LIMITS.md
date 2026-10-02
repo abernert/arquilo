@@ -1,88 +1,69 @@
-# Fortsetzung und gemeinsame Aufrufgrenzen
+# Aufrufbudget, Fortsetzung und weitere Grenzen
 
-Seit ToDo 1021 gilt `--max-calls 100` als gemeinsame Obergrenze je numerischem
-Aufgabenbaum und Runnerlauf. `12`, `12.1`, deren Breakdown, Korrekturen,
-Decide-Aufrufe und Parent-Reviews teilen dasselbe Budget. Ein separater
-Top-Level-Auftrag `13` erhält ein eigenes Budget. Standalone-AutoBuild nutzt
-dieselbe Option für seinen einzelnen Auftrag.
+`--max-calls 0` ist der Standard: keine Obergrenze der gezählten Codex-
+Ausführungsversuche. Ein positiver Wert begrenzt je numerischem Hauptaufgabenbaum
+über Neustarts hinweg. `12`, `12.1`, deren Kinder, Breakdown, Korrekturen, Reviews
+und Decide teilen einen Zähler; Hauptauftrag `13` erhält seinen eigenen.
 
-Ein Aufruf zählt unmittelbar vor dem Ausführungsversuch. Produktion, Korrektur,
-Pflichtreview, Breakdown-Produktion/-Review, Kinder und Parent-Audit/-Review
-kosten jeweils einen Aufruf. Jede tatsächliche Decide-Ausführung zählt ebenfalls,
-einschließlich der optionalen zweiten Formatprüfung aus ToDo 1013.
-Deterministische JSON-Auswertung, CLI-Versionsprobe und Python-Workerstart
-sind keine Modellaufrufe. Fehlgeschlagene Versuche werden nicht gutgeschrieben.
-Das ist eine Aufrufgrenze, kein Token-, Kosten- oder Laufzeitlimit.
+Gezählt wird vor einem Ausführungsversuch, nicht jeder interne Modellrequest von
+Codex. Start-/Provider-/Archivfehler werden nicht gutgeschrieben. Ein einzelnes
+`codex exec` kann mehrere Modellanfragen enthalten. Das Budget ist kein Geld-,
+Token- oder Zeitlimit. CLI-Metadatenproben, reine Python-Workerstarts und
+JSON-Auswertung zählen nicht. Der separate Sandbox-Preflight ist nicht Teil
+des Aufgabenbaum-Zählers. Bei unbegrenztem Budget wird der Verbrauch weiter gezählt.
+
+## Bereits begonnene Läufe
+
+Der Runner übernimmt beim Start das gewählte Limit für vorhandene Budgets im
+bisherigen Controller-Zustand. Ohne Parameter werden auch frühere Limits von
+100 oder erschöpfte Limits auf **0 = unbegrenzt** umgestellt. Reservierungen und
+Claims bleiben erhalten; Änderungen werden unter `limit_changes/` protokolliert.
+Nur der Betreiber/Runner darf Limits ändern, nicht ein Worker. Ein ausdrücklich
+gewähltes endliches Limit muss mindestens den bereits verbrauchten Wert umfassen.
+Beschädigte Zustände werden nicht automatisch gelöscht oder zurückgesetzt.
+
+Workspace, Aufgabenlistenpfad und `--state-dir` bei Fortsetzung beibehalten.
+Neue Laufzeitstempel und andere Logorte eröffnen keinen neuen Zähler. Alte
+`process_stop`-Dateien bleiben als separate Stoppanweisung bestehen, auch wenn
+sie ursprünglich durch ein erschöpftes Budget entstanden sind. Vor ihrer
+bewussten Entfernung die Ursache, Teiländerungen und die Fortsetzung prüfen.
+
+## Weitere Schleifen- und Abbruchgrenzen
 
 `max_steps × max_retries` begrenzt im Runner die Produktions-/Korrekturschritte
-eines AutoBuild-Auftrags. `--max-retries` bleibt als Kompatibilitätsparameter
-erhalten, bedeutet jetzt einen **Fortsetzungsfaktor**. Es gibt einen AutoBuild-
-Aufruf und eine Summary mit allen Produktions-, Korrektur- und Reviewversuchen.
-Nach einem gültigen fachlichen FAIL folgt eine gezielte Korrektur gegen den
-ursprünglichen Auftrag und die konkreten Blocker; danach folgt ein neuer Review.
-Ein Gesamtauftrag mit möglichen Seiteneffekten wird nicht erneut abgespielt.
-Die frühere AutoBuild-Queue ist seit 1033 entfernt. Standalone-AutoBuild nutzt
-`max_steps`; Parallel-CFG verwendet weiterhin Python-Worker und dieselben Budgets.
+eines AutoBuild-Auftrags (Standard 3 × 2). `max_retries` ist ein Fortsetzungsfaktor,
+kein vollständiges Wiederholen des Auftrags. Nach gültigem fachlichem FAIL kann
+eine gezielte Korrektur gegen den ursprünglichen Auftrag mit neuem Review folgen.
+Standalone-AutoBuild verwendet `max_steps`. Parallel-CFG verwendet Python-Worker
+und die vom Controller vergebenen gemeinsamen Budgetverzeichnisse.
 
-`breakdown_max_rounds`, `breakdown_max_children` und `max_depth` bleiben
-zusätzliche Grenzen. Sie vergrößern das gemeinsame Aufrufbudget nicht.
-Ein zusammenhängender Restmangel bleibt innerhalb der lokalen Schritte oder
-wird höchstens einem fokussierten Reparaturkind zugewiesen. Unabhängige
-Restarbeiten dürfen mehrere Kinder erhalten. Nach den Kindern bleibt die
-gesonderte Parent-Abnahme einschließlich ihres Pflichtreviews erforderlich.
-Ein negativer Parent-Befund kann nur innerhalb der verbleibenden Grenzen zu
-einer weiteren Reparaturwelle führen.
+`breakdown_max_rounds`, `breakdown_max_children`, `max_depth`, Aufruf-Timeouts,
+STOP/WAIT/Fragen und `--stop` gelten unabhängig vom Aufrufbudget weiter.
+Unbegrenzt bedeutet weder endlose technische Retries noch unbegrenzte Tiefe.
+Quoten-, Authentifizierungs-, Transport- und Protokollfehler bleiben technische
+Fehler und lösen kein automatisches Replay des gesamten Auftrags aus.
 
-## Budgetende und Fehler
+Bei explizit endlichem Budget wird vor dem nächsten Aufruf geprüft. Ein PASS
+auf dem letzten erlaubten Aufruf bleibt gültig. Fehlt noch ein Pflichtreview,
+bleiben Teilresultate erhalten, der Auftrag aber offen. AutoBuild meldet
+`budget_exhausted` mit Exit 9; der Runner meldet `shared_call_budget_exhausted`
+mit Exit 6 und `process_stop`. Unbegrenzte Budgets erschöpfen nicht.
 
-Vor jedem weiteren Modellaufruf wird das gemeinsame Budget geprüft.
-Ein PASS auf dem letzten erlaubten Aufruf bleibt gültig. Fehlt noch ein
-Pflichtreview, bleiben korrigierte Artefakte erhalten und der Auftrag offen.
-Die AutoBuild-Summary enthält `call_budget`, bei Verweigerung zusätzlich
-`budget_exhausted`; Standalone-AutoBuild liefert dann Exit 9.
-Der Runner führt die bestehende terminale Controllerbehandlung aus:
-Diagnose `shared_call_budget_exhausted`, Exit 6 und eine Controller-Stopdatei.
-Diese Runtime-Regel bleibt erhalten. Die Entwicklungsprüfungen zu 1021 bilden
-Stopdateien ausschließlich virtuell ab und erzeugen keine reale `process_stop`.
+## Daten und Operatoroptionen
 
-Quoten-, Authentisierungs-, Transport- und Protokollfehler bleiben technische
-Fehler (Exit 7 beziehungsweise ungültiger Review Exit 8), keine fachlichen
-Breakdowngründe. Sie lösen keine Wiederholung des Gesamtauftrags aus.
-Auch eine Parent-Abnahme, die abgebrochen wird, startet keine Reparatur.
-STOP, WAIT, Fragenablage und `process_stop_policy` behalten ihre bisherige Rolle.
-Budgetmangel allein erzeugt keine Nutzerfrage.
+Maßgeblich bleiben externe `budget.json`, `reservations.json` und nummerierte
+Claims unter `<controller-state>/<plan>/call_budgets/task_<root>/`. Reservierung
+und Dateioperationen sind prozessübergreifend gesperrt; ein fehlender Diagnose-
+Claim gibt keinen Aufruf frei. Die letzte Reservierungsnummer steigt weiter.
 
-## Protokolle, Parallelität und bewusste Fortsetzung
+Neue Budget-/Claim-Schemas sind `arquilo.call_budget.v2` und
+`arquilo.call_claim.v2`. Bei unbegrenzt gilt `limit=0`, `remaining=null`,
+`unlimited=true`; `used` bleibt eine Zahl. Endliche v1-Daten werden weiterhin
+validiert gelesen. Es wird keine JSON-Unendlichkeit geschrieben.
 
-Unter `<controller-state>/<plan>/call_budgets/task_<root>/` stehen `budget.json`,
-`reservations.json` (monotoner Zähler) und
-fortlaufende `call_000001.json`-Dateien mit Root, Aufgabe, Phase, Limit und Zeit.
-Exklusive Dateierzeugung reserviert jeden Platz auch über parallele Python-
-Worker hinweg genau einmal. Der Controller vergibt den Pfad; Kinder/Worker
-erhalten keinen neuen Vorrat. Gleiche Budgetverzeichnisse dürfen weder das
-Limit noch die Root-ID wechseln. Ein fehlgeschlagenes Schreiben kann einen
-Platz verbrauchen, startet aber keinen Modellprozess. Summaries und Run-Log
-enthalten die Zähler und Verweise; Rohstreams bleiben unverändert erhalten.
-Das sind normale Logdateien ohne kryptographische Nachweiswirkung.
-
-Ein ausdrücklich neu gestarteter Runner eröffnet einen neuen Lauf mit neuem
-Aufrufbudget. Bereits validierte Breakdown-Pläne werden anhand der aufgezeichneten
-Kinder geprüft. Bestehende Kinder werden weiterbearbeitet und danach der Parent
-geprüft; seine Produktion wird nicht wiederholt. Gespeicherte DONE-Kinder bleiben
-erledigt, OBSOLETE ist weiterhin kein erfolgreicher Abschluss. Ein fehlendes
-oder zusätzliches unvalidiertes Kind sowie ein beschädigter Plan blockieren mit
-`invalid_breakdown_resume`. Erfolgreiche frühere Breakdown-Runden zählen weiter
-gegen `breakdown_max_rounds`.
-
-Ohne validierten Plan ist ein Neustart ein bewusster neuer Bearbeitungsversuch
-auf dem vorhandenen Workspace. Vor einem Neustart nach technischen Fehlern
-müssen Nutzer/Controller mögliche Seiteneffekte und Teiländerungen prüfen.
-Der Runner startet sich nicht selbst erneut. Es gibt keine Session-Wiederaufnahme,
-kein neues Board und keine zusätzliche Schedulerinstanz.
-
-Die Regeln sind mit lokalen Fakes unter macOS geprüft. Native Windows-/Linux-
-und Live-Codex-Abnahmen bleiben offen. Die manuell startbare CI-Matrix ist in
-`.github/workflows/lean-limits.yml` definiert.
-
-Ab 0.3.0 bleiben Reservierungen über einen Neustart erhalten; gelöschte Diagnose-
-Claims geben keine Aufrufe frei. [Details](../docs/controller-safety.md).
+`--logs-in-workdir` verschiebt nur neue Diagnoseprotokolle, nicht diese Zähler.
+`--allow-todo-modifications` erlaubt bewusst einen veränderlichen Hauptplan.
+Für Planung in derselben Datei: Aufgabe 2 erzeugt weitere offene Aufgaben;
+`--stop 2` hält nach ihrer Abnahme und vor deren Ausführung an. Danach prüft der
+Mensch den Plan und startet separat weiter. Die Optionen und ausführliche
+PowerShell-Beispiele stehen unter [Operatorsteuerung](../docs/operator-controls.md).

@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.5.0.** Suitable for supervised evaluation in disposable
+**Public preview: 0.6.0.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
@@ -103,10 +103,13 @@ of a tool/hook having run. Decide now requests `read-only` with no escalation.
 ## Controller safety and upgrading to 0.3.0
 
 The task runner keeps authoritative plan snapshots, persistent call reservations,
-breakdown plans and its run logs **outside the agent workspace**. The initial
+breakdown plans **outside the agent workspace**. Run logs are external by default;
+`--logs-in-workdir` selects workspace diagnostics without moving authority. The initial
 owner-supplied plan is the baseline. After that, changes to task statuses,
 requirements or task membership need controller approval or explicit owner
-adoption; an agent-written `DONE` cannot silently skip another task.
+adoption in strict mode; an agent-written `DONE` cannot silently skip another task
+in that default mode. `--allow-todo-modifications` explicitly selects a mutable
+plan; observed status changes are not independent completion evidence.
 
 Existing task lists from older versions must be inspected before their first
 0.3.0 run: old workspace logs are not trusted as controller authority. Routine
@@ -194,3 +197,18 @@ files as changed, in accordance with Apache-2.0.
 This is a plain-language summary, not an additional license condition or a change
 to the license. See [LICENSE](LICENSE) for the full terms. Third-party components
 and external services remain subject to their own terms.
+
+## Operator controls and planning in one file
+
+Call counting is **unlimited by default** (`--max-calls 0`). An explicit positive
+limit is optional; existing finite budgets adopt the default on continuation,
+retaining consumed reservations. An existing `process_stop` remains effective.
+
+A sequential task may append the remaining tasks to its own file with
+`--allow-todo-modifications --stop 2`. The generator is reviewed and the runner
+stops before dispatching generated work. Inspect the file, then continue without
+that opt-in; use `--accept-plan-changes` only for edits you intentionally made.
+`--logs-in-workdir` optionally restores live metarunner logs under
+`.codex_runs/run_todos/`. These flags do not relax Codex sandbox or review policy.
+See [operator controls](docs/operator-controls.md) and the
+[synthetic planning example](examples/planning_todo.md).

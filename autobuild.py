@@ -1079,6 +1079,7 @@ def start(
             decision_payload["archive"] = decision.archive
 
 
+    pinned_decision_snapshot = None
     attempt_runs = 0
     while attempt_runs < max_iterations:
         attempt_runs += 1
@@ -1087,7 +1088,9 @@ def start(
         # Capture before this production attempt can edit the shared ToDo file.
         # This changes only Decide evidence, never the production/reference prompt.
         try:
-            if decision_todo_file is not None:
+            if context.allow_todo_modifications and pinned_decision_snapshot is not None:
+                decision_snapshot = replace(pinned_decision_snapshot, attempt_prompt=current_prompt)
+            elif decision_todo_file is not None:
                 try:
                     snapshot_path = native_path(decision_todo_file, base=workspace, label="decision_todo_file")
                 except (TypeError, ValueError, OSError) as exc:
@@ -1103,6 +1106,8 @@ def start(
                     raise DecisionInputError("decision_missing_input", "decision_todo_file", "Runner must supply the concrete ToDo source")
                 decision_snapshot = TaskSnapshot(task_text=original_task, preamble="",
                     reference_prompt=original_task, attempt_prompt=current_prompt, source="inline")
+            if pinned_decision_snapshot is None:
+                pinned_decision_snapshot = decision_snapshot
             snapshot_payload = {
                 "run_id": active_decision_run_id, "task_id": todo_identifier or "standalone",
                 "phase": decision_phase, "attempt_id": f"{decision_attempt_id}.{attempt_runs}",
@@ -1416,7 +1421,7 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--decision-phase", default="completion", help=argparse.SUPPRESS)
     parser.add_argument("--max-steps", type=int, default=3)
     parser.add_argument("--max-calls", type=int, default=DEFAULT_MAX_CALLS,
-                        help="Gemeinsame Obergrenze aller Modellaufrufe, einschließlich Review und Decide.")
+                        help="Codex-Ausführungsversuche inklusive Review/Decide; 0 = unbegrenzt (Standard).")
     for name in ("auto-continue", "print-end-answer", "verbose"):
         parser.add_argument("--" + name, action="store_true")
     from removed_features import add_removed_arguments
