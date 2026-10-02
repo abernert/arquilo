@@ -1,0 +1,52 @@
+diff --git a/project_logs.py b/project_logs.py
+index 182b9c4..10883e4 100644
+--- a/project_logs.py
++++ b/project_logs.py
+@@ -17,0 +18 @@ import re
++import threading
+@@ -22,0 +24,3 @@ from runtime_files import validate_component, safe_component
++_INDEX_THREAD_LOCK = threading.RLock()
++
++
+@@ -48 +52,3 @@ def index_lock(root: Path, name: str = ".projects.lock"):
+-    with safe_io.open_file(root / name, 'a+b', shared=True) as stream:
++    # Serialize same-process creation before taking the cross-process lock.
++    # Some hosts can race concurrent first-open/create on the same lock file.
++    with _INDEX_THREAD_LOCK, safe_io.open_file(root / name, 'a+b', shared=True) as stream:
+diff --git a/tests/test_project_logs.py b/tests/test_project_logs.py
+index 3f6c8b5..7d8527a 100644
+--- a/tests/test_project_logs.py
++++ b/tests/test_project_logs.py
+@@ -6 +6 @@ from concurrent.futures import ThreadPoolExecutor
+-from contextlib import redirect_stdout
++from contextlib import redirect_stdout, contextmanager
+@@ -14,0 +15,2 @@ import tempfile
++import threading
++import time
+@@ -94,0 +97,26 @@ class NamingTests(Fixture):
++    def test_index_lock_serializes_threads_before_open(self):
++        original = safe_io.open_file
++        mutex = threading.Lock()
++        active = 0
++        high_water = 0
++        @contextmanager
++        def observed(*args, **kwargs):
++            nonlocal active, high_water
++            with mutex:
++                active += 1
++                high_water = max(high_water, active)
++            try:
++                time.sleep(0.01)
++                with original(*args, **kwargs) as stream:
++                    yield stream
++            finally:
++                with mutex:
++                    active -= 1
++        def enter(_):
++            with logs.index_lock(self.root):
++                pass
++        with patch.object(safe_io, 'open_file', side_effect=observed):
++            with ThreadPoolExecutor(max_workers=4) as pool:
++                list(pool.map(enter, range(8)))
++        self.assertEqual(high_water, 1)
++
