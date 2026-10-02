@@ -24,7 +24,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: ${{ matrix.python }}
-      - name: Apply exact locally tested source
+      - name: Apply exact tested source including serialized lock creation
         run: python -B .maintenance/project-layout/apply.py
       - run: python -B -m unittest discover -s tests -v
       - run: python -B scripts/check_release.py
