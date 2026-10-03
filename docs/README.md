@@ -17,7 +17,7 @@ ARQUILO's core is a Python 3.11+ controller around a separately installed and au
 | --- | --- |
 | Install ARQUILO and its prerequisites | [Installation](installation.md) |
 | Get one small task running | [Quick start](quickstart.md) |
-| Copy a working command for a common scenario | [Cookbook](cookbook.md) |
+| Copy a working command for a common scenario | [Cookbook](cookbook.md) |\n| Use the local browser UI or ask read-only project questions | [Workbench and Ask](workbench.md) |
 | Understand the controller and review flow | [Architecture](architecture.md) |
 | Understand trust boundaries before real use | [Security](../SECURITY.md) |
 | Diagnose setup or runtime failures | [Troubleshooting](troubleshooting.md) |
