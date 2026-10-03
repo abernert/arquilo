@@ -16,9 +16,36 @@ available for inspection.
 **Public preview: 0.6.0.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
-[Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
-[Security](SECURITY.md) · [Troubleshooting](docs/troubleshooting.md) ·
-[Deutsch](README.de.md)
+[Documentation](docs/README.md) · [Installation](docs/installation.md) ·
+[Quick start](docs/quickstart.md) · [Cookbook](docs/cookbook.md) ·
+[Security](SECURITY.md) · [Architecture](docs/architecture.md) · [Deutsch](README.de.md)
+
+## Find your way around
+
+If you are new to ARQUILO, use this path:
+
+1. **[Installation](docs/installation.md)** — prerequisites and setup on macOS, Linux and Windows.
+2. **[Quick start](docs/quickstart.md)** — validate a disposable task, then make an explicit first model-backed run.
+3. **[Cookbook](docs/cookbook.md)** — copyable patterns for common runs, dependencies, parallel work, planning pauses, logs and Git.
+4. **[Security](SECURITY.md)** — trust boundaries to understand before using a real workspace.
+
+The **[documentation guide](docs/README.md)** is the full map. In particular:
+
+| Need | Document |
+| --- | --- |
+| Understand production → review → correction → completion | [Architecture](docs/architecture.md) |
+| Diagnose a problem | [Troubleshooting](docs/troubleshooting.md) |
+| Understand authoritative state, recovery and Git safeguards | [Controller safety](docs/controller-safety.md) |
+| Let a planning task extend the task list, then pause for review | [Operator controls](docs/operator-controls.md) |
+| Find and interpret run logs | [Project logs](docs/project-logs.md) |
+| Configure restricted Decide calls | [Decide configuration](docs/decide-configuration.md) |
+| Test ARQUILO or understand what CI proves | [Testing](docs/testing.md) |
+| Upgrade older inputs | [Compatibility](docs/compatibility.md) |
+| Browse runnable task-list examples | [Examples](examples/README.md) |
+
+Detailed runtime references currently live under `documents/`: [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md), [task preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md), and [workflow limits](documents/WORKFLOW_LIMITS.md). Those reference documents are currently maintained in German; the entry-point guides above are in English.
+
+For the checked-out version, CLI help and `python3 -B arquilo.py capabilities` remain the best machine-readable view of the runtime's actual interface.
 
 ## Why another agent tool?
 
