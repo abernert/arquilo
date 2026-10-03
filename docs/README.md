@@ -32,8 +32,6 @@ ARQUILO's core is a Python 3.11+ controller around a separately installed and au
 
 ## Runtime reference
 
-These detailed runtime references are currently maintained in German; the user-facing guides above are in English.
-
 | Reference | Covers |
 | --- | --- |
 | [Configuration](../documents/CONFIGURATION.md) | CLI/environment configuration and runtime options |
