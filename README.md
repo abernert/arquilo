@@ -43,7 +43,7 @@ The **[documentation guide](docs/README.md)** is the full map. In particular:
 | Upgrade older inputs | [Compatibility](docs/compatibility.md) |
 | Browse runnable task-list examples | [Examples](examples/README.md) |
 
-Detailed runtime references currently live under `documents/`: [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md), [task preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md), and [workflow limits](documents/WORKFLOW_LIMITS.md). Those reference documents are currently maintained in German; the entry-point guides above are in English.
+Detailed English runtime references live under `documents/`: [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md), [task preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md), and [workflow limits](documents/WORKFLOW_LIMITS.md).
 
 For the checked-out version, CLI help and `python3 -B arquilo.py capabilities` remain the best machine-readable view of the runtime's actual interface.
 
@@ -190,7 +190,7 @@ and 3.13. These tests use simulated Codex executions where relevant; a green CI
 run is not proof of real model access, native sandbox enforcement or unattended
 production suitability. The [testing guide](docs/testing.md) separates these checks.
 
-Detailed ARQUILO runtime reference material is currently in German:
+Detailed ARQUILO runtime reference material is available in English:
 [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md),
 [preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md)
 and [workflow limits](documents/WORKFLOW_LIMITS.md).
