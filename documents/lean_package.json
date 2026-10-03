@@ -93,8 +93,8 @@
     "todo_syntax.py"
   ],
   "retained_core_options": {
-    "parallel": "CFG parallel mit echten Python-Workern in getrennten Unterworkspaces",
-    "runtime_profiles": "--runtime-profile / ARQUILO_RUNTIME_PROFILE mit bestehenden Grenzen",
+    "parallel": "CFG parallel with real Python workers in separate subworkspaces",
+    "runtime_profiles": "--runtime-profile / ARQUILO_RUNTIME_PROFILE with the documented boundaries",
     "git": "--git with literal --git-path selections; --git-push separately opts into publishing; default off"
   },
   "excluded_data": [
