@@ -1,113 +1,62 @@
-# ARQUILO: Konfiguration
+# ARQUILO: configuration
 
-Der Kern verwendet Python-Standardbibliothek, CLI-Argumente und optional ein
-JSON-Runtime-Profil. Keine `.env`-Datei wird geladen; kein YAML, API-Key oder
-OpenAI-Python-SDK ist für ARQUILO erforderlich. Codex authentisiert sich selbst.
-Der Import liest keine Laufkonfiguration; jeder Aufruf löst seine Werte neu auf.
+The core uses the Python standard library, CLI arguments, and optionally a JSON runtime profile. ARQUILO loads no `.env` file; it requires no YAML, API key, or OpenAI Python SDK. Codex handles its own authentication. Importing the modules does not read run configuration; values are resolved for each invocation.
 
-## Öffentliche Kernoptionen
+## Public core options
 
-| Zweck | Option / Standard |
+| Purpose | Option / default |
 | --- | --- |
-| Auftrag und Workspace | `--todo-file <datei>` und `--workdir <ordner>`; ohne workdir gilt das Verzeichnis der ToDo-Datei. Absolute Pfade sind beim Start aus einem anderen Verzeichnis eindeutig. |
-| Modell | `--model <id>`; ohne Override bleibt der Codex-Default für Produktion/Review wirksam. |
-| Reasoning | `--reasoning-effort <wert>`; vorhandene Werte: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Ob das gewählte Modell den Wert unterstützt, entscheidet Codex. |
-| Shellnetzwerk | `--network-access`; standardmäßig aus. Sandbox maximal `workspace-write`, Review `read-only`. Kein Netzwerk-Env-Alias erteilt diese Freigabe. |
-| Aufrufbudget | `--max-calls <zahl>`; Standard **0 = unbegrenzt**, positive Werte je Aufgabenbaum über Neustarts. Bereits gespeicherte endliche Budgets übernehmen den neuen Default unter Erhalt des Verbrauchs. [Details](WORKFLOW_LIMITS.md). |
-| Workdir-Protokolle | `--logs-in-workdir`; Standard aus. Live-Logs unter `<workdir>/.codex_runs/run_todos`, Steuerzustand/Budgets extern. |
-| Veränderlicher Plan | `--allow-todo-modifications`; Standard aus. Gültige Änderungen im selben Taskfile erlauben und protokollieren; `--stop 2` bleibt eine Ausführungsgrenze. [Beispiele](../docs/operator-controls.md). |
-| Trockenlauf | `--dry-run --dry-run-file <datei>`; schreibt die Befehlsvorschau, führt weder Codex noch den Profil-Preflight aus und verändert keinen ToDo-Status. |
-| Diagnose | `python arquilo_doctor.py --workdir <ordner> --json`; kostenfreie lokale Metadaten, keine Versionsbindung. Zusätzlich `--check-decide` für eine tatsächliche Funktionsprobe (ein möglicher kostenpflichtiger Modellaufruf); `--model`, `--reasoning-effort` und `--decide-timeout` nur für diese Probe. [Bedienung und Prüfgrenzen](QUICKSTART.md). |
+| Task list and workspace | `--todo-file <file>` and `--workdir <directory>`; without a workdir, the ToDo file's directory is used. Absolute paths remove ambiguity when starting elsewhere. |
+| Model | `--model <id>`; without an override, the Codex default remains effective for production/review. |
+| Reasoning | `--reasoning-effort <value>`; accepted values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex determines whether the selected model supports the value. |
+| Shell network | `--network-access`; off by default. Sandbox is at most `workspace-write`, review is `read-only`. No network environment alias grants this permission. |
+| Call budget | `--max-calls <number>`; default **0 = unlimited**, positive values apply per task tree across restarts. Previously stored finite budgets adopt the new default while preserving usage. [Details](WORKFLOW_LIMITS.md). |
+| Workdir logs | `--logs-in-workdir`; off by default. Live diagnostics go to `<workdir>/.codex_runs/run_todos`; controller state/budgets stay external. |
+| Mutable plan | `--allow-todo-modifications`; off by default. Permit and record valid changes in the same task file; `--stop 2` remains an execution boundary. [Examples](../docs/operator-controls.md). |
+| Dry run | `--dry-run --dry-run-file <file>`; writes a command preview, runs neither Codex nor profile preflight, and changes no task status. |
+| Diagnostics | `python arquilo_doctor.py --workdir <directory> --json`; free local metadata, no version pinning. Add `--check-decide` for a real functional probe that may incur one model call; `--model`, `--reasoning-effort`, and `--decide-timeout` apply only to that probe. [Usage and limits](QUICKSTART.md). |
 
-AutoBuild hat dieselben Modell-/Netzwerkoptionen und nimmt `--task` oder
-`--task-file` statt einer ToDo-Liste entgegen. Weitere erhaltene Optionen
-für Auswahl, Vorbemerkung, Fortsetzung und Spezialpfade stehen in `--help`.
-Es gibt keine neue allgemeine Konfigurationsdatei mit duplizierten CLI-Werten.
+AutoBuild has the same model/network options and accepts `--task` or `--task-file` instead of a ToDo list. Additional retained options for selection, preamble, continuation, and specialized paths are documented by `--help`. There is no new general configuration file duplicating CLI values.
 
-## Priorität und Normalisierung
+## Precedence and normalization
 
-`--model` beziehungsweise der direkte Python-Parameter hat Vorrang vor
-`ARQUILO_CODEX_MODEL`. Ein globaler Modellwert hat Vorrang vor `CFG model`; ohne
-globalen Wert gilt das CFG-Modell. `--reasoning-effort` hat Vorrang vor
-`ARQUILO_CODEX_REASONING_EFFORT`. Leerzeichen außen werden entfernt, leere Werte
-gelten als nicht gesetzt, Effort wird kleingeschrieben und validiert.
-Runner und AutoBuild verwenden denselben Resolver in `runtime_config.py`.
-Werte werden pro Invocation übergeben; Codex-Konfigurationsdateien werden
-nicht geändert. Profile und CFG dürfen die feste Startpolicy nicht erweitern.
+`--model`, or the direct Python parameter, takes precedence over `ARQUILO_CODEX_MODEL`. A global model value takes precedence over `CFG model`; without a global value, the CFG model applies. `--reasoning-effort` takes precedence over `ARQUILO_CODEX_REASONING_EFFORT`.
 
-Decide übernimmt explizite Auftrags-/Decide-Modell- und Effortwerte. Ohne Override
-bleiben Modell, Provider, Endpunkt, Authentifizierung und weitere Provisioning-
-Parameter der Codex-Hostkonfiguration überlassen. `CODEX_HOME` und die gesamte
-vertrauenswürdige Prozessumgebung einschließlich Proxy/CA/Provider-Token bleiben
-wirksam; ARQUILO liest/kopiert keine Zugangsdaten oder TOML-Dateien.
-Der Doctor unterstützt optional `--model-provider <ID>` und `--profile <Name>`
-für `--check-decide`; ohne Angabe wird kein entsprechender Override erzeugt.
-Dasselbe gilt für `model_provider`/`config_profile` in der Decide-Python-API.
-Ein explizit gewähltes AutoBuild-Codex-Profil wird auch an Decide übergeben.
+Leading/trailing whitespace is removed, empty values count as unset, and effort values are lowercased and validated. Runner and AutoBuild use the same resolver in `runtime_config.py`. Values are passed per invocation; Codex configuration files are not modified. Profiles and CFG cannot expand the fixed startup policy.
 
-Die vielen Feature-Overrides und die doppelte Feature-Abfrage entfallen ab 0.4.0.
-Decide verwendet einen frischen Arbeitsordner und `read-only`/`never`, validiert
-Antwort/Schema/Optionen und lehnt Tool-Events ab. Konfigurierte Integrationen
-bleiben aber Host-Vertrauen; die Eventprüfung verhindert nicht präventiv einen
-bereits ausgelösten Tool-/Hook-Aufruf. Siehe [Konfiguration und Grenzen](../docs/decide-configuration.md).
+Decide receives explicit task/decision model and effort values. Without an override, model, provider, endpoint, authentication, and other provisioning parameters remain the responsibility of the Codex host configuration. `CODEX_HOME` and the complete trusted process environment, including proxy/CA/provider tokens, remain effective; ARQUILO does not read or copy credentials or TOML files.
 
-Erhaltene Spezialoptionen:
+Doctor optionally supports `--model-provider <ID>` and `--profile <Name>` for `--check-decide`; without them, no corresponding override is generated. The same applies to `model_provider`/`config_profile` in the Decide Python API. An explicitly selected AutoBuild Codex profile is also passed to Decide.
 
-- `--todo-syntax` / `ARQUILO_TODO_SYNTAX` und `--todo-preamble` /
-  `ARQUILO_TODO_PREAMBLE`: CLI vor Umgebung, Standard jeweils `auto`.
-- `--runtime-profile` / `ARQUILO_RUNTIME_PROFILE`: CLI vor Umgebung; optionales
-  deklaratives JSON für Promptregeln und Preflight, siehe
-  [Profilvertrag](../RUNTIME_PROFILE_API.md). Im echten Lauf bleibt sein
-  Preflight verpflichtend; im Trockenlauf wird die ausgelassene Prüfung vermerkt.
-- `--git`: ab 0.3.0 nur mit wiederholten `--git-path DATEI`; Commit nach erfolgreicher
-  Abnahme nur für ausgewählte Dateien. Ein Push benötigt zusätzlich `--git-push`.
-  Ohne `--git` benötigt ARQUILO kein Git.
-- `CFG parallel` und Codex-Werkzeugprofile bleiben erhalten; siehe
-  [Paketumfang](PACKAGE_SCOPE.md) und
-  [ToDo-Direktiven](todo_directives.md). Websuche, Shellnetzwerk, MCP und
-  Providerkommunikation sind getrennte Wege; Netzwerk aus bedeutet nicht offline.
+The many historical feature overrides and duplicate feature queries were removed in 0.4.0. Decide uses a fresh working directory and `read-only`/`never`, validates response/schema/options, and rejects tool events. Configured integrations remain part of host trust, however; event validation does not proactively prevent a tool/hook call that has already fired. See [Decide configuration and boundaries](../docs/decide-configuration.md).
 
-Es gibt keine Zusatzgruppen oder Aktivierungskonfiguration dafür.
-`--print-capabilities` nennt die erhaltenen Kernoptionen als
-`retained_core_options`; die alten leeren Felder `optional_packages` und
-`optional_defaults` sowie `retained_optional_paths` entfallen.
-Die versionierten Verträge unter `features` bleiben erhalten.
-Der Paketbau akzeptiert weder `--with-optional` noch Python-`optional`,
-auch nicht mit leerem Wert. Details: [Distribution](DISTRIBUTION.md).
+Retained specialized options:
 
-## Expertenoptionen und historische Eingabealiase
+- `--todo-syntax` / `ARQUILO_TODO_SYNTAX` and `--todo-preamble` / `ARQUILO_TODO_PREAMBLE`: CLI before environment, default `auto`.
+- `--runtime-profile` / `ARQUILO_RUNTIME_PROFILE`: CLI before environment; optional declarative JSON for prompt rules and preflight, see the [profile contract](../RUNTIME_PROFILE_API.md). Its preflight remains mandatory in a real run; a dry run records that the check was skipped.
+- `--git`: since 0.3.0, only with repeated `--git-path FILE`; commit selected files after successful acceptance. Push additionally requires `--git-push`. Without `--git`, ARQUILO does not require Git for execution.
+- `CFG parallel` and Codex tool profiles remain available; see [Package scope](PACKAGE_SCOPE.md) and [ToDo directives](todo_directives.md). Web search, shell network, MCP, and provider communication are separate paths; network disabled does not mean offline.
 
-Die folgenden Einstellungen sind Expertenoptionen, keine Pflichtkonfiguration.
-Historische Namen funktionieren weiterhin mit `FutureWarning`; die vollständige
-[Namenszuordnung](../docs/compatibility.md) dokumentiert den Vorgängerpräfix. Ein nichtleerer
-kanonischer Wert hat Vorrang; bei zwei alten Werten gilt die Reihenfolge in
-der Tabelle. Warnungen nennen nur Variablennamen, keine Werte. Es werden keine
-Einstellungen oder Secrets automatisch in Dateien geschrieben.
+There are no optional feature groups or activation configuration for removed features. `--print-capabilities` reports retained core options as `retained_core_options`; historical empty fields `optional_packages`, `optional_defaults`, and `retained_optional_paths` are gone. Versioned contracts under `features` remain. Package building accepts neither `--with-optional` nor Python `optional`, including empty values. See [Distribution](DISTRIBUTION.md).
 
-| Kanonischer Name | Alte Namen (Priorität von links nach rechts) | Standard |
+## Expert options and historical input aliases
+
+The following settings are expert options, not required configuration. Historical names remain accepted with `FutureWarning`; the full [naming map](../docs/compatibility.md) documents the predecessor prefix. A non-empty canonical value wins; if two old values are present, precedence follows the table. Warnings mention variable names only, never values. Settings or secrets are not automatically written to files.
+
+| Canonical name | Old names (left-to-right precedence) | Default |
 | --- | --- | --- |
-| `ARQUILO_DECISION_MODEL` | `AUTOBUILD_DECISION_MODEL`, `METACODEX_DECISION_MODEL` | wirksames Auftragsmodell |
-| `ARQUILO_DECISION_SYSTEM_PROMPT` | `AUTOBUILD_DECISION_SYSTEM_PROMPT`, `METACODEX_DECISION_SYSTEM_PROMPT` | bestehende Entscheideranweisung |
-| `ARQUILO_CODEX_POST_TURN_EXIT_GRACE_SECONDS` | `AUTOBUILD_CODEX_POST_TURN_EXIT_GRACE_SECONDS` | 120 Sekunden |
-| `ARQUILO_CODEX_STALL_TIMEOUT_SECONDS` | `AUTOBUILD_CODEX_STALL_TIMEOUT_SECONDS` | 7200 Sekunden |
-| `ARQUILO_CODEX_KILL_GRACE_SECONDS` | `AUTOBUILD_CODEX_KILL_GRACE_SECONDS` | 10 Sekunden |
+| `ARQUILO_DECISION_MODEL` | `AUTOBUILD_DECISION_MODEL`, `METACODEX_DECISION_MODEL` | effective task model |
+| `ARQUILO_DECISION_SYSTEM_PROMPT` | `AUTOBUILD_DECISION_SYSTEM_PROMPT`, `METACODEX_DECISION_SYSTEM_PROMPT` | existing decision instruction |
+| `ARQUILO_CODEX_POST_TURN_EXIT_GRACE_SECONDS` | `AUTOBUILD_CODEX_POST_TURN_EXIT_GRACE_SECONDS` | 120 seconds |
+| `ARQUILO_CODEX_STALL_TIMEOUT_SECONDS` | `AUTOBUILD_CODEX_STALL_TIMEOUT_SECONDS` | 7200 seconds |
+| `ARQUILO_CODEX_KILL_GRACE_SECONDS` | `AUTOBUILD_CODEX_KILL_GRACE_SECONDS` | 10 seconds |
 
-Timeoutwerte müssen endlich und nichtnegativ sein; ungültige Werte sind
-Konfigurationsfehler. Beim direkten Transportadapter gilt dessen explizites
-`env` statt der Prozessumgebung; explizite `TransportTimeouts` haben Vorrang.
-Diese drei Env-Optionen betreffen AutoBuild; Decide behält seine begrenzten
-eigenen `DecisionExecSettings`/Timeouts.
+Timeout values must be finite and non-negative; invalid values are configuration errors. For the direct transport adapter, its explicit `env` replaces the process environment; explicit `TransportTimeouts` take precedence. These three environment options affect AutoBuild; Decide retains its own bounded `DecisionExecSettings`/timeouts.
 
-## Historische Migration
+## Historical migration
 
-Entfernte Vorgängerfunktionen sind keine aktuellen ARQUILO-Optionen. Die
-vollständigen [historischen Migrationshinweise](HISTORICAL_MIGRATION.md) bleiben
-als Referenz erhalten. Für unterstützte alte Umgebungsnamen siehe
-[Kompatibilität und Namensmigration](../docs/compatibility.md).
+Removed predecessor features are not current ARQUILO options. The complete [historical migration notes](HISTORICAL_MIGRATION.md) remain for reference. For supported old environment names, see [Compatibility and naming migration](../docs/compatibility.md).
 
-## Controller-Zustand und Git ab 0.3.0
+## Controller state and Git since 0.3.0
 
-Maßgeblich ist die [Controller-Sicherheitsreferenz](../docs/controller-safety.md):
-`--state-dir`, `--accept-plan-changes`, `--git-path` und `--git-push`.
-Der Git-Push ist keine automatische Folge von `--git` mehr. Vorhandene Dry-run-
-Berichte werden nie überschrieben. Vorhandene Policy-Lesefehler stoppen den Lauf.
+The authoritative reference is [Controller safety](../docs/controller-safety.md), including `--state-dir`, `--accept-plan-changes`, `--git-path`, and `--git-push`. Git push is no longer an automatic consequence of `--git`. Existing dry-run reports are never overwritten. Existing policy read failures stop the run.
