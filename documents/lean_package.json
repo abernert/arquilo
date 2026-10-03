@@ -3,7 +3,7 @@
   "python_requires": ">=3.11",
   "runtime_dependencies": [],
   "build_dependencies": [],
-  "runtime_file_count": 81,
+  "runtime_file_count": 84,
   "external_runtime": {
     "codex_cli": "Codex CLI with the required Exec contract; verify using arquilo_doctor.py --check-decide (one model call, may incur costs); no version pin",
     "git": "Only for explicitly enabled --git functions",
@@ -26,6 +26,7 @@
     "VERSION",
     "arquilo.py",
     "arquilo_doctor.py",
+    "ask.py",
     "autobuild.py",
     "autobuild_contract.py",
     "codex_launcher.py",
@@ -50,6 +51,7 @@
     "docs/quickstart.md",
     "docs/testing.md",
     "docs/troubleshooting.md",
+    "docs/workbench.md",
     "documents/CONFIGURATION.md",
     "documents/DISTRIBUTION.md",
     "documents/HISTORICAL_MIGRATION.md",
@@ -90,7 +92,8 @@
     "todo_context.py",
     "todo_ids.py",
     "todo_lint.py",
-    "todo_syntax.py"
+    "todo_syntax.py",
+    "workbench.py"
   ],
   "retained_core_options": {
     "parallel": "CFG parallel with real Python workers in separate subworkspaces",
@@ -111,4 +114,4 @@
   ],
   "project": "ARQUILO",
   "license": "Apache-2.0"
-}
+}\n

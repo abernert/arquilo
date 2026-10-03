@@ -16,7 +16,7 @@ available for inspection.
 **Public preview: 0.6.1.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
-[Documentation](docs/README.md) · [Installation](docs/installation.md) ·
+[Documentation](docs/README.md) · [Installation](docs/installation.md) · [Workbench & Ask](docs/workbench.md) ·
 [Quick start](docs/quickstart.md) · [Cookbook](docs/cookbook.md) ·
 [Security](SECURITY.md) · [Architecture](docs/architecture.md) · [Deutsch](README.de.md)
 
@@ -174,7 +174,7 @@ budgets stay in their current location. [Layout and migration](docs/project-logs
 | `python3 arquilo.py run --help` | Task runner and all existing runner options |
 | `python3 arquilo.py doctor --help` | Local checks and optional Decide smoke test |
 | `python3 arquilo.py capabilities` | Machine-readable capability contracts |
-| `python3 arquilo.py package` | Allowlisted runtime ZIP and SHA-256 sidecar |
+| `python3 arquilo.py ask --workdir PATH QUESTION` | Read-only project question outside the task lifecycle |\n| `python3 arquilo.py workbench --workdir PATH` | Local browser UI for tasks, runs and questions |\n| `python3 arquilo.py package` | Allowlisted runtime ZIP and SHA-256 sidecar |
 
 Use `run_todos.py` or `arquilo.py run` for tasks and `arquilo_doctor.py` or
 `arquilo.py doctor` for diagnostics. New configuration uses `ARQUILO_*`
