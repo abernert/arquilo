@@ -1,0 +1,109 @@
+name: Publish tested v0.6.0 preview
+on:
+  push:
+    branches: [release/publish-v0.6.0]
+    paths: [.github/workflows/publish-v060-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: publish-v060-once
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'abernert/arquilo' && github.actor == 'abernert'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      checks: read
+    env:
+      PYTHONUTF8: '1'
+      RELEASE_SHA: 95eb1d58414773c6be22da442e980debf6f05055
+      RELEASE_TAG: v0.6.0
+      RELEASE_DIGEST: 85963de735417d8fc3aa4742823e016cc5e1d9deace2815c1b856c6e9ba6316b
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 95eb1d58414773c6be22da442e980debf6f05055
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+      - name: Require exact main, package version, green checks and unused tag
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, pathlib, subprocess
+          repo = 'repos/abernert/arquilo'
+          def get(path):
+              return json.loads(subprocess.check_output(['gh', 'api', repo + path], text=True))
+          sha, tag = os.environ['RELEASE_SHA'], os.environ['RELEASE_TAG']
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == sha
+          assert pathlib.Path('VERSION').read_text().strip() == tag[1:]
+          assert get('/git/ref/heads/main')['object']['sha'] == sha, 'main changed; review before tagging'
+          assert not get('/git/matching-refs/tags/' + tag), 'Tag already exists; never move it'
+          assert not any(r['tag_name'] == tag for r in get('/releases?per_page=100')), 'Release already exists'
+          runs = get('/commits/' + sha + '/check-runs?per_page=100')['check_runs']
+          required = {f'offline-tests ({system}, {version})' for system in ('ubuntu-latest', 'windows-latest', 'macos-latest') for version in ('3.11', '3.12', '3.13')}
+          required |= {f'metadata ({system}, {version})' for system in ('ubuntu-latest', 'windows-latest', 'macos-latest') for version in ('0.154.0', '0.159.1')}
+          for name in sorted(required):
+              candidates = [r for r in runs if r['name'] == name and r['app']['id'] == 15368 and r['head_sha'] == sha]
+              assert candidates, 'Missing check: ' + name
+              latest = max(candidates, key=lambda r: r['id'])
+              assert latest['status'] == 'completed' and latest['conclusion'] == 'success', name
+          print('Verified all 15 required checks on the exact main commit.')
+      - name: Re-run offline regression tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Validate and build licensed runtime
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Verify package against tested artifact and prepare notes
+        shell: python
+        run: |
+          import hashlib, os, pathlib, zipfile
+          archive = pathlib.Path('dist/arquilo-0.6.0.zip')
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          assert digest == os.environ['RELEASE_DIGEST'], 'Package differs from validated CI artifact'
+          assert archive.with_name(archive.name + '.sha256').read_text().split()[0] == digest
+          with zipfile.ZipFile(archive) as z:
+              assert z.testzip() is None
+              assert z.read('VERSION').decode().strip() == '0.6.0'
+              assert {'LICENSE', 'NOTICE', 'docs/operator-controls.md', 'examples/planning_todo.md'} <= set(z.namelist())
+          changes = pathlib.Path('CHANGELOG.md').read_text(encoding='utf-8')
+          section = next(s for s in changes.split('\n## ') if s.startswith('0.6.0 '))
+          notes = '# ARQUILO 0.6.0 — public preview\n\n## ' + section.strip() + '\n\n'
+          notes += '## Usage and migration\n\nThe default call budget is now `0 = unlimited`. Existing finite or depleted runner budgets are adopted on the next normal invocation unless an explicit finite limit is supplied. Preserve the same workspace, task-file path and state root. Counters and previous claims are retained; limit changes are audited. Existing `process_stop` instructions are not removed automatically. Other step, depth, breakdown and timeout limits remain.\n\n'
+          notes += 'Use `--allow-todo-modifications --stop 2` for a sequential planning task that appends further open tasks to the same file, receives its separate original-assignment review, then pauses before the new tasks are scheduled. Inspect the file as a human before continuing; omit the modification flag to return to strict mode, and use `--accept-plan-changes` once if you deliberately edited the generated plan. See `examples/planning_todo.md` and `docs/operator-controls.md`.\n\n'
+          notes += 'Use `--logs-in-workdir` for live metarunner-compatible logs under `<workdir>/.codex_runs/run_todos/<UTC timestamp>/`. External project logs remain the default. Plan authority, budgets, locks and worker IPC stay external. Workspace logs are mutable diagnostics, not tamper-proof authority. New budget snapshots/claims use schema v2; unlimited snapshots have `limit: 0`, `remaining: null`, and `unlimited: true`.\n\n'
+          notes += '## Validation and limits\n\nAll applicable cases in the 249-test offline suite passed on Windows, macOS and Linux with Python 3.11, 3.12 and 3.13. The six real-Codex metadata/loopback-provider jobs passed for 0.154.0 and 0.159.1 on all three platforms. The offline suite and packaging were rechecked for this publication. No company credentials or billed inference were used. Model/provider provisioning, sandbox policy, mandatory reviews and technical retry behavior are unchanged. Native MDE and Databricks acceptance require local testing.\n\n'
+          notes += 'Source commit: `' + os.environ['RELEASE_SHA'] + '` (merged PR #10).\n\nRuntime ZIP SHA-256: `' + digest + '`.\n'
+          pathlib.Path(os.environ['RUNNER_TEMP'], 'release-notes-v060.md').write_text(notes, encoding='utf-8')
+          print('Release package matches the tested artifact:', digest)
+      - name: Create tag, upload draft, verify downloads and publish
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, pathlib, subprocess, tempfile
+          repo = 'repos/abernert/arquilo'
+          def get(path):
+              return json.loads(subprocess.check_output(['gh', 'api', repo + path], text=True))
+          sha, tag = os.environ['RELEASE_SHA'], os.environ['RELEASE_TAG']
+          assert get('/git/ref/heads/main')['object']['sha'] == sha, 'main changed'
+          assert not get('/git/matching-refs/tags/' + tag), 'Tag already exists; no overwrite'
+          subprocess.run(['gh', 'api', repo + '/git/refs', '--method', 'POST', '-f', 'ref=refs/tags/' + tag, '-f', 'sha=' + sha], check=True)
+          files = [pathlib.Path('dist/arquilo-0.6.0.zip'), pathlib.Path('dist/arquilo-0.6.0.zip.sha256')]
+          subprocess.run(['gh', 'release', 'create', tag, *(str(p) for p in files), '--repo', 'abernert/arquilo', '--verify-tag', '--draft', '--prerelease', '--latest=false', '--title', 'ARQUILO 0.6.0 — public preview', '--notes-file', str(pathlib.Path(os.environ['RUNNER_TEMP'], 'release-notes-v060.md'))], check=True)
+          with tempfile.TemporaryDirectory(prefix='verify-release-v060-') as temporary:
+              subprocess.run(['gh', 'release', 'download', tag, '--repo', 'abernert/arquilo', '--dir', temporary, '--pattern', 'arquilo-0.6.0.zip', '--pattern', 'arquilo-0.6.0.zip.sha256'], check=True)
+              for p in files:
+                  assert pathlib.Path(temporary, p.name).read_bytes() == p.read_bytes(), 'Uploaded asset mismatch: ' + p.name
+          assert get('/git/ref/tags/' + tag)['object']['sha'] == sha
+          subprocess.run(['gh', 'release', 'edit', tag, '--repo', 'abernert/arquilo', '--draft=false', '--prerelease', '--latest=false'], check=True)
+          release = get('/releases/tags/' + tag)
+          assert not release['draft'] and release['prerelease']
+          assert {a['name'] for a in release['assets']} == {p.name for p in files}
+          assert get('/git/ref/heads/main')['object']['sha'] == sha
+          print('Published verified tag and preview:', release['html_url'])
