@@ -1,25 +1,17 @@
-# Auftragsgebundener Pflichtreview
+# Mandatory task-bound review
 
-Jeder erfolgreiche Produktions- oder Korrekturversuch erhält einen eigenen
-Codex-Exec-Review im selben Workspace mit `read-only`. Der Reviewer prüft den
-Originalauftrag, die wirksame Vorbemerkung, frühere Ergebnisberichte und die
-tatsächlichen aktuellen Artefakte. Der normale Produktionsprompt bleibt der
-Referenzauftrag aus der ToDo-Datei. Es gibt keine zusätzliche Beweis- oder
-Ledgerpflicht für Erzählungen, Analysen oder andere Fachaufträge.
+Every successful production or correction attempt receives its own Codex Exec review in the same workspace with `read-only`. The reviewer checks the original task, the effective preamble, previous result reports, and the actual current artifacts. The normal production prompt remains the reference task from the ToDo file. Narratives, analyses, and other domain tasks do not acquire an additional evidence-ledger requirement.
 
-Die reinen Regeln, JSON-Prüfung und Promptbausteine stehen in
-[`review_contract.py`](../review_contract.py). AutoBuild und Parent-Abnahme
-verwenden dieselben Regeln; Runtime-Profile ergänzen sie. Eine leere Liste
-zusätzlicher Profilregeln entfernt die allgemeinen Regeln nicht.
+The pure rules, JSON validation, and prompt fragments live in [`review_contract.py`](../review_contract.py). AutoBuild and parent acceptance use the same rules; runtime profiles add to them. An empty list of additional profile rules does not remove the general rules.
 
-## Ergebnis und Korrektur
+## Result and correction
 
-Ein aktueller Review liefert diesen Vertrag:
+A current review returns this contract:
 
 ```json
 {
   "verdict": "PASS",
-  "short_summary": "Die geforderten Ergebnisse liegen vor.",
+  "short_summary": "The requested results are present.",
   "blocking_issues": [],
   "non_blocking_observations": [],
   "breakdown_recommended": false,
@@ -27,79 +19,33 @@ Ein aktueller Review liefert diesen Vertrag:
 }
 ```
 
-Ein Blocker enthält eine nichtleere `summary`, die verletzte `requirement`
-und ein überprüfbares `acceptance_criterion`. `type` unterscheidet lokale
-Korrektur, Zerlegungsbedarf, fehlende Eingabe, tatsächlichen Auftragskonflikt,
-technischen Fehler und externe Blockierung. Angegebene IDs sind eindeutig;
-Referenzen sind Textlisten. PASS mit Blockern, FAIL ohne Blocker, gemischte
-alte/neue Issuefelder, doppelte Schlüssel, unbekannte Felder, falsche Typen,
-NaN/Infinity, beschädigtes Unicode und widersprüchliche Breakdownangaben sind
-ungültig. Ein ungültiger Pflichtreview ergibt Exit 8 und löst keine blinde
-Wiederholung der Produktion aus. Ein ausgefallener Modellaufruf bleibt ein
-technischer Fehler mit erhaltener Vorarbeit und Logs.
+A blocker contains a non-empty `summary`, the violated `requirement`, and a verifiable `acceptance_criterion`. `type` distinguishes a local fix, need for decomposition, missing input, a genuine scope conflict, technical failure, and external blocking. Supplied IDs are unique; references are text lists. PASS with blockers, FAIL without blockers, mixed old/new issue fields, duplicate keys, unknown fields, wrong types, NaN/Infinity, damaged Unicode, and contradictory breakdown fields are invalid.
 
-Für eindeutige ältere JSON-Reviews mit `verdict` und `issues` bleibt die
-Kompatibilität erhalten. Fehlende historische Anzeige-/Metadaten werden wie
-bisher normalisiert. Freier Legacy-Reviewtext benötigt weiterhin einen
-erfolgreichen expliziten Codex-Entscheid; strukturierter PASS/FAIL braucht
-diesen zusätzlichen Aufruf nicht. Der Ergebnisvertrag prüft diese Grenze auch
-zwischen Runner und Python-Worker. Die Parent-Abnahme selbst verlangt einen
-strukturierten JSON-Befund.
+An invalid mandatory review exits with code 8 and does not trigger a blind repeat of production. A failed model call remains a technical failure while preserving prior work and logs.
 
-Ein Korrekturlauf prüft jeden behaupteten Blocker zuerst am Auftrag und den
-Artefakten. Bestätigte Fehler werden mit der kleinsten zusammenhängenden
-Änderung behoben. Falsche Kritik oder eine Forderung außerhalb des Scopes
-wird mit Auftrags- und Dateibezug im Ergebnisbericht widerlegt; korrekte
-Fachartefakte bleiben dabei unverändert. Anschließend folgt immer ein neuer
-unabhängiger Review. Die Behauptung „Kritik widerlegt“ allein schließt den
-Auftrag nicht ab. Optionale Stilwünsche und erst später beauftragte Arbeiten
-werden nicht zur Pflicht.
+Compatibility remains for unambiguous older JSON reviews containing `verdict` and `issues`. Missing historical display/metadata fields are normalized as before. Free-form legacy review text still requires a successful explicit Codex decision; structured PASS/FAIL does not require that extra call. The result contract enforces this boundary between the runner and Python worker as well. Parent acceptance itself requires a structured JSON finding.
 
-Bei einer korrekt durchgeführten Dokumentenanalyse sind Quellenfehler,
-qualifizierte Ergebnisse und mehrere vertretbare Lesarten zulässig, soweit
-der Auftrag das erlaubt. Bei Erzählungen gelten die verlangten inhaltlichen
-und erzählerischen Bedingungen. Fehler im untersuchten Gegenstand sind von
-Fehlern des Analyse- oder Auditauftrags zu unterscheiden.
+A correction run first checks every alleged blocker against the task and artifacts. Confirmed defects are fixed with the smallest coherent change. Incorrect criticism or a demand outside scope is rebutted in the result report with task/file references, while correct domain artifacts remain unchanged. A fresh independent review always follows. Merely claiming that criticism was rebutted does not complete the task. Optional style preferences and work requested only later do not become requirements.
 
-## Originalauftrag und Parent-Abnahme
+For a correctly performed document analysis, source defects, qualified findings, and multiple defensible interpretations are acceptable when the task permits them. For narrative work, the requested substantive and narrative constraints apply. Defects in the subject being analyzed must be distinguished from defects in the analysis or audit task itself.
 
-AutoBuild hält den vor der ersten Ausführung erfassten Auftrag für den gesamten
-lokalen Korrekturlauf fest. Vor jedem Review schreibt es aus diesem Speicher
-eine normale UTF-8-Datei `review_contract_<id>.json` neben seine Logs. Review
-und Korrektur erhalten denselben Snapshot inline im Prompt; ein Shell-Lesezugriff
-auf die Archivdatei ist dafür nicht erforderlich. Dadurch ersetzen
-zwischenzeitliche ToDo-Änderungen die ursprünglichen Kriterien nicht. Die
-Datei enthält `original_request`, `task_text` und `source`; die wirksame
-Vorbemerkung steckt im Originalprompt, sodass `auto|off|required` erhalten
-bleibt. Ein Archivierungsfehler verhindert den Review und Abschluss.
+## Original task and parent acceptance
 
-Der Runner hält zusätzlich `original_contract.json` im ersten Tasklog fest.
-Nach Bearbeitung der Kinder verwendet die Parent-Abnahme diese ursprünglichen
-Kriterien und prüft die integrierten aktuellen Ergebnisse. Erfolgreiche Kinder
-allein erzeugen kein DONE für den Elternauftrag. Ein korrekt ausgeführter
-Parent-Audit kann FAIL über seinen Gegenstand melden; sein eigener erfolgreicher
-Pflichtreview hebt diesen FAIL nicht auf.
+AutoBuild keeps the task captured before the first execution fixed throughout the local correction loop. Before every review it writes a normal UTF-8 `review_contract_<id>.json` beside its logs from that in-memory snapshot. Review and correction receive the same snapshot inline in the prompt; shell access to the archive file is not required. Intermediate ToDo edits therefore do not replace the original criteria.
 
-Die Bindung gilt innerhalb des laufenden Runners. Ein neu gestarteter Runner
-erfasst die dann aktuelle autoritative Aufgabenfassung; alte Aufträge werden
-nicht automatisch aus fremden Läufen importiert. Die Dateien sind normale
-Laufprotokolle ohne Hashes, Signaturen oder Unveränderlichkeitsbehauptung.
-Der eigenständige Decide-Kontext pro Versuch bleibt erhalten.
+The file contains `original_request`, `task_text`, and `source`; the effective preamble is part of the original prompt, preserving `auto|off|required`. An archive-write failure prevents review and completion.
 
-## Lokale Abnahme
+The runner additionally stores `original_contract.json` in the first task log. After child tasks finish, parent acceptance uses these original criteria and checks the integrated current results. Successful children alone do not make the parent DONE. A correctly executed parent audit may report FAIL about its subject; a passing mandatory review of the audit itself does not turn that domain FAIL into PASS.
+
+This binding applies within the running runner. A newly started runner captures the then-current authoritative task version; old tasks are not automatically imported from unrelated runs. The files are ordinary run records without hashes, signatures, or immutability claims. The standalone Decide context remains fresh for each attempt.
+
+## Local acceptance
 
 ```text
 python3 -B -m unittest discover -s tests -v
 python3 -B scripts/check_release.py
 ```
 
-Die Tests im öffentlichen Entwicklungsrepo verwenden Standardbibliothek und
-simulierte Codex-Ergebnisse. Sie prüfen unter anderem die Übergabe des
-Originalvertrags, begrenzte Korrekturen und Archivierungsfehler. Das Runtime-ZIP
-enthält die Tests nicht; dort bleiben die Paketprüfung und CLI-Hilfe verfügbar.
+Tests in the public development repository use the standard library and simulated Codex results. They cover, among other things, propagation of the original contract, bounded corrections, and archive failures. The runtime ZIP does not contain the tests; package validation and CLI help remain available there.
 
-Die CI-Matrix in `.github/workflows/ci.yml` prüft Python 3.11, 3.12 und 3.13 auf Linux,
-Windows und macOS. Maßgeblich ist das tatsächliche Ergebnis des jeweiligen Runs.
-Fakes belegen nicht die Urteilskraft eines realen Modells oder die native
-Codex-Sandbox. Siehe [Testanleitung](../docs/testing.md) und
-[Architektur](../docs/architecture.md).
+The CI matrix in `.github/workflows/ci.yml` checks Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. The actual result of the specific run is authoritative. Fakes do not demonstrate the judgement quality of a real model or native Codex sandbox enforcement. See [Testing](../docs/testing.md) and [Architecture](../docs/architecture.md).

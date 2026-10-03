@@ -13,12 +13,39 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.6.0.** Suitable for supervised evaluation in disposable
+**Public preview: 0.6.1.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
-[Quick start](docs/quickstart.md) · [Architecture](docs/architecture.md) ·
-[Security](SECURITY.md) · [Troubleshooting](docs/troubleshooting.md) ·
-[Deutsch](README.de.md)
+[Documentation](docs/README.md) · [Installation](docs/installation.md) ·
+[Quick start](docs/quickstart.md) · [Cookbook](docs/cookbook.md) ·
+[Security](SECURITY.md) · [Architecture](docs/architecture.md) · [Deutsch](README.de.md)
+
+## Find your way around
+
+If you are new to ARQUILO, use this path:
+
+1. **[Installation](docs/installation.md)** — prerequisites and setup on macOS, Linux and Windows.
+2. **[Quick start](docs/quickstart.md)** — validate a disposable task, then make an explicit first model-backed run.
+3. **[Cookbook](docs/cookbook.md)** — copyable patterns for common runs, dependencies, parallel work, planning pauses, logs and Git.
+4. **[Security](SECURITY.md)** — trust boundaries to understand before using a real workspace.
+
+The **[documentation guide](docs/README.md)** is the full map. In particular:
+
+| Need | Document |
+| --- | --- |
+| Understand production → review → correction → completion | [Architecture](docs/architecture.md) |
+| Diagnose a problem | [Troubleshooting](docs/troubleshooting.md) |
+| Understand authoritative state, recovery and Git safeguards | [Controller safety](docs/controller-safety.md) |
+| Let a planning task extend the task list, then pause for review | [Operator controls](docs/operator-controls.md) |
+| Find and interpret run logs | [Project logs](docs/project-logs.md) |
+| Configure restricted Decide calls | [Decide configuration](docs/decide-configuration.md) |
+| Test ARQUILO or understand what CI proves | [Testing](docs/testing.md) |
+| Upgrade older inputs | [Compatibility](docs/compatibility.md) |
+| Browse runnable task-list examples | [Examples](examples/README.md) |
+
+Detailed English runtime references live under `documents/`: [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md), [task preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md), and [workflow limits](documents/WORKFLOW_LIMITS.md).
+
+For the checked-out version, CLI help and `python3 -B arquilo.py capabilities` remain the best machine-readable view of the runtime's actual interface.
 
 ## Why another agent tool?
 
@@ -100,29 +127,36 @@ minimal argv, explicit overrides and the changed trust boundary in 0.4.0.
 Configured integrations are trusted; rejecting a tool event is not prevention
 of a tool/hook having run. Decide now requests `read-only` with no escalation.
 
-## Controller safety and upgrading to 0.3.0
+## Controller safety and plan authority
 
 The task runner keeps authoritative plan snapshots, persistent call reservations,
-breakdown plans **outside the agent workspace**. Run logs are external by default;
-`--logs-in-workdir` selects workspace diagnostics without moving authority. The initial
-owner-supplied plan is the baseline. After that, changes to task statuses,
-requirements or task membership need controller approval or explicit owner
-adoption in strict mode; an agent-written `DONE` cannot silently skip another task
-in that default mode. `--allow-todo-modifications` explicitly selects a mutable
-plan; observed status changes are not independent completion evidence.
+and breakdown plans **outside the agent workspace**. Run logs are external by
+default; `--logs-in-workdir` selects workspace diagnostics without moving
+controller authority. The initial owner-supplied plan is the baseline. In the
+default strict mode, later changes to task statuses, requirements, or membership
+need controller approval or explicit owner adoption; an agent-written `DONE`
+cannot silently skip another task. `--allow-todo-modifications` deliberately
+selects a mutable plan, but observed status changes are not independent completion
+evidence.
 
-Existing task lists from older versions must be inspected before their first
-0.3.0 run: old workspace logs are not trusted as controller authority. Routine
-restart uses the same private state and does not refund call reservations.
-Use `--accept-plan-changes` only after personally reviewing intentional edits.
-Do not use it just to suppress a detected integrity failure.
+Routine continuation uses the same private controller state and preserves call
+reservations. Use `--accept-plan-changes` only after personally reviewing an
+intentional owner edit; do not use it merely to suppress an integrity failure.
+Keep the same trusted state root when continuing an existing plan.
 
-`--git` now requires one or more literal `--git-path FILE` selections. Selected
-files must be clean or absent at startup; unrelated staged/unstaged files and
-internal archives are not swept into commits. Pushing additionally requires
-`--git-push`; the default is a local commit only. Existing dry-run reports are
-never overwritten. See [controller safety and migration](docs/controller-safety.md)
-for state locations, recovery, Git examples and the limits of these checks.
+Git integration is explicit: `--git` requires one or more literal
+`--git-path FILE` selections. Selected files must be clean or absent at startup;
+unrelated staged/unstaged files and internal archives are not swept into commits.
+Pushing additionally requires `--git-push`; the default is a local commit only.
+Existing dry-run reports are never overwritten.
+
+The external controller-state and explicit Git-selection model was introduced in
+ARQUILO 0.3.0. If you are migrating a plan or workspace last used with 0.2.x,
+inspect it before establishing the current controller baseline; old workspace
+logs are historical evidence, not controller authority. Current users do not
+need a special 0.3.0 upgrade step. See [controller safety](docs/controller-safety.md)
+for state locations, recovery, Git examples, and the dedicated legacy-migration
+notes.
 
 ## Readable project logs
 
@@ -163,7 +197,7 @@ and 3.13. These tests use simulated Codex executions where relevant; a green CI
 run is not proof of real model access, native sandbox enforcement or unattended
 production suitability. The [testing guide](docs/testing.md) separates these checks.
 
-Detailed ARQUILO runtime reference material is currently in German:
+Detailed ARQUILO runtime reference material is available in English:
 [configuration](documents/CONFIGURATION.md), [task directives](documents/todo_directives.md),
 [preambles](documents/TODO_PREAMBLE.md), [review rules](documents/REVIEW_CORE.md)
 and [workflow limits](documents/WORKFLOW_LIMITS.md).

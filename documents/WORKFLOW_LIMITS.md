@@ -1,69 +1,27 @@
-# Aufrufbudget, Fortsetzung und weitere Grenzen
+# Call budgets, continuation, and other limits
 
-`--max-calls 0` ist der Standard: keine Obergrenze der gezählten Codex-
-Ausführungsversuche. Ein positiver Wert begrenzt je numerischem Hauptaufgabenbaum
-über Neustarts hinweg. `12`, `12.1`, deren Kinder, Breakdown, Korrekturen, Reviews
-und Decide teilen einen Zähler; Hauptauftrag `13` erhält seinen eigenen.
+`--max-calls 0` is the default: there is no ceiling on counted Codex execution attempts. A positive value limits each numeric root-task tree across restarts. `12`, `12.1`, their children, breakdown, corrections, reviews, and Decide share one counter; root task `13` receives its own.
 
-Gezählt wird vor einem Ausführungsversuch, nicht jeder interne Modellrequest von
-Codex. Start-/Provider-/Archivfehler werden nicht gutgeschrieben. Ein einzelnes
-`codex exec` kann mehrere Modellanfragen enthalten. Das Budget ist kein Geld-,
-Token- oder Zeitlimit. CLI-Metadatenproben, reine Python-Workerstarts und
-JSON-Auswertung zählen nicht. Der separate Sandbox-Preflight ist nicht Teil
-des Aufgabenbaum-Zählers. Bei unbegrenztem Budget wird der Verbrauch weiter gezählt.
+The counter is reserved before an execution attempt, not for every internal model request made by Codex. Startup/provider/archive failures are not refunded. One `codex exec` may contain multiple model requests. The budget is not a money, token, or time limit. CLI metadata probes, pure Python worker startup, and JSON evaluation do not count. The separate sandbox preflight is outside the task-tree counter. Usage is still counted when the budget is unlimited.
 
-## Bereits begonnene Läufe
+## Already-started runs
 
-Der Runner übernimmt beim Start das gewählte Limit für vorhandene Budgets im
-bisherigen Controller-Zustand. Ohne Parameter werden auch frühere Limits von
-100 oder erschöpfte Limits auf **0 = unbegrenzt** umgestellt. Reservierungen und
-Claims bleiben erhalten; Änderungen werden unter `limit_changes/` protokolliert.
-Nur der Betreiber/Runner darf Limits ändern, nicht ein Worker. Ein ausdrücklich
-gewähltes endliches Limit muss mindestens den bereits verbrauchten Wert umfassen.
-Beschädigte Zustände werden nicht automatisch gelöscht oder zurückgesetzt.
+At startup the runner applies the selected limit to existing budgets in the current controller state. With no parameter, previous limits such as 100, including exhausted limits, adopt **0 = unlimited** while preserving consumed reservations and claims. Changes are recorded under `limit_changes/`. Only the operator/runner may change limits, not a worker. An explicitly selected finite limit must be at least the amount already consumed. Damaged state is not automatically deleted or reset.
 
-Workspace, Aufgabenlistenpfad und `--state-dir` bei Fortsetzung beibehalten.
-Neue Laufzeitstempel und andere Logorte eröffnen keinen neuen Zähler. Alte
-`process_stop`-Dateien bleiben als separate Stoppanweisung bestehen, auch wenn
-sie ursprünglich durch ein erschöpftes Budget entstanden sind. Vor ihrer
-bewussten Entfernung die Ursache, Teiländerungen und die Fortsetzung prüfen.
+Keep the workspace, task-list path, and `--state-dir` unchanged when continuing. New runtime timestamps or different log locations do not create a new counter. Existing `process_stop` files remain separate stop instructions even when they were originally caused by an exhausted budget. Before deliberately removing one, inspect its cause, partial changes, and the intended continuation.
 
-## Weitere Schleifen- und Abbruchgrenzen
+## Other loop and stop limits
 
-`max_steps × max_retries` begrenzt im Runner die Produktions-/Korrekturschritte
-eines AutoBuild-Auftrags (Standard 3 × 2). `max_retries` ist ein Fortsetzungsfaktor,
-kein vollständiges Wiederholen des Auftrags. Nach gültigem fachlichem FAIL kann
-eine gezielte Korrektur gegen den ursprünglichen Auftrag mit neuem Review folgen.
-Standalone-AutoBuild verwendet `max_steps`. Parallel-CFG verwendet Python-Worker
-und die vom Controller vergebenen gemeinsamen Budgetverzeichnisse.
+`max_steps × max_retries` bounds the production/correction steps of an AutoBuild task in the runner (default 3 × 2). `max_retries` is a continuation factor, not a complete replay of the task. After a valid domain FAIL, a targeted correction against the original task may run followed by a new review. Standalone AutoBuild uses `max_steps`. Parallel CFG uses Python workers and controller-assigned shared budget directories.
 
-`breakdown_max_rounds`, `breakdown_max_children`, `max_depth`, Aufruf-Timeouts,
-STOP/WAIT/Fragen und `--stop` gelten unabhängig vom Aufrufbudget weiter.
-Unbegrenzt bedeutet weder endlose technische Retries noch unbegrenzte Tiefe.
-Quoten-, Authentifizierungs-, Transport- und Protokollfehler bleiben technische
-Fehler und lösen kein automatisches Replay des gesamten Auftrags aus.
+`breakdown_max_rounds`, `breakdown_max_children`, `max_depth`, invocation timeouts, STOP/WAIT/questions, and `--stop` remain independent of the call budget. Unlimited does not mean endless technical retries or unlimited depth. Quota, authentication, transport, and protocol failures remain technical failures and do not automatically replay the entire task.
 
-Bei explizit endlichem Budget wird vor dem nächsten Aufruf geprüft. Ein PASS
-auf dem letzten erlaubten Aufruf bleibt gültig. Fehlt noch ein Pflichtreview,
-bleiben Teilresultate erhalten, der Auftrag aber offen. AutoBuild meldet
-`budget_exhausted` mit Exit 9; der Runner meldet `shared_call_budget_exhausted`
-mit Exit 6 und `process_stop`. Unbegrenzte Budgets erschöpfen nicht.
+With an explicit finite budget, the next invocation is checked before it starts. A PASS on the last permitted invocation remains valid. If a mandatory review is still missing, partial results remain but the task stays open. AutoBuild reports `budget_exhausted` with exit 9; the runner reports `shared_call_budget_exhausted` with exit 6 and `process_stop`. Unlimited budgets do not exhaust.
 
-## Daten und Operatoroptionen
+## Data and operator options
 
-Maßgeblich bleiben externe `budget.json`, `reservations.json` und nummerierte
-Claims unter `<controller-state>/<plan>/call_budgets/task_<root>/`. Reservierung
-und Dateioperationen sind prozessübergreifend gesperrt; ein fehlender Diagnose-
-Claim gibt keinen Aufruf frei. Die letzte Reservierungsnummer steigt weiter.
+Authoritative data remains in external `budget.json`, `reservations.json`, and numbered claims under `<controller-state>/<plan>/call_budgets/task_<root>/`. Reservation and file operations are locked across processes; a missing diagnostic claim does not release an invocation. The last reservation number continues to increase.
 
-Neue Budget-/Claim-Schemas sind `arquilo.call_budget.v2` und
-`arquilo.call_claim.v2`. Bei unbegrenzt gilt `limit=0`, `remaining=null`,
-`unlimited=true`; `used` bleibt eine Zahl. Endliche v1-Daten werden weiterhin
-validiert gelesen. Es wird keine JSON-Unendlichkeit geschrieben.
+Current budget/claim schemas are `arquilo.call_budget.v2` and `arquilo.call_claim.v2`. For unlimited budgets, `limit=0`, `remaining=null`, `unlimited=true`; `used` remains numeric. Finite v1 data is still validated and read. JSON infinity is never written.
 
-`--logs-in-workdir` verschiebt nur neue Diagnoseprotokolle, nicht diese Zähler.
-`--allow-todo-modifications` erlaubt bewusst einen veränderlichen Hauptplan.
-Für Planung in derselben Datei: Aufgabe 2 erzeugt weitere offene Aufgaben;
-`--stop 2` hält nach ihrer Abnahme und vor deren Ausführung an. Danach prüft der
-Mensch den Plan und startet separat weiter. Die Optionen und ausführliche
-PowerShell-Beispiele stehen unter [Operatorsteuerung](../docs/operator-controls.md).
+`--logs-in-workdir` moves only new diagnostic logs, not these counters. `--allow-todo-modifications` deliberately permits a mutable main plan. For planning in the same file, task 2 can create later open tasks; `--stop 2` pauses after task 2 has passed review and before those later tasks execute. The operator then inspects the plan and continues separately. Options and detailed PowerShell examples are in [Operator controls](../docs/operator-controls.md).

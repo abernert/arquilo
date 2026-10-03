@@ -1,9 +1,6 @@
-# Controller safety and migration (0.3.0)
+# Controller safety and state management
 
-This release changes controller state storage and automatic Git semantics.
-It addresses unapproved task completion, redirected controller writes,
-Git over-staging, dry-run collisions, unreadable policies and preflight argv.
-It does not certify the host sandbox or make an LLM review infallible.
+This document describes the current controller authority, state storage, restart, filesystem and Git safeguards. These controls were introduced and strengthened across earlier releases; the legacy 0.2.x → 0.3.0 migration is documented separately below. They do not certify the host sandbox or make an LLM review infallible.
 
 ## Plan authority and restart (strict default)
 
@@ -65,11 +62,9 @@ retaining consumption; default 0 removes an older finite limit on continuation.
 Never switch state stores to reset a counter. An existing stop instruction is
 separate and remains effective. This counts attempts, not tokens or currency.
 
-Old 0.2.x workspace archives are retained and never rewritten or automatically
-trusted as authority. Existing work should be manually checked before starting
-its first 0.3.0 baseline; use a fresh disposable smoke workspace first. Migrating
-a legacy numeric-claim budget explicitly in trusted state uses the highest claim
-number, not the number of remaining files.
+## Legacy migration from 0.2.x
+
+Old 0.2.x workspace archives are retained and never rewritten or automatically trusted as authority. If a plan or workspace was last used with 0.2.x, manually inspect it before establishing its current controller baseline and use a fresh disposable smoke workspace first. This is a historical migration path; current installations do not need a special 0.3.0 upgrade step. Migrating a legacy numeric-claim budget explicitly in trusted state uses the highest claim number, not the number of remaining files.
 
 ## Filesystem boundaries
 

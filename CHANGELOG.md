@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.1 — 2026-10-03 (public preview)
+
+- Reorganize the README as a documentation entry point and add a repository-wide documentation map.
+- Add platform installation guidance and an operator cookbook for common ARQUILO workflows.
+- Translate the maintained runtime reference documentation to English while preserving legacy syntax literals where required for compatibility.
+- Reframe older release-specific safety and Decide documentation as current guidance, with historical migration details kept explicitly separate.
+- Correct runtime ZIP documentation to follow `VERSION` instead of a stale fixed 0.2.0 filename.
+- Include the new documentation guide, installation guide and cookbook in the allowlisted runtime package manifest.
+- No task execution, review, sandbox, model/provider, or other runtime behavior changes are intended in this release.
+
+
 ## 0.6.0 — 2026-10-02 (public preview)
 
 - Default call budget to 0 (unlimited), including existing finite runner stores.

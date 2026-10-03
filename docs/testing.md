@@ -93,7 +93,7 @@ Run it locally only with an explicitly approved Codex binary:
 python3 -B scripts/check_codex_provider.py --codex /absolute/path/to/codex
 ```
 
-## Controller hardening (0.3.0)
+## Controller hardening regressions
 
 `tests/test_controller_hardening.py` reproduces six audited failure classes and
 tests normal completion, restart and parent review. Windows junction and POSIX

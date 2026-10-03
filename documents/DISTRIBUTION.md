@@ -8,8 +8,7 @@ python3 -B scripts/check_release.py
 python3 -B scripts/build_runtime_zip.py
 ```
 
-The default output is `dist/arquilo-0.2.0.zip` for version 0.2.0, plus
-`dist/arquilo-0.2.0.zip.sha256`. A custom not-yet-existing ZIP path may be passed.
+The default output is `dist/arquilo-<VERSION>.zip`, using the current `VERSION` file, plus a matching `.sha256` sidecar. A custom not-yet-existing ZIP path may be passed.
 Existing ZIPs and checksum sidecars are not overwritten. The explicit manifest
 in `lean_package.json` determines the content; adding a file to the repository
 alone does not include it in the runtime ZIP.

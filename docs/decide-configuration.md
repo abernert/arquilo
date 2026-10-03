@@ -1,6 +1,6 @@
-# Decide uses your Codex configuration (0.4.0)
+# Decide uses your Codex configuration
 
-Decide no longer replaces model/provider settings or disables user configuration.
+Current Decide behavior preserves model/provider provisioning from the trusted Codex host configuration unless an explicit override is supplied.
 It delegates provisioning to the installed Codex CLI, just as a normal local
 Codex call does. This includes custom providers such as a company Databricks
 gateway, their authentication commands/environment variables, endpoints, HTTP

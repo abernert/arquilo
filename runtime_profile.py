@@ -25,7 +25,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Optional, Sequence, Tuple
 
-ARQUILO_RUNTIME_VERSION = "0.6.0"
+ARQUILO_RUNTIME_VERSION = "0.6.1"
 ARQUILO_RUNTIME_PROFILE_SCHEMA_VERSION = "arquilo.runtime_profile.v1"
 ARQUILO_RUNTIME_PROFILE_ENV = "ARQUILO_RUNTIME_PROFILE"
 ARQUILO_RUNTIME_PROFILE_CONTRACT_VERSION = 1

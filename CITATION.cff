@@ -6,8 +6,8 @@ authors:
   - family-names: Bernert
     given-names: Alexander
     affiliation: Independent
-version: "0.6.0"
-date-released: 2026-10-02
+version: "0.6.1"
+date-released: 2026-10-03
 license: Apache-2.0
 repository-code: "https://github.com/abernert/arquilo"
 url: "https://github.com/abernert/arquilo"

@@ -2,8 +2,7 @@
 
 Use `arquilo_doctor.py` or `arquilo.py doctor` for diagnostics. `run_todos.py`,
 `autobuild.py`, `decide.py` and Markdown task syntax are retained.
-In 0.3.0, runner control data/logs moved outside the workspace and Git requires
-explicit file selection; see [controller migration](../docs/controller-safety.md).
+Runner control data/logs are outside the workspace and Git requires explicit file selection; this behavior was introduced in 0.3.0. See [controller safety](../docs/controller-safety.md).
 New configuration uses `ARQUILO_*` environment variables; newly emitted JSON
 schema identifiers use `arquilo.*`. The naming change does not grant additional
 sandbox, tool or network permissions and does not bypass review.

@@ -113,9 +113,7 @@ best done in a new disposable workspace rather than by deleting evidence.
 
 ## Direct Codex works, but Decide fails (provider/model/proxy)
 
-Update ARQUILO to 0.4.0. The old Decide path forced a provider, ignored user
-configuration and filtered provider/proxy/CA environment variables. Merely
-removing the model name in 0.3.1 did not fix these differences. Current Decide
+If you are still running ARQUILO 0.3.x or older, update to a current release. The pre-0.4 Decide path forced a provider, ignored user configuration and filtered provider/proxy/CA environment variables. Merely removing the model name in 0.3.1 did not fix these differences. Current Decide
 inherits trusted host configuration without bulk feature overrides. Start it
 from the same approved shell environment as the working CLI. Set `--profile`
 only when a saved named profile is actually needed. No endpoint or model is
@@ -129,15 +127,15 @@ selectors are used. Review the bounded diagnostics, not a complete config dump.
 ## Decide rejected a tool event under the configured provider
 
 The prompt asks for a decision from supplied evidence only, and ARQUILO rejects
-tool/unknown events. In 0.4.0 the host's configured integrations remain trusted;
+tool/unknown events. In the current configuration-inheritance model (introduced in 0.4.0), the host's configured integrations remain trusted;
 the event gate cannot prevent or undo their execution. Inspect local Codex
 configuration and use an IT-approved restricted profile where appropriate.
 Do not bypass the sandbox or change a failed review to PASS.
 
-## Controller integrity failures (0.3.0)
+## Controller integrity failures
 
 Do not delete state or automatically accept modified plans. See
-[controller safety and recovery](controller-safety.md) for the new state roots,
+[controller safety and recovery](controller-safety.md) for the controller state roots,
 explicit owner adoption, Git selection and no-overwrite dry-run reports.
 
 ## Old call budget blocks continuation
