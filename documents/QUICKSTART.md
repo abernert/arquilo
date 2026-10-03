@@ -1,12 +1,7 @@
-# ARQUILO: Installation und Einstieg
+# ARQUILO: installation and getting started
 
-Die aktuelle Anleitung mit vollständigen Befehlen für Windows/PowerShell,
-macOS und Linux steht im [Quick start](../docs/quickstart.md).
+The current guide with complete commands for Windows/PowerShell, macOS, and Linux is the [Quick start](../docs/quickstart.md). For prerequisite and platform details, see [Installation](../docs/installation.md).
 
-Python 3.11 oder neuer genügt für den Kern. Echte Aufträge benötigen eine separat
-installierte und angemeldete Codex-CLI. Die öffentliche Version 0.1.0 ist eine
-Vorschau, keine Freigabe für unbeaufsichtigte Produktion.
+Python 3.11 or newer is sufficient for the core. Real tasks require a separately installed and authenticated Codex CLI. ARQUILO is a public preview, not a claim of readiness for unattended production use.
 
-Aktuelle Einstiegspunkte und Schema-Namen sowie historische Eingabealiase sind dokumentiert. Siehe
-[deutsches README](../README.de.md), [Konfiguration](CONFIGURATION.md),
-[Migration](MIGRATION.md) und [Sicherheit](../SECURITY.md).
+Current entry points, schema names, and historical input aliases are documented in the [main README](../README.md), [Configuration](CONFIGURATION.md), [Migration](MIGRATION.md), and [Security](../SECURITY.md). The [documentation guide](../docs/README.md) maps the rest of the repository documentation.
