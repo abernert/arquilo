@@ -1,20 +1,23 @@
-# Erweitertes ToDo-Format (Directive-Modus)
+# Extended ToDo format (directive mode)
 
-Dieses Dokument beschreibt das in `run_todos.py` umgesetzte, rueckwaertskompatible Directive-Format aus ToDo 21.8/21.9.
+This document describes the backward-compatible directive format implemented by `run_todos.py`.
 
-## Ziel
-- Parallele Bearbeitung von ToDos in Unterworkspaces
-- Aktivierung unterschiedlicher Agentenhinweise je ToDo
-- Ablaufsteuerung ueber Wartebedingungen
-- Modell- und Web-Recherche-Optionen je ToDo
+## Purpose
 
-## Rueckwaertskompatibilitaet
-- Bisherige Zeilen im Format `<id>. Auftrag: ...` bleiben unveraendert gueltig.
-- Ohne Directives arbeitet `run_todos.py` wie bisher.
-- `***STOP***` bleibt unveraendert aktiv und muss direkt vor dem betreffenden ToDo stehen.
+- Run tasks in parallel subworkspaces.
+- Apply different agent/model hints per task.
+- Control sequencing through wait conditions.
+- Configure model and web-research behavior per task.
 
-## Directive-Syntax
-Directive-Zeilen stehen direkt oberhalb eines ToDos:
+## Backward compatibility
+
+- Existing lines in the form `<id>. Auftrag: ...` remain valid.
+- Without directives, `run_todos.py` behaves as before.
+- `***STOP***` remains active and must appear directly before the affected task.
+
+## Directive syntax
+
+Directive lines appear directly above a task:
 
 ```text
 ***CFG key=value key2=value2***
@@ -22,143 +25,93 @@ Directive-Zeilen stehen direkt oberhalb eines ToDos:
 <id>. ***Task***: ...
 ```
 
-- Werte koennen bei Bedarf in Anfuehrungszeichen gesetzt werden.
-- Mehrere `CFG`/`WAIT`-Zeilen vor demselben ToDo sind erlaubt.
-- `CFG`-Werte werden fuer das naechste ToDo zusammengefuehrt.
-- Codebeispiele und HTML-Kommentare bleiben unsichtbar. Eine nachgestellte
-  HTML-Notiz hinter einer echten Directive verdeckt diese nicht.
-- Die vollständige aktuelle Datei wird vor der Auswahl (auch WAIT/STOP) und
-  vor AutoBuild geprüft. Ungültige oder entfernte Schlüssel sind Fehler;
-  sie werden nicht als Standardwerte oder erfolgreicher Leerlauf behandelt.
-- Die Quote-Grammatik ist auf allen Plattformen die bestehende POSIX-Textgrammatik,
-  keine Shellausführung. Windows-Backslashpfade einfach quotieren, z. B.
-  `workspace='C:\Projekt Raum\Teil'`, oder Schrägstriche verwenden. Der Pfad
-  muss zum Host passen und innerhalb des Hauptworkspaces liegen. Es findet
-  keine Variablen-, Tilde- oder Kommandosubstitution durch die Quote-Grammatik statt.
+- Values may be quoted when needed.
+- Multiple `CFG`/`WAIT` lines may precede the same task.
+- `CFG` values are merged for the next task.
+- Code examples and HTML comments remain invisible to scheduling. A trailing HTML note after a real directive does not hide the directive.
+- The complete current file is validated before selection, including WAIT/STOP, and before AutoBuild. Invalid or removed keys are errors; they are not treated as defaults or successful no-ops.
+- Quoting uses the existing POSIX text grammar on every platform; it is not shell execution. Quote Windows backslash paths, for example `workspace='C:\Project Space\Part'`, or use forward slashes. The path must match the host and remain inside the main workspace. The quote grammar performs no variable, tilde, or command substitution.
 
-## CFG-Optionen
-Unterstuetzte Schluessel:
+## CFG options
 
-- `workspace=<relativer_pfad>`: Unterworkspace fuer dieses ToDo.
-  Default: Hauptworkspace aus `--workdir` (kein Unterworkspace).
-- `parallel=<gruppenname>`: Markiert das ToDo als Teil einer Parallelgruppe.
-  Default: nicht gesetzt (sequentielle Ausfuehrung).
-- `agent=<name>`: Agentenhinweis fuer den Prompt dieses ToDos.
-  Default: nicht gesetzt (kein zusaetzlicher Agentenhinweis und kein Profil-Override).
-  - Derselbe geprüfte Name wird als `config_profile` übergeben und erzeugt
-    `codex exec --profile <name>`. Historische Sicherheitsprofile aus dem
-    Vorgängerprojekt sowie `dev`, `yolo`, `unsandboxed` und Full-Access-Namen
-    werden zurückgewiesen; siehe [historische Migration](HISTORICAL_MIGRATION.md).
-    Andere Modell-/Werkzeugprofile können die feste Sandbox nicht ersetzen.
-- `model=<modell_id>`: Modell-Override fuer dieses ToDo.
-  Ein explizites globales Modell aus `run_todos.py --model` beziehungsweise
-  dessen Umgebungsdefault hat Vorrang; ohne globalen Wert greift CFG.
-- `web_search=live|cached|disabled`: Web-Recherche-Mode fuer dieses ToDo.
-  Default: nicht gesetzt (kein ToDo-Override; globaler `web_search`-Wert aus der Codex-Config bleibt wirksam).
-- `websearch=live|cached|disabled`: Alias zu `web_search`.
-  Default: wie `web_search`.
-- `network_access=true|false`: Netzfreigabe fuer `sandbox_workspace_write` per Config-Override.
-  Default: Starterfreigabe, ohne `--network-access` ausdrücklich `false`.
-  `true` benötigt die Starterfreigabe; `false` darf sie pro ToDo einschränken.
-  Die Netzwerkfreigabe erweitert keine Dateischreibrechte.
-- `result_file=<todo_result_*.md>`: Lokaler Ergebnisdateiname für diesen Auftrag.
-- `completion_anchor=<todo_result_*.md>`: Alternativer Ergebnisdateiname;
-  `result_file` hat Vorrang, wenn beide gesetzt sind. Keine Pfadkomponenten.
-- `breakdown=minimal|legacy|off`: Bestehende Zerlegungspolitik pro Auftrag.
-  Aliasse: `structured` für minimal, `none|disabled|false` für off.
-- `breakdown_max_children=1..12`, `breakdown_max_rounds=1..8`:
-  Grenzen der bestehenden Zerlegung; keine neuen Schedulerbudgets.
+Supported keys:
 
-## WAIT-Optionen
-Unterstuetzte Schluessel:
+- `workspace=<relative_path>`: subworkspace for this task. Default: the main `--workdir`.
+- `parallel=<group_name>`: marks the task as part of a parallel group. Default: unset/sequential.
+- `agent=<name>`: agent hint for this task's prompt. Default: unset.
+  - The same validated name is passed as `config_profile`, producing `codex exec --profile <name>`. Historical security profiles from the predecessor project and names such as `dev`, `yolo`, `unsandboxed`, and Full-Access variants are rejected; see [Historical migration](HISTORICAL_MIGRATION.md). Other model/tool profiles cannot replace the fixed sandbox policy.
+- `model=<model_id>`: per-task model override. An explicit global model from `run_todos.py --model` or its environment default takes precedence; otherwise the CFG model applies.
+- `web_search=live|cached|disabled`: per-task web-search mode. Default: no task override; the global Codex configuration remains effective.
+- `websearch=live|cached|disabled`: alias for `web_search`.
+- `network_access=true|false`: shell-network permission for `sandbox_workspace_write` via a configuration override. Default follows the runner grant; without `--network-access` it is explicitly false. `true` requires the runner-level grant; `false` may restrict it per task. Network permission does not expand file-write permissions.
+- `result_file=<todo_result_*.md>`: local result filename.
+- `completion_anchor=<todo_result_*.md>`: alternative result filename; `result_file` wins when both are set. No path components.
+- `breakdown=minimal|legacy|off`: decomposition policy. Aliases: `structured` for minimal and `none|disabled|false` for off.
+- `breakdown_max_children=1..12`, `breakdown_max_rounds=1..8`: decomposition bounds; these are not new scheduler budgets.
 
-- `on=<ausdruck>`: Wartebedingung. Erlaubte Praefixe:
+## WAIT options
+
+Supported keys:
+
+- `on=<expression>`: wait condition. Allowed prefixes:
   - `todo:<id>`
-  - `<id>` als Kurzform für `todo:<id>`
-  - `group:<gruppenname>`
-  - `agent:<agentname>`
-- `mode=all|any`: Bei mehreren Bedingungen (kommagetrennt) muessen alle oder eine erfuellt sein.
-- `timeout=<dauer>`: z. B. `30s`, `5m`, `1h`, `1d`.
-- `on_timeout=stop|continue`: Verhalten bei Timeout.
+  - `<id>` as shorthand for `todo:<id>`
+  - `group:<group_name>`
+  - `agent:<agent_name>`
+- `mode=all|any`: for comma-separated conditions, require all or any.
+- `timeout=<duration>`: for example `30s`, `5m`, `1h`, `1d`.
+- `on_timeout=stop|continue`: timeout behavior.
 
-Gespeicherte DONE-Einträge erfüllen ToDo-Abhängigkeiten auch nach einem Neustart.
-OBSOLETE, ein unvollständiger Auftrag oder bloß versuchte Arbeit erfüllen sie
-nicht. Gruppen-/Agenten-Bedingungen verwenden ihre bestehenden
-Laufzustände. Mehrere WAIT-Zeilen werden nacheinander geprüft. `timeout=0s`
-prüft sofort; ohne Timeout wird ebenfalls nur der aktuelle Zustand geprüft.
-Eine unerfüllte Bedingung beendet den Lauf mit Exit 9, sofern nicht ausdrücklich
-`on_timeout=continue` gesetzt ist. Leere Listenelemente, unbekannte IDs und
-ungültige Modi werden als Grammatikfehler gemeldet. STOP ist kein WAIT-Zustand
-und erzeugt keine `process_stop`-Datei.
+Stored DONE entries satisfy ToDo dependencies after restart. OBSOLETE, an incomplete task, or attempted work does not. Group/agent conditions use their existing runtime state. Multiple WAIT lines are evaluated in sequence. `timeout=0s` checks immediately; omitting timeout also checks only the current state. An unmet condition exits with code 9 unless `on_timeout=continue` is explicit. Empty list items, unknown IDs, and invalid modes are grammar errors. STOP is not a WAIT state and does not create a `process_stop` file.
 
-Bridge-WAITs (`bridge:resume[:token]`, `bridge:retry[:token]`,
-`bridge:escalation` und `bridge:escalated`) sind seit 1031 entfernt. Linter und
-Runner melden sie ausdrücklich als Konfigurationsfehler vor dem betreffenden
-Modellaufruf, auch bei dynamisch angelegten Tasks, gemischten WAIT-Bedingungen,
-`mode=any` und `on_timeout=continue`. Es gibt keine Aktivierungsoption mehr.
-Codebeispiele und HTML-Kommentare bleiben unsichtbar.
-Hinweise zum Anpassen alter Eingaben stehen in [MIGRATION.md](MIGRATION.md).
+Bridge WAIT conditions (`bridge:resume[:token]`, `bridge:retry[:token]`, `bridge:escalation`, and `bridge:escalated`) have been removed since 1031. Linter and runner report them as configuration errors before the affected model call, including dynamically added tasks, mixed WAIT conditions, `mode=any`, and `on_timeout=continue`. There is no activation option. See [Migration](MIGRATION.md).
 
-## Ausfuehrungsregeln
-- Directives gelten immer nur fuer das unmittelbar folgende ToDo.
-- `parallel`-Ausführung bleibt optional verfügbar; sie benötigt keinen Modusschalter.
-- In Parallelgruppen muss jedes ToDo einen eigenen `workspace` haben.
-- `WAIT`-Direktiven werden in Parallelgruppen fuer jedes einzelne ToDo geprueft, bevor die Gruppe gestartet wird.
-- `workspace` muss nach Pfadauflösung innerhalb des Hauptworkspaces liegen.
-- YOLO-/Full-Auto-/No-Check-Felder und Sicherheitsprofilfelder werden mit
-  Fehler zurückgewiesen, auch bei früheren Standardwerten `false`.
-  Pflichtreviews gelten in seriellen und parallelen Abläufen.
-- Sämtliche `logician`-/`logician_*`-Direktiven sind in Lean entfernt, auch
-  frühere Standardwerte `off`/`lite`. Entferne diese Einträge; normale Reviews
-  und Audits benötigen keinen Ledger. Siehe [Migration](MIGRATION.md).
-- ACE-, IACT-, OpenClaw-/Bridge- und Servicefelder sind ebenfalls entfernt,
-  auch mit `false`, `off`, `null` oder leeren Werten. Es gibt keine
-  Zusatzgruppe, die diese Direktiven wieder aktiviert. Parallel-CFG,
-  allgemeine Runtime-Profile und Git-Opt-in bleiben Kernoptionen.
-- Ruecksync aus Unterworkspaces ist nicht-destruktiv: Ergebnisse/Fragen werden gemerged statt als ganze Datei ueberschrieben.
-- Bei `WAIT ... on_timeout=stop` wird der Lauf kontrolliert beendet.
+## Execution rules
 
-## Web-Recherche (Bezug ToDo 21.7)
-Integrierte Websuche wird separat durch `web_search=live|cached|disabled`
-konfiguriert. `network_access` betrifft vom Agenten gestartete Shellbefehle
-in `workspace-write`; Providerkommunikation und MCP/Apps sind ebenfalls
-getrennte Wege. Deshalb behauptet `network_access=false` keine vollständige
-Offline-Ausführung. Es gibt keinen unbeschränkten Sandboxmodus in ARQUILO.
+- Directives apply only to the immediately following task.
+- Parallel execution remains optional and requires no separate mode switch.
+- Every task in a parallel group must use its own `workspace`.
+- WAIT directives in parallel groups are checked for each task before the group starts.
+- Resolved `workspace` paths must remain inside the main workspace.
+- YOLO/Full-Auto/No-Check fields and security-profile fields are rejected, including historical `false` defaults. Mandatory reviews apply to sequential and parallel flows.
+- All `logician`/`logician_*` directives have been removed, including former `off`/`lite` defaults. Remove them; normal reviews and audits do not require a ledger. See [Migration](MIGRATION.md).
+- ACE, IACT, OpenClaw/Bridge, and service fields are also removed even when set to `false`, `off`, `null`, or empty. No optional group re-enables them. Parallel CFG, general runtime profiles, and explicit Git opt-in remain core features.
+- Sync-back from subworkspaces is non-destructive: results/questions are merged instead of replacing the whole file.
+- `WAIT ... on_timeout=stop` ends the run in a controlled manner.
 
-Hinweis:
-- Die Directive-Optionen `web_search` und `network_access` werden als temporaere Codex-Config-Overrides (`-c ...`) je ToDo gesetzt.
-- `agent=<name>` setzt ein Codex-Modell-/Werkzeugprofil (`--profile <name>`).
-  Die explizite CLI-Sandboxpolicy bleibt auch bei abweichenden Profildefaults wirksam.
-- Alternativ bleibt die globale/isolierte Konfiguration ueber `CODEX_HOME/config.toml` moeglich.
+## Web research
 
-## Beispiel
+Integrated web search is configured separately through `web_search=live|cached|disabled`. `network_access` concerns shell commands started by the agent in `workspace-write`; provider communication and MCP/apps are separate paths. Therefore `network_access=false` does not claim fully offline execution. ARQUILO has no unrestricted sandbox mode.
+
+Notes:
+
+- `web_search` and `network_access` are passed as temporary Codex configuration overrides (`-c ...`) per task.
+- `agent=<name>` selects a Codex model/tool profile (`--profile <name>`). The explicit CLI sandbox policy remains effective even when profile defaults differ.
+- Global/isolated configuration through `CODEX_HOME/config.toml` remains possible.
+
+## Example
 
 ```md
-***CFG parallel=grp_mod workspace=workspaces/analyse agent=analyst web_search=disabled network_access=false***
-21.8.1. ***Task***: Analysiere die betroffenen Module und dokumentiere Risiken.
+***CFG parallel=grp_mod workspace=workspaces/analysis agent=analyst web_search=disabled network_access=false***
+21.8.1. ***Task***: Analyze the affected modules and document risks.
 
 ***CFG parallel=grp_mod workspace=workspaces/tests agent=tester web_search=disabled network_access=false***
-21.8.2. ***Task***: Ergaenze Regressionstests fuer dieselben Module.
+21.8.2. ***Task***: Add regression tests for the same modules.
 
 ***WAIT on=group:grp_mod mode=all timeout=120m on_timeout=stop***
-21.8.3. ***Task***: Fuehre die Ergebnisse aus Analyse und Tests zusammen.
+21.8.3. ***Task***: Integrate the results from analysis and tests.
 ```
 
-## Empfohlener Laufaufruf
+## Recommended invocation
 
 ```text
-python3 /programme/arquilo-lean/run_todos.py --todo-file /projekt/aufgaben.md --workdir /projekt
+python3 /path/to/arquilo/run_todos.py --todo-file /project/tasks.md --workdir /project
 ```
 
-Natives Windows/PowerShell:
+Native Windows/PowerShell:
 
 ```powershell
-py -3.11 C:\Arquilo\lean\run_todos.py --todo-file C:\Projekt\aufgaben.md --workdir C:\Projekt
+py -3.11 C:\Arquilo\run_todos.py --todo-file C:\Project\tasks.md --workdir C:\Project
 ```
 
-Für Shellnetzwerk muss der Starter zusätzlich `--network-access` erhalten.
-Die [Migration](MIGRATION.md) erklärt die entfernten
-Schalter sowie den Unterschied zwischen Approval-Policy und Sandbox.
-
-Die [Projektvorbemerkung](TODO_PREAMBLE.md) erklärt `auto|off|required`,
-Referenzprompts, Markdown-Sichtbarkeit und dynamische Folgeaufgaben.
+Shell network access additionally requires `--network-access` on the runner. [Migration](MIGRATION.md) explains removed switches and the distinction between approval policy and sandbox. [Project preamble](TODO_PREAMBLE.md) explains `auto|off|required`, reference prompts, Markdown visibility, and dynamic follow-up tasks.
