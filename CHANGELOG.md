@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- State the review verdict/breakdown field dependencies explicitly in the shared
+  task and parent-review instructions, including JSON null when no breakdown is
+  recommended. Add a valid PASS example and align the review reference.
+- Add offline prompt/parser and parent-dispatch regressions for PASS, local-fix
+  FAIL and decomposition FAIL, including rejection of a PASS review with a
+  textual no-breakdown reason. Existing validation, completion gates, provider
+  selection and sandbox policy remain unchanged.
+
 ## 0.6.1 — 2026-10-03 (public preview)
 
 - Reorganize the README as a documentation entry point and add a repository-wide documentation map.
