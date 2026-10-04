@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2 — 2026-10-04 (public preview)
 
 - State the review verdict/breakdown field dependencies explicitly in the shared
   task and parent-review instructions, including JSON null when no breakdown is
