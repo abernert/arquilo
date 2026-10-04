@@ -1,0 +1,86 @@
+# One-time publication requested by the maintainer. Existing tag releases stay unchanged.
+name: Publish requested 0.6.2
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+permissions:
+  contents: read
+concurrency:
+  group: publish-requested-0.6.2
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+      - name: Permit only the requested version transition
+        id: version
+        shell: python
+        run: |
+          import os
+          import subprocess
+          from pathlib import Path
+          current = Path('VERSION').read_text(encoding='utf-8').strip()
+          previous = subprocess.check_output(['git', 'show', 'HEAD^:VERSION'], text=True).strip()
+          publish = current == '0.6.2' and previous != current
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('publish=' + str(publish).lower() + '\n')
+          if publish:
+              heading = '## 0.6.2 — 2026-10-04 (public preview)'
+              changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
+              if changelog.count(heading) != 1:
+                  raise SystemExit('Expected exactly one 0.6.2 changelog section')
+              body = heading + changelog.split(heading, 1)[1].split('\n## ', 1)[0]
+              body += '\n\nThis remains a public preview. No live Qwen/LM Studio or native sandbox acceptance is claimed.\n'
+              Path(os.environ['RUNNER_TEMP'], 'arquilo-0.6.2-notes.md').write_text(body, encoding='utf-8')
+      - name: Offline regression tests
+        if: steps.version.outputs.publish == 'true'
+        run: python -B -m unittest discover -s tests -v
+      - name: Validate public distribution
+        if: steps.version.outputs.publish == 'true'
+        run: python -B scripts/check_release.py
+      - name: Build licensed runtime and checksum
+        if: steps.version.outputs.publish == 'true'
+        run: python -B scripts/build_runtime_zip.py
+      - name: Create exact tag without moving an existing tag
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json
+          import os
+          import subprocess
+          repo = os.environ['GITHUB_REPOSITORY']
+          sha = os.environ['GITHUB_SHA']
+          result = subprocess.run(['gh', 'api', f'repos/{repo}/git/ref/tags/v0.6.2'], capture_output=True, text=True)
+          if result.returncode == 0:
+              obj = json.loads(result.stdout)['object']
+              if obj['type'] != 'commit' or obj['sha'] != sha:
+                  raise SystemExit('Existing v0.6.2 tag does not match this tested commit; refusing to move it')
+          elif 'HTTP 404' in result.stderr:
+              subprocess.run(['gh', 'api', '--method', 'POST', f'repos/{repo}/git/refs',
+                              '-f', 'ref=refs/tags/v0.6.2', '-f', f'sha={sha}'], check=True)
+          else:
+              raise SystemExit(result.stderr)
+      - name: Publish preview assets without overwriting an existing release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.6.2 dist/arquilo-0.6.2.zip dist/arquilo-0.6.2.zip.sha256 \
+            --verify-tag --prerelease --title 'ARQUILO 0.6.2 — public preview' \
+            --notes-file "$RUNNER_TEMP/arquilo-0.6.2-notes.md"
