@@ -47,6 +47,13 @@ Detailed English runtime references live under `documents/`: [configuration](doc
 
 For the checked-out version, CLI help and `python3 -B arquilo.py capabilities` remain the best machine-readable view of the runtime's actual interface.
 
+## Workbench and Ask (feature preview)
+
+This development branch adds a local browser interface with validated plan editing,
+live run status and separate evidence-only questions. See [Workbench and Ask](docs/workbench.md)
+for explicit provider consent, configuration requirements, source limits and safe
+pause/cancellation. This preview is not part of the published 0.6.1 release.
+
 ## Why another agent tool?
 
 ARQUILO focuses on the controller around task execution, not on another chat UI:
@@ -174,7 +181,9 @@ budgets stay in their current location. [Layout and migration](docs/project-logs
 | `python3 arquilo.py run --help` | Task runner and all existing runner options |
 | `python3 arquilo.py doctor --help` | Local checks and optional Decide smoke test |
 | `python3 arquilo.py capabilities` | Machine-readable capability contracts |
-| `python3 arquilo.py ask --workdir PATH QUESTION` | Read-only project question outside the task lifecycle |\n| `python3 arquilo.py workbench --workdir PATH` | Local browser UI for tasks, runs and questions |\n| `python3 arquilo.py package` | Allowlisted runtime ZIP and SHA-256 sidecar |
+| `python3 arquilo.py ask --help` | Evidence-only project questions; explicit provider consent |
+| `python3 arquilo.py workbench --help` | Protected local browser editor and run control |
+| `python3 arquilo.py package` | Allowlisted runtime ZIP and SHA-256 sidecar |
 
 Use `run_todos.py` or `arquilo.py run` for tasks and `arquilo_doctor.py` or
 `arquilo.py doctor` for diagnostics. New configuration uses `ARQUILO_*`
@@ -208,7 +217,8 @@ Created and maintained by **[Alexander Bernert](https://github.com/abernert)**.
 Bug reports with small, sanitized reproductions and regression tests are welcome.
 See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md) and
 [the conduct guidelines](CODE_OF_CONDUCT.md). Voluntary citation metadata is in
-[CITATION.cff](CITATION.cff); citation is not an additional license condition.
+[CITATION.cff](CITATION.cff); citation is not an additional license condition or a change
+to the license.
 
 Copyright 2026 Alexander Bernert. Original code, documentation and examples in
 this repository are licensed under **Apache-2.0**, unless marked otherwise.

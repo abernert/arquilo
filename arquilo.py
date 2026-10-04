@@ -22,7 +22,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args and args[0] == "capabilities":
         from run_todos import main as run_main
         return run_main(["--print-capabilities", *args[1:]])
-    if args and args[0] == "ask":\n        from ask import main as ask_main\n        return ask_main(args[1:])\n    if args and args[0] == "workbench":\n        from workbench import main as workbench_main\n        return workbench_main(args[1:])\n    if args and args[0] == "package":
+    if args and args[0] == "ask":
+        from ask import main as ask_main
+        return ask_main(args[1:])
+    if args and args[0] == "workbench":
+        from workbench import main as workbench_main
+        return workbench_main(args[1:])
+    if args and args[0] == "package":
         from scripts.build_runtime_zip import main as package_main
         return package_main(args[1:])
     parser = argparse.ArgumentParser(

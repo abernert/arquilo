@@ -33,7 +33,7 @@ DECISION_REQUIRED_EXEC_FLAGS = (
 def decision_arguments(*, network_access: bool, config_profile: str | None,
                        extra_args: Sequence[str]) -> list[str]:
     """Minimal protocol/sandbox policy; leave provider configuration to Codex."""
-    if network_access is not False or extra_args:
+    if network_access is not False or (extra_args and not _ask_restrictions(extra_args)):
         raise CodexPolicyError("Decide does not accept extra arguments or a shell network grant.")
     validate_config_profile(config_profile)
     return ["--sandbox", "read-only", "-c", DECISION_CONFIG[0]]
@@ -144,6 +144,12 @@ def validate_config_profile(value: str | None) -> str | None:
     return value
 
 
+def _ask_restrictions(values: Sequence[str]) -> bool:
+    # One fixed restrictive preset; never accept arbitrary configuration input.
+    from ask_policy import config_arguments
+    return isinstance(values, (list, tuple)) and tuple(values) == tuple(config_arguments())
+
+
 def validate_extra_args(values: Sequence[str] | None) -> tuple[str, ...]:
     """Allow presentation/session options and the existing separate web tool switch.
 
@@ -154,6 +160,8 @@ def validate_extra_args(values: Sequence[str] | None) -> tuple[str, ...]:
         return ()
     if isinstance(values, str) or not isinstance(values, (tuple, list)):
         raise CodexPolicyError("extra_args muss eine Argumentliste sein.")
+    if _ask_restrictions(values):
+        return tuple(values)
     result: list[str] = []
     index = 0
     while index < len(values):
