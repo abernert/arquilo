@@ -87,6 +87,12 @@ def review_instructions(review_policy_rules: Optional[Sequence[str]] = None) -> 
         "}\n\n"
         "Rules:\n"
         "- verdict is FAIL if and only if blocking_issues is non-empty.\n"
+        "- If verdict is PASS, set breakdown_recommended=false and breakdown_reason=null.\n"
+        "- If breakdown_recommended=false, set breakdown_reason=null, including for a FAIL verdict.\n"
+        "- A non-empty breakdown_reason is allowed only when verdict is FAIL and breakdown_recommended=true.\n"
+        '  Use JSON null, never an empty string, whitespace-only string, or the string "null".\n'
+        "- Explain why no breakdown is needed in short_summary or non_blocking_observations, not in breakdown_reason.\n"
+        "- Do not change the verdict, discard blockers, or recommend unnecessary breakdown just to satisfy these field constraints.\n"
         "- A blocking issue must identify a concrete violated requirement and a verifiable acceptance criterion.\n"
         "- Inspect the actual result files and prior results in the shared workspace; the latest answer alone is not evidence of completion.\n"
         "- For creative writing, assess the requested narrative constraints and internal consistency, not your preferred style or an unrequested proof format.\n"
@@ -103,6 +109,10 @@ def review_instructions(review_policy_rules: Optional[Sequence[str]] = None) -> 
         "- If no blocking issue remains, return PASS even if non-blocking observations exist.\n"
         "- If the original request is itself a read-only review, audit, or diagnostic task, the latest answer may correctly report blocking defects in the artifact being reviewed. "
         "Do not treat the mere existence of those reported defects as a defect of the review task. Judge whether the review accurately applied its requested contract and returned the requested structure.\n"
+        "\nExample of a valid PASS response (illustrative only; verify the actual task before choosing a verdict):\n"
+        '{"verdict": "PASS", "short_summary": "The requested results were verified.", '
+        '"blocking_issues": [], "non_blocking_observations": [], '
+        '"breakdown_recommended": false, "breakdown_reason": null}\n'
     )
 
 

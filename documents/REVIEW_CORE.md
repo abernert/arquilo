@@ -21,6 +21,29 @@ A current review returns this contract:
 
 A blocker contains a non-empty `summary`, the violated `requirement`, and a verifiable `acceptance_criterion`. `type` distinguishes a local fix, need for decomposition, missing input, a genuine scope conflict, technical failure, and external blocking. Supplied IDs are unique; references are text lists. PASS with blockers, FAIL without blockers, mixed old/new issue fields, duplicate keys, unknown fields, wrong types, NaN/Infinity, damaged Unicode, and contradictory breakdown fields are invalid.
 
+### Breakdown field dependencies
+
+A non-empty `breakdown_reason` is allowed only when `verdict` is `FAIL` and
+`breakdown_recommended` is `true`. The review prompt states these dependencies
+explicitly for both task reviews and parent acceptance; no provider-specific
+instructions or local Codex configuration are needed.
+
+| Review outcome | `blocking_issues` | `breakdown_recommended` | `breakdown_reason` to emit |
+| --- | --- | --- | --- |
+| PASS | Empty | `false` | JSON `null` |
+| FAIL, no breakdown needed | Non-empty | `false` | JSON `null` |
+| FAIL, breakdown justified | Non-empty | `true` | Non-empty explanation of the remaining workstreams |
+
+Use JSON `null`, not `""`, whitespace, or the string `"null"`. An explanation
+of **why no breakdown is needed** belongs in `short_summary` or
+`non_blocking_observations`, not in `breakdown_reason`. Do not change a verdict,
+discard blockers, or request unnecessary decomposition to satisfy the format.
+
+For compatibility the parser still accepts an omitted reason, or `null` on an
+otherwise valid breakdown recommendation, and supplies its existing generic
+reason when needed. Newly generated reviews should follow the table above.
+The prompt clarification does not relax validation or repair conflicting reviews.
+
 An invalid mandatory review exits with code 8 and does not trigger a blind repeat of production. A failed model call remains a technical failure while preserving prior work and logs.
 
 Compatibility remains for unambiguous older JSON reviews containing `verdict` and `issues`. Missing historical display/metadata fields are normalized as before. Free-form legacy review text still requires a successful explicit Codex decision; structured PASS/FAIL does not require that extra call. The result contract enforces this boundary between the runner and Python worker as well. Parent acceptance itself requires a structured JSON finding.
