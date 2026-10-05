@@ -136,12 +136,23 @@ class ArgumentTests(Base):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 replace(self.transport_request, model_provider=value)
 
-    def test_production_write_policy_unchanged(self):
+    def test_production_uses_codex_standard_workspace_write_policy(self):
         req = replace(self.transport_request, decision_only=False, sandbox='workspace-write')
         cmd = transport.build_command(req)
-        self.assertIn('sandbox_workspace_write.writable_roots=[]', cmd)
         self.assertIn('sandbox_workspace_write.network_access=false', cmd)
-        self.assertIn('--ignore-rules', cmd)
+        self.assertIn('approval_policy="never"', cmd)
+        self.assertNotIn('--ignore-rules', cmd)
+        self.assertFalse(any(v.startswith('sandbox_workspace_write.writable_roots=') for v in cmd))
+        self.assertFalse(any('exclude_tmpdir_env_var' in v or 'exclude_slash_tmp' in v for v in cmd))
+
+    def test_codex_profile_names_are_not_policy_blacklisted(self):
+        for name in ('dev', 'dora', 'yolo', 'unsandboxed', 'danger-full-access', 'full-access'):
+            with self.subTest(name=name):
+                req = replace(self.transport_request, decision_only=False,
+                              sandbox='workspace-write', config_profile=name)
+                cmd = transport.build_command(req)
+                self.assertEqual(cmd[cmd.index('--profile') + 1], name)
+                self.assertEqual(cmd[cmd.index('--sandbox') + 1], 'workspace-write')
 
 
 class EnvironmentTests(Base):
