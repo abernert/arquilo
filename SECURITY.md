@@ -16,9 +16,12 @@ not have a separate maintenance commitment.
 
 ## Trust boundaries
 
-- Production is constrained to Codex `workspace-write`; review requests use
-  `read-only`. ARQUILO is not itself an OS sandbox. Native enforcement and setup
-  depend on Codex and the host. A fresh directory does not imply full read isolation.
+- Production uses Codex `workspace-write`; review requests use `read-only`.
+  ARQUILO does not add filesystem hardening inside `workspace-write`: it keeps
+  Codex exec-policy rules and Codex's standard/configured writable roots, including
+  normal temporary-directory handling. ARQUILO is not itself an OS sandbox. Native
+  enforcement and setup depend on Codex and the host. A fresh directory does not
+  imply full read isolation.
 - Decide inherits trusted host Codex configuration/environment (including provider,
   proxy and credential dependencies) and requests `read-only`/`never`. It rejects
   tool/unknown events, but this is an acceptance gate, not a pre-tool interceptor.
