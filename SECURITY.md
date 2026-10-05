@@ -22,6 +22,10 @@ not have a separate maintenance commitment.
   normal temporary-directory handling. ARQUILO is not itself an OS sandbox. Native
   enforcement and setup depend on Codex and the host. A fresh directory does not
   imply full read isolation.
+- Controller-owned task/status/log/Git paths still use ARQUILO's no-follow,
+  atomic-write and path-integrity checks. Those checks protect controller authority;
+  they are not injected into Codex, do not filter worker shell commands, and do not
+  restrict ordinary project files inside the Codex workspace.
 - Decide inherits trusted host Codex configuration/environment (including provider,
   proxy and credential dependencies) and requests `read-only`/`never`. It rejects
   tool/unknown events, but this is an acceptance gate, not a pre-tool interceptor.
