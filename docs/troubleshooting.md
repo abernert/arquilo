@@ -1,7 +1,8 @@
 # Troubleshooting
 
 Keep the original run evidence. Do not bypass a failing review, enable full
-access, weaken ACLs globally, or mark tasks DONE to get past an error.
+access, weaken ACLs globally, or blindly mark tasks DONE to get past an error.
+The conditional owner recovery below applies only to an already passed review.
 
 ## Decide fails before a process starts
 
@@ -30,6 +31,35 @@ Read the structured review before retrying. The inline-contract fix means that
 the reviewer no longer has to open an archived `review_contract_*.json` through
 PowerShell. Actual output files still need to be readable and verifiable.
 A missing artifact or access failure is not automatically a semantic task defect.
+
+## Review passed, but an edited task plan blocks DONE
+
+In guarded-plan mode, editing the task file during a run (even inserting only
+`***STOP***` before the next task) can fail the post-review integrity check.
+A successful AutoBuild review is not yet controller acceptance: the task stays
+open and the runner stops with `unapproved_plan_mutation`.
+
+For a successfully completed ordinary task with a validated PASS review, the
+runner now explicitly reports `Review für ToDo <id>: PASS` followed by conditional
+manual-DONE guidance. The same text is retained in the terminal execution error
+in `run.json` / `run_log.json`. It does not turn the run into a success, remove a
+STOP, change a task status, or repeat production/review. No such hint is inferred
+from a prose PASS, missing/invalid/failed reviews, technical execution failures,
+unsafe/unreadable paths, breakdowns, parent-review subtasks or worker copies.
+
+After the runner exits, compare the task file with the captured plan and inspect
+the review and outputs. Only if your intended STOP/control edit is the sole plan
+change and the reviewed assignment, requirements, context and outputs are
+unchanged may you deliberately mark that task `***DONE***`. ARQUILO has not
+verified those recovery conditions. Preserve the review's stated scope and any
+non-blocking observations; this is owner adoption, not new independent evidence.
+
+On the next run, retain the same workspace, task-file path and state root and
+use `--accept-plan-changes` once to adopt the deliberately checked status/plan.
+A STOP before the next task still pauses scheduling: remove it deliberately only
+when ready to continue. Any separate `process_stop` must be inspected separately.
+Do not delete controller state, edit its journal or use broad mutable-plan mode
+merely to silence this error. Existing run logs are not rewritten retroactively.
 
 ## Native Windows encoding and access failures
 

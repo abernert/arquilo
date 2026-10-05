@@ -3065,8 +3065,28 @@ class TodoRunner:
                         not self.allow_todo_modifications or active_file != self.todo_file):
                     raise PlanIntegrityError("Worker changed its copied task plan; edit the primary task file in a sequential task")
         except (PlanIntegrityError, safe_io.UnsafePathError, OSError) as exc:
+            message = str(exc)
+            # A validated task review is distinct from controller acceptance.
+            # Never infer PASS from prose or a workspace log. Meta-reviews,
+            # breakdowns and worker-copy results cannot authorize this hint.
+            if (isinstance(exc, PlanIntegrityError)
+                    and active_file == self.todo_file
+                    and re.fullmatch(r"\d+(?:\.\d+)*", identifier)
+                    and outcome.completed
+                    and review_classification_passes(outcome.review_classification)):
+                message += (
+                    f"\n[info] Review für ToDo {identifier}: PASS (gegen den ursprünglichen Auftrag). "
+                    "Die automatische DONE-Markierung wurde erst danach wegen einer Planänderung blockiert."
+                    f"\n[hinweis] Sie können ToDo {identifier} nach manueller Prüfung auf ***DONE*** setzen, "
+                    "wenn außer Ihrer beabsichtigten STOP-/Steueränderung keine weiteren Planänderungen "
+                    "vorliegen und Auftrag, Anforderungen, Kontext sowie geprüfte Ergebnisse unverändert sind. "
+                    "ARQUILO hat diese Voraussetzungen nicht bestätigt."
+                    "\n[hinweis] Beim nächsten Start die bewusst geprüfte Status-/Planänderung einmal mit "
+                    "--accept-plan-changes übernehmen. Ein STOP vor dem nächsten ToDo bleibt wirksam; "
+                    "zum Fortsetzen dort bewusst entfernen. Keine automatische Abnahme oder Wiederholung."
+                )
             return replace(outcome, completed=False, abort=True,
-                message=str(exc), execution_error=execution_error(str(exc),
+                message=message, execution_error=execution_error(message,
                     code="unapproved_plan_mutation", phase="controller_acceptance"))
         return outcome
 
