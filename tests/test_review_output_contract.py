@@ -103,7 +103,10 @@ class ReviewInstructionTests(unittest.TestCase):
         marker = "Example of a valid PASS response (illustrative only; verify the actual task before choosing a verdict):\n"
         self.assertIn(marker, prompt)
         example, end = json.JSONDecoder().raw_decode(prompt.split(marker, 1)[1])
-        self.assertEqual(set(example), set(PASS))
+        self.assertEqual(set(example), set(PASS) | {
+            "confidence", "confidence_reason", "confidence_breakdown",
+            "evidence", "uncertainties", "suggested_checks",
+        })
         self.assertIsNone(example["breakdown_reason"])
         self.assertFalse(example["breakdown_recommended"])
         self.assertTrue(review_classification_passes(parse(example)))

@@ -52,6 +52,113 @@ A correction run first checks every alleged blocker against the task and artifac
 
 For a correctly performed document analysis, source defects, qualified findings, and multiple defensible interpretations are acceptable when the task permits them. For narrative work, the requested substantive and narrative constraints apply. Defects in the subject being analyzed must be distinguished from defects in the analysis or audit task itself.
 
+## Review confidence (advisory)
+
+New task and parent reviewers are asked to report confidence, evidence and
+remaining uncertainty. The existing review classification is extended with
+optional metadata; the `autobuild.review.v2` verdict/blocker contract is unchanged.
+Old structured/legacy reviews remain readable. An omitted score is normalized
+to `confidence: null` and `confidence_level: "unknown"`, never zero or a fabricated
+high score. Older ARQUILO versions that reject unknown fields cannot consume
+these extended reviews; upgrade readers and workers together.
+
+The following is a synthetic example, not a claim about this repository's tests:
+
+```json
+{
+  "verdict": "PASS",
+  "short_summary": "The requested result and focused checks were inspected.",
+  "blocking_issues": [],
+  "non_blocking_observations": [],
+  "breakdown_recommended": false,
+  "breakdown_reason": null,
+  "confidence": 0.86,
+  "confidence_reason": "The requested behavior was observed; native Windows behavior remains unverified.",
+  "confidence_breakdown": {
+    "requirements_coverage": 0.95,
+    "implementation_correctness": 0.9,
+    "test_evidence": 0.85,
+    "regression_safety": null
+  },
+  "evidence": [
+    "Inspected example.py:10-30 against the requested behavior.",
+    "Observed all 3 focused tests passing in the review environment."
+  ],
+  "uncertainties": ["Native Windows execution was not exercised."],
+  "suggested_checks": ["Run the focused tests on Windows."]
+}
+```
+
+`confidence` is the reviewer's **uncalibrated confidence that its verdict is
+correct**. For PASS this is its confidence that the task meets the original
+contract. A reviewer certain that a required output is missing can return
+FAIL with high confidence: the score never converts that failure into success.
+A score of 0.9 is not an empirically demonstrated 90% success rate.
+
+The controller derives display bands: `low` below 0.7, `medium` from 0.7 to below
+0.9, and `high` from 0.9 to 1.0. These are presentation conventions, **not
+acceptance thresholds**. If a normalized input supplies a contradictory
+`confidence_level`, validation fails rather than silently trusting the label.
+
+The breakdown dimensions are separate subjective assessments, not an average:
+
+| Dimension | Meaning; higher means stronger support |
+| --- | --- |
+| `requirements_coverage` | Coverage of the original explicit acceptance criteria |
+| `implementation_correctness` | Support that the implementation satisfies those criteria |
+| `test_evidence` | Strength of relevant observed checks |
+| `regression_safety` | Support that previously working behavior is preserved |
+
+A certain FAIL can have low `implementation_correctness` but high overall
+confidence in the FAIL verdict. Use JSON `null` for unknown or inapplicable
+dimensions. Writing and analysis tasks do not acquire a software-test or
+additional evidence-ledger requirement: inspecting their requested artifacts
+is evidence. `regression_safety` is deliberately not named `regression_risk`;
+a larger number must not mean more risk.
+
+A numeric overall score requires a non-empty `confidence_reason` and at least
+one `evidence` entry. References and test statements are **reviewer-reported**,
+not independently verified by the parser. The reviewer must distinguish
+observed results from producer claims and must not invent tests or references.
+The controller validates structure, not the truth of the assessment.
+`uncertainties` records what remains unverified; `suggested_checks` records
+optional follow-up checks, not shell commands to run automatically. Each list
+allows at most 64 non-empty strings of at most 2,000 characters each; the same
+text limit applies to `confidence_reason`. Scores must be finite numbers in
+[0, 1] or null; booleans, strings, out-of-range values and unknown dimensions
+are rejected. An invalid review does not retain a seemingly reassuring score.
+
+### Visibility and workflow
+
+The fields travel with `review_classification` in the existing AutoBuild summary,
+Python-worker boundary, task outcome and parent-review records. Existing raw
+review output also retains them. Parent confidence describes the parent's
+integrated result, not an average/product of child scores and not the mandatory
+reviewer's confidence that an audit task was performed correctly.
+
+For a compact, read-only view of a saved AutoBuild summary or a standalone
+structured review JSON file, run from the ARQUILO checkout:
+
+```sh
+python3 -B review_confidence.py /path/to/autobuild_summary.json
+```
+
+This offline reader prints the verdict, derived band, component scores,
+reviewer-reported evidence, uncertainties and suggested checks. It does not
+modify the file, follow artifact references, execute suggestions, contact a
+provider, or infer confidence from legacy prose. Input is limited to 8 MiB;
+malformed JSON and duplicate keys are rejected. Untrusted terminal controls
+are escaped in the display.
+
+**This first implementation is informational.** Low confidence alone does not
+create a blocker, rerun, breakdown, extra model call or incomplete task. High
+confidence never clears a blocker or bypasses existing review, safety, budget,
+parent-acceptance or completion checks. A genuinely unmet acceptance criterion
+must still be a blocker, not merely an uncertainty. Criticality-dependent
+thresholds, autonomous evidence gathering and empirical calibration are not
+implemented; they require a separate policy and outcome data. Repeated reviews
+of the same task must not be treated as independent correctness observations.
+
 ## Original task and parent acceptance
 
 AutoBuild keeps the task captured before the first execution fixed throughout the local correction loop. Before every review it writes a normal UTF-8 `review_contract_<id>.json` beside its logs from that in-memory snapshot. Review and correction receive the same snapshot inline in the prompt; shell access to the archive file is not required. Intermediate ToDo edits therefore do not replace the original criteria.
