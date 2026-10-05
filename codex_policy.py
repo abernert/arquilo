@@ -3,14 +3,15 @@
 """Invocation policy shared by the ARQUILO starters and Codex transport.
 
 No environment or configuration is read here. The caller grants shell network
-access explicitly; task configuration can only narrow that grant. Codex config
-profiles remain useful for model/tool settings but never supply sandbox policy.
+access explicitly; task configuration can only narrow that grant. ARQUILO pins
+the Codex sandbox mode and non-interactive approval policy, but otherwise leaves
+Codex's standard workspace-write filesystem/rules behavior intact.
 """
 from __future__ import annotations
 
 import json
 import re
-from removed_features import POLICY_MIGRATION, check_removed_fields
+from removed_features import check_removed_fields
 from typing import Mapping, Sequence
 
 
@@ -137,10 +138,6 @@ def validate_config_profile(value: str | None) -> str | None:
                               or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", value)
                               or ".." in value):
         raise CodexPolicyError("Codex-Profil muss ein einfacher Profilname ohne Pfad oder Optionen sein.")
-    if value is not None and value.lower().replace("_", "-") in {
-        "dora", "dev", "yolo", "unsandboxed", "danger-full-access", "full-access",  # historical-name: retired security profiles
-    }:
-        raise CodexPolicyError(f"Codex-Profil {value!r} ist ein entfernter Sicherheitsprofilname. {POLICY_MIGRATION}")
     return value
 
 
@@ -216,12 +213,13 @@ def reject_policy_keys(values: Mapping[str, object], *, source: str) -> None:
 def sandbox_arguments(*, sandbox: str, network_access: bool) -> list[str]:
     validate_sandbox(sandbox)
     validate_network_access(network_access)
+    # Preserve Codex's native workspace-write behavior: load the user's/project's
+    # execpolicy rules and keep Codex's standard/configured writable roots,
+    # including its normal temporary-directory handling. ARQUILO only pins the
+    # sandbox mode, unattended approval behavior, and the explicit shell-network
+    # grant used by the runner.
     return [
         "--sandbox", sandbox,
-        "--ignore-rules",
         "-c", 'approval_policy="never"',
         "-c", f"sandbox_workspace_write.network_access={str(network_access).lower()}",
-        "-c", "sandbox_workspace_write.writable_roots=[]",
-        "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
-        "-c", "sandbox_workspace_write.exclude_slash_tmp=true",
     ]
