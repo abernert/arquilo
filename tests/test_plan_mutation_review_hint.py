@@ -173,11 +173,15 @@ class ReviewHintTests(unittest.TestCase):
         self.assertNotIn('nach manueller Prüfung', outcome.message)
 
     def test_changed_requirements_are_not_certified_as_unchanged(self):
+        # Preserve the actual captured line endings, including Windows CRLF.
+        original_plan = self.runner.plan_authority.text
+        original_journal = self.runner.plan_authority.path.read_bytes()
         result = self.reject_after(self.passed(), changed=PLAN.replace('seven.txt', 'easier.txt'))
         self.assertIn('wenn außer Ihrer beabsichtigten', result.message)
         self.assertIn('ARQUILO hat diese Voraussetzungen nicht bestätigt', result.message)
         self.assertFalse(result.completed)
-        self.assertEqual(self.runner.plan_authority.text, PLAN)
+        self.assertEqual(self.runner.plan_authority.text, original_plan)
+        self.assertEqual(self.runner.plan_authority.path.read_bytes(), original_journal)
 
     def test_valid_nonblocking_observations_are_preserved(self):
         reviewed = self.passed()
