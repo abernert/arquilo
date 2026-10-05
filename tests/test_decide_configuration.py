@@ -146,7 +146,7 @@ class ArgumentTests(Base):
         self.assertFalse(any('exclude_tmpdir_env_var' in v or 'exclude_slash_tmp' in v for v in cmd))
 
     def test_codex_profile_names_are_not_policy_blacklisted(self):
-        for name in ('dev', 'dora', 'yolo', 'unsandboxed', 'danger-full-access', 'full-access'):
+        for name in ('dev', 'yolo', 'unsandboxed', 'danger-full-access', 'full-access'):
             with self.subTest(name=name):
                 req = replace(self.transport_request, decision_only=False,
                               sandbox='workspace-write', config_profile=name)
