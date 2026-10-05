@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Explain when an ordinary task review passed but a later plan-integrity check
+  blocked automatic DONE. Give conditional owner-recovery guidance without
+  changing stop/status/acceptance rules or adding execution retries.
+
 ## 0.6.2 — 2026-10-04 (public preview)
 
 - State the review verdict/breakdown field dependencies explicitly in the shared
