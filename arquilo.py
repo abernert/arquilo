@@ -22,6 +22,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args and args[0] == "capabilities":
         from run_todos import main as run_main
         return run_main(["--print-capabilities", *args[1:]])
+    if args and args[0] == "ask":
+        from ask import main as ask_main
+        return ask_main(args[1:])
+    if args and args[0] == "workbench":
+        from workbench import main as workbench_main
+        return workbench_main(args[1:])
     if args and args[0] == "package":
         from scripts.build_runtime_zip import main as package_main
         return package_main(args[1:])
@@ -30,7 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         epilog="Use 'python arquilo.py COMMAND --help' for command options.",
     )
     parser.add_argument("--version", action="version", version=f"ARQUILO {__version__}")
-    parser.add_argument("command", nargs="?", choices=("run", "doctor", "capabilities", "package"))
+    parser.add_argument("command", nargs="?", choices=("run", "doctor", "capabilities", "ask", "workbench", "package"))
     parser.parse_args(args)
     parser.print_help()
     return 0

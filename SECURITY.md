@@ -91,3 +91,17 @@ statuses/removal. It does not certify those edits as reviewed work. Use the
 original-assignment `reviewed_this_run` and recorded plan mutations, and perform
 human review of generated plans. Both switches are off by default and neither
 changes Codex permission settings. See [details](docs/operator-controls.md).
+
+## Workbench and evidence-only Ask preview
+
+The feature-branch Workbench binds only to loopback, authenticates every API action,
+validates Host/Origin and request sizes, and keeps owner edits separate from review
+and controller adoption. It is not a public web service. Keep its URL secret and
+installed runtime code outside model-writable production workspaces.
+
+Ask requires explicit provider consent and uses a bounded no-follow text broker,
+an empty Codex cwd and a fixed restricted-tool preset. Required metadata failures
+refuse the model call. Post-event rejection of tools does not undo execution, and
+trusted global/managed Codex configuration, authentication hooks and the host remain
+security boundaries. Read-only is not offline or confidential. Source citations
+prove valid anchors, not correct interpretation. See [the detailed limits](docs/workbench.md).

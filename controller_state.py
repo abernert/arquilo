@@ -78,7 +78,8 @@ class PlanAuthority:
     pending *controller-approved* status write can recover after a crash.
     """
     def __init__(self, todo: Path, directory: Path | None, *, accept_changes: bool = False,
-                 allow_modifications: bool = False, workspace: Path | None = None):
+                 allow_modifications: bool = False, workspace: Path | None = None,
+                 expected_sha256: str | None = None):
         if type(allow_modifications) is not bool:
             raise ValueError('allow_modifications must be bool')
         self.allow_modifications = allow_modifications
@@ -105,6 +106,14 @@ class PlanAuthority:
             else:
                 import fcntl
                 fcntl.flock(self._lock_stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if expected_sha256 is not None:
+                # Workbench confirmation is bound to the bytes read under this
+                # same plan lock, before owner adoption or a new baseline.
+                data = safe_io.read_bytes(self.todo)
+                if hashlib.sha256(data).hexdigest() != expected_sha256:
+                    raise PlanIntegrityError('Owner-confirmed plan changed before controller startup')
+                current = data.decode('utf-8')
+                self.text = current
             try:
                 saved = json.loads(safe_io.read_text(self.path))
             except FileNotFoundError:
