@@ -2,7 +2,7 @@ name: OpenCode standalone feasibility
 on:
   push:
     branches: [spike/opencode-feasibility]
-    paths: ['experiments/opencode/**', '.github/workflows/opencode-spike.yml']
+    paths: ['experiments/opencode/**/*.py', '.github/workflows/opencode-spike.yml']
 permissions:
   contents: read
 concurrency:

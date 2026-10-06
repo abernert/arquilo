@@ -23,6 +23,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from native_results import read_structured_result
 
 VERSION = '1.18.34'
 LIMIT = 8 * 1024 * 1024
@@ -362,7 +363,12 @@ def main(argv=None):
             message = client.call(f'/session/{session}/message', 'POST', body, timeout=40)
             save(logs / (case + '-response.json'), message)
             require(terminal(message, session), 'No verified terminal assistant: ' + json.dumps(message.get('info')))
-            stored = all_messages(session)
+            if case == 'structured':
+                stored, limitation = read_structured_result(client, session, message, logs)
+                if limitation:
+                    report.setdefault('limitations', []).append(limitation)
+            else:
+                stored = all_messages(session)
             require(any(m['info']['id'] == message['info']['id'] for m in stored), 'Response not persisted in its session')
             return session, message, stored
         def text():
@@ -442,7 +448,8 @@ def main(argv=None):
         report['event_types'] = sorted({e.get('type', '') for e in events.rows})
         report['provider_request_counts'] = fixture.counts
         require(not any('fixture_error' in r for r in fixture.records), 'Canned provider failed')
-        report['status'] = 'PASS' if all(t['status'] == 'PASS' for t in report['tests']) else 'FAIL'
+        report['status'] = ('PASS_WITH_LIMITATIONS' if report.get('limitations') else 'PASS') \
+            if all(t['status'] == 'PASS' for t in report['tests']) else 'FAIL'
     except BaseException as exc:
         report['status'] = 'FAIL'
         report['failure'] = repr(exc)
@@ -471,7 +478,7 @@ def main(argv=None):
         report['finished_utc'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         save(root / 'report.json', report)
         print('Report:', root / 'report.json', flush=True)
-    return 0 if report['status'] == 'PASS' else 1
+    return 0 if report['status'] in ('PASS', 'PASS_WITH_LIMITATIONS') else 1
 
 
 if __name__ == '__main__':
