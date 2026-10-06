@@ -13,13 +13,13 @@ Commands use `python3` on macOS/Linux. On Windows, use the corresponding `py -3.
 Preview before making a model call:
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --dry-run --dry-run-file /path/to/project/preview.md --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --dry-run --dry-run-file /path/to/project/preview.md --process-stop-policy controller-only
 ```
 
 Then run explicitly:
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --process-stop-policy controller-only
 ```
 
 The producer saying it is finished is not sufficient; the separate review and controller determine completion.
@@ -27,7 +27,7 @@ The producer saying it is finished is not sufficient; the separate review and co
 ## Put a finite call-count guard on an experiment
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --max-calls 12 --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --max-calls 12 --process-stop-policy controller-only
 ```
 
 The default is unlimited (`--max-calls 0`). A positive value counts ARQUILO-managed Codex execution attempts; it is not a token, currency, or provider spending limit.
@@ -35,7 +35,7 @@ The default is unlimited (`--max-calls 0`). A positive value counts ARQUILO-mana
 ## Select a model explicitly
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --model MODEL_ID --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --model MODEL_ID --process-stop-policy controller-only
 ```
 
 Use a model ID available through your Codex configuration/account. Without an override, ARQUILO preserves the trusted Codex configuration rather than inventing a fallback.
@@ -52,7 +52,7 @@ Task file:
 Runner:
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --network-access --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --network-access --process-stop-policy controller-only
 ```
 
 Shell network, provider communication, web search, and configured integrations are distinct paths. Disabling one does not prove that the process is offline.
@@ -88,7 +88,7 @@ A stored DONE satisfies the dependency after restart. An attempted run or OBSOLE
 If task 2 is deliberately a planning task:
 
 ```sh
-python3 -B arquilo.py run \
+python3 -B arquilo.py tasklist run \
   --workdir /path/to/project \
   --todo-file /path/to/project/tasks.md \
   --allow-todo-modifications --stop 2 \
@@ -100,7 +100,7 @@ After the planning task is reviewed, ARQUILO stops before later tasks are dispat
 ## Put readable diagnostics in the workspace
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --logs-in-workdir --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --logs-in-workdir --process-stop-policy controller-only
 ```
 
 This makes diagnostics agent-readable/writable. Authoritative plan, budget, and worker state remain external; workspace logs are not tamper-proof evidence.
@@ -108,7 +108,7 @@ This makes diagnostics agent-readable/writable. Authoritative plan, budget, and 
 ## Group logs under a readable project ID
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/project --todo-file /path/to/project/tasks.md --project-id migration-pilot --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --project-id migration-pilot --process-stop-policy controller-only
 ```
 
 See [Project logs](project-logs.md) for the external hierarchy and continuation rules.
@@ -118,7 +118,7 @@ See [Project logs](project-logs.md) for the external hierarchy and continuation 
 Git is opt-in and allowlisted:
 
 ```sh
-python3 -B arquilo.py run \
+python3 -B arquilo.py tasklist run \
   --workdir /path/to/project \
   --todo-file /path/to/project/tasks.md \
   --git --git-path src/example.py --git-path tests/test_example.py \

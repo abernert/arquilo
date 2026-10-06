@@ -89,7 +89,7 @@ first; initially absent selected output files are fine. Unrelated staged,
 unstaged and untracked files are left alone.
 
 ```sh
-python3 -B arquilo.py run --workdir /path/to/worktree \
+python3 -B arquilo.py tasklist run --workdir /path/to/worktree \
   --todo-file /path/to/worktree/tasks.md \
   --git --git-path tasks.md --git-path hello.txt --git-path todo_result_1.md
 ```

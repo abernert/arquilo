@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Introduce `arquilo tasklist run` as the canonical task-list command. Keep
+  `arquilo run` as an argument-preserving alias with a short stderr notice.
+  Add offline dispatch, JSON, help, dry-run and removed-policy regressions.
+- Update current CLI examples and document a proposed pipeline MVP, including
+  artifact revisions/amendments, downstream revalidation, process journals and
+  stage context/MCP boundaries. The pipeline runtime is not implemented.
+
 - Explain when an ordinary task review passed but a later plan-integrity check
   blocked automatic DONE. Give conditional owner-recovery guidance without
   changing stop/status/acceptance rules or adding execution retries.

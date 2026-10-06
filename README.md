@@ -75,7 +75,7 @@ git clone https://github.com/abernert/arquilo.git
 cd arquilo
 python3 -B arquilo.py --version
 python3 -c "from pathlib import Path; import shutil; p=Path('.local-work/smoke'); p.mkdir(parents=True, exist_ok=False); shutil.copyfile('examples/minimal_todo.md', p/'tasks.md')"
-python3 -B arquilo.py run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --dry-run --dry-run-file .local-work/smoke/preview.md --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --dry-run --dry-run-file .local-work/smoke/preview.md --process-stop-policy controller-only
 ```
 
 The dry run does not call a model. It checks the task plan and writes the chosen
@@ -85,7 +85,7 @@ preview file. A real run is an explicit next step:
 codex --version
 codex login status
 python3 -B arquilo.py doctor --workdir .local-work/smoke --check-decide
-python3 -B arquilo.py run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --process-stop-policy controller-only --max-calls 8
+python3 -B arquilo.py tasklist run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --process-stop-policy controller-only --max-calls 8
 ```
 
 The last two commands can consume model usage. The sample asks for one empty
@@ -169,14 +169,20 @@ budgets stay in their current location. [Layout and migration](docs/project-logs
 
 ## Commands and compatibility
 
+The canonical task command is `python3 arquilo.py tasklist run ...`. The old
+`python3 arquilo.py run ...` still works, with one short migration notice on
+stderr; flags, exit codes and JSON stdout are unchanged. `run_todos.py` remains
+available. The [pipeline MVP concept](docs/pipeline-mvp-concept.md) is a design
+proposal only: `pipeline run` is **not implemented**.
+
 | Command | Purpose |
 | --- | --- |
-| `python3 arquilo.py run --help` | Task runner and all existing runner options |
+| `python3 arquilo.py tasklist run --help` | Task runner and all existing runner options |
 | `python3 arquilo.py doctor --help` | Local checks and optional Decide smoke test |
 | `python3 arquilo.py capabilities` | Machine-readable capability contracts |
 | `python3 arquilo.py package` | Allowlisted runtime ZIP and SHA-256 sidecar |
 
-Use `run_todos.py` or `arquilo.py run` for tasks and `arquilo_doctor.py` or
+Use `run_todos.py` or `arquilo.py tasklist run` for tasks and `arquilo_doctor.py` or
 `arquilo.py doctor` for diagnostics. New configuration uses `ARQUILO_*`
 environment variables; JSON output uses `arquilo.*` schema identifiers.
 Historical input aliases remain migration-only compatibility support; see

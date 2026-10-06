@@ -1,5 +1,18 @@
 # Compatibility and naming history
 
+## Task-list command namespace (unreleased)
+
+Use `python arquilo.py tasklist run ...` for task lists. The former
+`python arquilo.py run ...` is a compatibility alias: it emits one short notice
+on stderr and forwards all remaining arguments to the same runner. Exit codes,
+JSON stdout, task syntax and controller state locations do not change. The
+direct `run_todos.py` entry point remains supported. `doctor`, `capabilities`
+and `package` are unchanged. `tasklist --help` shows the command group;
+`tasklist run --help` shows the existing runner options.
+
+No pipeline command is implemented by this migration. The
+[pipeline proposal](pipeline-mvp-concept.md) is not an executable schema.
+
 ## Current names (ARQUILO 0.6.0)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
