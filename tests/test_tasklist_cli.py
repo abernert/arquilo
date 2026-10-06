@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import arquilo
+from legacy_naming import historical_environment_aliases
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -141,8 +142,10 @@ class TasklistDispatchTests(unittest.TestCase):
 class TasklistSubprocessTests(unittest.TestCase):
     def invoke(self, *args):
         # No user configuration, provider credentials or model calls are needed.
+        prefixes = ("ARQUILO_", "AGENT_SYSTEM_",
+                    *historical_environment_aliases("ARQUILO_"))
         env = {key: value for key, value in os.environ.items()
-               if not key.startswith(("ARQUILO_", "DORA_", "AGENT_SYSTEM_"))}
+               if not key.startswith(prefixes)}
         return subprocess.run([sys.executable, "-B", str(ROOT / "arquilo.py"), *args],
                               cwd=ROOT, env=env, text=True, encoding="utf-8",
                               capture_output=True, timeout=30, check=False)

@@ -3,7 +3,7 @@
 Add `--project-id migration-pilot` to your **existing** task-runner command:
 
 ```powershell
-python3.11 .\arquilo.py run `
+python3.11 .\arquilo.py tasklist run `
   --project-id migration-pilot `
   --workdir 'D:\Migration' `
   --todo-file 'D:\Migration\tasks.md'
