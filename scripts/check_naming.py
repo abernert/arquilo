@@ -44,9 +44,6 @@ def check_naming(source: Path, names: Iterable[str] | None = None) -> None:
         for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
             if not FORMER_NAME.search(line):
                 continue
-            if (name == 'codex_policy.py' and
-                    '# historical-name: retired security profiles' in line):
-                continue  # Literal predecessor profile name remains rejection-only.
             findings.append(f'{name}:{number}: historical name used outside history/compatibility')
     if findings:
         raise ValueError('Active naming regression: ' + '; '.join(findings))

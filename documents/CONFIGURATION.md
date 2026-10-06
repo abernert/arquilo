@@ -22,7 +22,9 @@ AutoBuild has the same model/network options and accepts `--task` or `--task-fil
 
 `--model`, or the direct Python parameter, takes precedence over `ARQUILO_CODEX_MODEL`. A global model value takes precedence over `CFG model`; without a global value, the CFG model applies. `--reasoning-effort` takes precedence over `ARQUILO_CODEX_REASONING_EFFORT`.
 
-Leading/trailing whitespace is removed, empty values count as unset, and effort values are lowercased and validated. Runner and AutoBuild use the same resolver in `runtime_config.py`. Values are passed per invocation; Codex configuration files are not modified. Profiles and CFG cannot expand the fixed startup policy.
+Leading/trailing whitespace is removed, empty values count as unset, and effort values are lowercased and validated. Runner and AutoBuild use the same resolver in `runtime_config.py`. Values are passed per invocation; Codex configuration files are not modified.
+
+ARQUILO explicitly selects `workspace-write` for executing workers, `read-only` for review/Decide, `approval_policy="never"` for unattended execution, and the runner's shell-network grant. It does **not** suppress Codex exec-policy `.rules`, force `sandbox_workspace_write.writable_roots=[]`, or exclude Codex's normal `$TMPDIR`/`/tmp` workspace-write roots. Trusted Codex user/project/profile configuration therefore remains effective within the selected sandbox mode. Task CFG/runtime-profile fields still cannot replace the selected sandbox/approval policy or smuggle arbitrary Codex CLI arguments.
 
 Decide receives explicit task/decision model and effort values. Without an override, model, provider, endpoint, authentication, and other provisioning parameters remain the responsibility of the Codex host configuration. `CODEX_HOME` and the complete trusted process environment, including proxy/CA/provider tokens, remain effective; ARQUILO does not read or copy credentials or TOML files.
 

@@ -39,7 +39,7 @@ Supported keys:
 - `workspace=<relative_path>`: subworkspace for this task. Default: the main `--workdir`.
 - `parallel=<group_name>`: marks the task as part of a parallel group. Default: unset/sequential.
 - `agent=<name>`: agent hint for this task's prompt. Default: unset.
-  - The same validated name is passed as `config_profile`, producing `codex exec --profile <name>`. Historical security profiles from the predecessor project and names such as `dev`, `yolo`, `unsandboxed`, and Full-Access variants are rejected; see [Historical migration](HISTORICAL_MIGRATION.md). Other model/tool profiles cannot replace the fixed sandbox policy.
+  - The same validated name is passed as `config_profile`, producing `codex exec --profile <name>`. ARQUILO does not blacklist Codex profile names: historical-looking names such as `dev` or `yolo` are ordinary profile identifiers here. The worker sandbox mode is still explicitly `workspace-write` (review/Decide: `read-only`), while Codex's normal profile/rules/workspace-write configuration remains effective within that mode.
 - `model=<model_id>`: per-task model override. An explicit global model from `run_todos.py --model` or its environment default takes precedence; otherwise the CFG model applies.
 - `web_search=live|cached|disabled`: per-task web-search mode. Default: no task override; the global Codex configuration remains effective.
 - `websearch=live|cached|disabled`: alias for `web_search`.
@@ -73,7 +73,7 @@ Bridge WAIT conditions (`bridge:resume[:token]`, `bridge:retry[:token]`, `bridge
 - Every task in a parallel group must use its own `workspace`.
 - WAIT directives in parallel groups are checked for each task before the group starts.
 - Resolved `workspace` paths must remain inside the main workspace.
-- YOLO/Full-Auto/No-Check fields and security-profile fields are rejected, including historical `false` defaults. Mandatory reviews apply to sequential and parallel flows.
+- Retired ARQUILO YOLO/Full-Auto/No-Check and historical security-profile *fields* are rejected, including historical `false` defaults. This does not blacklist ordinary Codex `--profile` names. Mandatory reviews apply to sequential and parallel flows.
 - All `logician`/`logician_*` directives have been removed, including former `off`/`lite` defaults. Remove them; normal reviews and audits do not require a ledger. See [Migration](MIGRATION.md).
 - ACE, IACT, OpenClaw/Bridge, and service fields are also removed even when set to `false`, `off`, `null`, or empty. No optional group re-enables them. Parallel CFG, general runtime profiles, and explicit Git opt-in remain core features.
 - Sync-back from subworkspaces is non-destructive: results/questions are merged instead of replacing the whole file.

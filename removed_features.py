@@ -40,11 +40,12 @@ REMOVED_POLICY_OPTIONS = frozenset({
     "full_auto", "no_check", "profile", "unsandboxed",
 })
 POLICY_MIGRATION = (
-    "YOLO, Full Access, --full-auto, --no-check und die Sicherheitsprofile dora/dev "
-    "sind entfernt. Option entfernen, auch bei false. ARQUILO verwendet höchstens "
-    "workspace-write und immer Pflichtreviews; --network-access erweitert nur "
-    "die Netzwerkfreigabe. Allgemeine --runtime-profile und Codex-Modellprofile "
-    "ändern diese Grenzen nicht. Zugriffsfehler werden ohne Rechteerweiterung gemeldet."
+    "YOLO, Full Access, --full-auto, --no-check und die früheren ARQUILO-"
+    "Sicherheitsprofilfelder sind entfernt. Option entfernen, auch bei false. "
+    "Ausführende Codex-Aufrufe verwenden workspace-write, Reviews/Decide read-only; "
+    "--network-access steuert nur die Shell-Netzwerkfreigabe. Normale Codex-"
+    "Profilnamen bleiben über die aktuellen profile/config_profile/agent-Pfade "
+    "nutzbar und werden nicht anhand historischer Namen gesperrt."
 )
 ACE_OPTIONS = frozenset({"ace", "ace_mode"})
 ACE_ENVIRONMENT = ("AGENT_SYSTEM_ACE_CONTEXT", "AGENT_SYSTEM_ACE_RUN_LOGGING")

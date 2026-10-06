@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Align executing Codex calls with native `workspace-write` semantics: stop
+  suppressing Codex exec-policy rules, stop forcing an empty additional
+  writable-root list, and stop excluding `$TMPDIR` and `/tmp` from Codex's
+  standard writable roots. Keep the explicit `workspace-write`/read-only split,
+  unattended `approval_policy="never"`, and the existing shell-network control.
+- Treat Codex profile names as ordinary Codex identifiers instead of blacklisting
+  historical-looking names such as `dev` or `yolo`; the explicit sandbox mode
+  still prevents a profile name from re-enabling retired ARQUILO YOLO behavior.
+- Add advisory review confidence, evidence, uncertainties and optional follow-up
+  suggestions, plus a read-only summary reporter. Legacy reviews remain valid;
+  confidence is not calibrated and never changes verdict-based acceptance.
+
 - Introduce `arquilo tasklist run` as the canonical task-list command. Keep
   `arquilo run` as an argument-preserving alias with a short stderr notice.
   Add offline dispatch, JSON, help, dry-run and removed-policy regressions.
