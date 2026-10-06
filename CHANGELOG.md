@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-10-06 (public preview)
 
 - Align executing Codex calls with native `workspace-write` semantics: stop
   suppressing Codex exec-policy rules, stop forcing an empty additional
@@ -24,6 +24,37 @@
 - Explain when an ordinary task review passed but a later plan-integrity check
   blocked automatic DONE. Give conditional owner-recovery guidance without
   changing stop/status/acceptance rules or adding execution retries.
+
+- Refresh pinned GitHub Actions for checkout (7.0.1), Python setup (7.0.0)
+  and artifact upload (7.0.1); retain the existing multi-file artifact archive.
+
+### Upgrade notes
+
+- Use `python arquilo.py tasklist run ...`. Existing `run` commands still work;
+  wrappers must tolerate the migration notice on stderr. Keep the same workdir,
+  task-file path and state root when continuing existing work; no state or budget
+  reset is required. The unlimited default budget remains unchanged.
+- Update the controller, workers and review readers together. Older ARQUILO
+  readers may reject the added confidence fields; historical reviews without
+  confidence remain valid in 0.7.0. Scores are uncalibrated reviewer estimates,
+  not correctness probabilities or new acceptance thresholds.
+- Review trusted Codex user/project/profile settings before use: configured
+  writable roots, temporary directories and exec-policy rules now remain
+  effective. `workspace-write` is not a promise that only the workdir is writable.
+  Production/review modes, unattended approvals, explicit shell-network grants,
+  mandatory reviews and controller-owned state checks remain in place.
+- A manual DONE adoption after a plan-mutation stop still requires operator
+  inspection and one-time `--accept-plan-changes`; this release does not silently
+  accept modified requirements or remove STOP markers.
+
+### Scope
+
+The pipeline document is a design proposal, not an implemented `pipeline run`.
+Workbench/Ask from PR #12 is not included. Python 3.11+ and a separately installed
+Codex CLI remain the prerequisites; there are no new Python runtime dependencies.
+This is a public preview. Offline/controller and synthetic-provider checks do
+not establish live Databricks/MDE acceptance, native sandbox certification or
+empirical calibration of review confidence.
 
 ## 0.6.2 — 2026-10-04 (public preview)
 
