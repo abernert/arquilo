@@ -32,6 +32,18 @@ class HarnessTests(unittest.TestCase):
         self.message['info']['time'] = {}
         self.assertFalse(terminal(self.message, 's'))
 
+    def test_truncated_or_unknown_finishes_rejected(self):
+        for finish in ('length', 'content-filter', 'unknown', 'arbitrary', None):
+            self.message['info']['finish'] = finish
+            self.assertFalse(terminal(self.message, 's'))
+
+    def test_verified_internal_structured_completion(self):
+        self.message['info'].update(finish='tool-calls', structured={'answer': 42})
+        self.message['parts'] = [{'type': 'tool', 'tool': 'StructuredOutput', 'state': {'status': 'completed'}}]
+        self.assertTrue(terminal(self.message, 's'))
+        self.message['parts'][0]['tool'] = 'write'
+        self.assertFalse(terminal(self.message, 's'))
+
     def test_tool_round_not_final(self):
         self.message['info']['finish'] = 'tool-calls'
         self.assertFalse(terminal(self.message, 's'))
@@ -58,7 +70,7 @@ class HarnessTests(unittest.TestCase):
         self.assertNotIn('edit', config['agent']['spike_read']['permission'])
         self.assertEqual(config['agent']['spike_write']['permission']['edit'], 'allow')
         self.assertEqual(config['agent']['spike_ask']['permission']['edit'], 'ask')
-        self.assertEqual(config['agent']['spike_decide']['permission'], {'*': 'deny'})
+        self.assertEqual(config['agent']['spike_decide']['permission'], {'*': 'deny', 'StructuredOutput': 'allow'})
 
 
 if __name__ == '__main__':

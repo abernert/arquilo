@@ -28,6 +28,8 @@ jobs:
       - name: Test the diagnostic harness without OpenCode
         run: python -B -m unittest discover -s experiments/opencode -p "test_*.py" -v
       - name: Download exact upstream OpenCode and verify published digest
+        env:
+          ARQUILO_SPIKE_GITHUB_TOKEN: ${{ github.token }}
         run: python -B experiments/opencode/download_test_binary.py --destination "${{ runner.temp }}/opencode-test-bin"
       - name: Exercise real OpenCode against a canned loopback provider
         shell: python

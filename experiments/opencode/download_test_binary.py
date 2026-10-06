@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import platform
 import tarfile
@@ -19,7 +20,12 @@ VERSION = '1.18.34'
 
 
 def download(url):
-    with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'ARQUILO-OpenCode-spike'}), timeout=90) as response:
+    headers = {'User-Agent': 'ARQUILO-OpenCode-spike'}
+    # Optional read token applies ONLY to the exact GitHub metadata endpoint.
+    token = os.environ.get('ARQUILO_SPIKE_GITHUB_TOKEN')
+    if token and url == f'https://api.github.com/repos/anomalyco/opencode/releases/tags/v{VERSION}':
+        headers['Authorization'] = 'Bearer ' + token
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=90) as response:
         data = response.read(256 * 1024 * 1024 + 1)
     if len(data) > 256 * 1024 * 1024:
         raise ValueError('Download exceeds the test asset size limit')

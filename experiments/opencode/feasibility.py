@@ -44,9 +44,12 @@ def terminal(message, session):
     """An idle event alone is NOT success, nor is an arbitrary last text part."""
     info = message.get('info', {})
     tools = [p for p in message.get('parts', []) if p.get('type') == 'tool']
+    structured_finish = (info.get('finish') == 'tool-calls' and info.get('structured') is not None
+                         and bool(tools) and all(p.get('tool') == 'StructuredOutput'
+                         and p.get('state', {}).get('status') == 'completed' for p in tools))
     return (info.get('role') == 'assistant' and info.get('sessionID') == session
             and bool(info.get('time', {}).get('completed')) and not info.get('error')
-            and info.get('finish') not in (None, 'tool-calls', 'unknown')
+            and (info.get('finish') == 'stop' or structured_finish)
             and all(p.get('state', {}).get('status') not in ('pending', 'running') for p in tools))
 
 
@@ -129,8 +132,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
                 return
             had_tool = any(m.get('role') == 'tool' for m in messages)
             tool = None
-            if case == 'structured':
-                tool = ('StructuredOutput', EXPECTED)
+            if case == 'structured' and not had_tool:
+                available = [t.get('function', {}).get('name') for t in body.get('tools', [])]
+                if 'StructuredOutput' in available:
+                    tool = ('StructuredOutput', EXPECTED)
             elif case in ('read', 'write', 'deny', 'ask') and not had_tool:
                 if case == 'read':
                     tool = ('read', {'filePath': str(self.server.work / 'input.txt')})
@@ -235,7 +240,7 @@ def configuration(port):
             'spike_read': {**base, 'permission': {'*': 'deny', 'read': 'allow'}},
             'spike_write': {**base, 'permission': {'*': 'deny', 'read': 'allow', 'edit': 'allow'}},
             'spike_ask': {**base, 'permission': {'*': 'deny', 'read': 'allow', 'edit': 'ask'}},
-            'spike_decide': {**base, 'permission': {'*': 'deny'}},
+            'spike_decide': {**base, 'permission': {'*': 'deny', 'StructuredOutput': 'allow'}},
         },
     }
 
