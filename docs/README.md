@@ -42,7 +42,13 @@ ARQUILO's core is a Python 3.11+ controller around a separately installed and au
 | [Migration](../documents/MIGRATION.md) | Migration of older task inputs and removed features |
 | [Historical migration](../documents/HISTORICAL_MIGRATION.md) | Historical names and retired behavior |
 
-The executable implementation remains authoritative when a guide and the checked-out version differ. Use `arquilo.py run --help`, `doctor --help`, and `capabilities` to inspect the installed runtime.
+The executable implementation remains authoritative when a guide and the checked-out version differ. Use `arquilo.py tasklist run --help`, `doctor --help`, and `capabilities` to inspect the installed runtime.
+
+## Design proposals
+
+[Pipeline MVP concept](pipeline-mvp-concept.md) describes a proposed artifact-oriented
+production layer, including mutable revisions and a PEM-style acceptance pilot.
+It is not a current runtime capability or a runnable configuration format.
 
 ## Suggested reading paths
 

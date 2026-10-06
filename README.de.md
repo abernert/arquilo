@@ -20,11 +20,16 @@ bei deiner Installation ist auch `python3.11` möglich.
 
 ```powershell
 py -3.11 -B arquilo.py --version
-py -3.11 -B arquilo.py run --help
+py -3.11 -B arquilo.py tasklist run --help
 py -3.11 -B arquilo.py doctor --help
 ```
 
 [Schritt-für-Schritt-Anleitung einschließlich PowerShell](docs/quickstart.md)
+
+Der reguläre Aufruf heißt jetzt `arquilo.py tasklist run`. `arquilo.py run`
+funktioniert mit einem kurzen Migrationshinweis auf stderr weiter; Optionen,
+Exitcodes und JSON-Ausgaben bleiben unverändert. `pipeline run` ist noch nicht
+implementiert; siehe den [Konzeptentwurf](docs/pipeline-mvp-concept.md).
 
 Der Controller hält ursprüngliche Anforderungen fest, startet Produktion und
 separaten Review, steuert begrenzte Korrekturen und setzt erst nach Abnahme auf

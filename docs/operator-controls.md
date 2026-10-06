@@ -21,7 +21,7 @@ For an existing project, keep its workdir, task-file path and **same state root*
 The following paths and project ID are examples, not deployment requirements:
 
 ```powershell
-python .\arquilo.py run `
+python .\arquilo.py tasklist run `
   --workdir 'D:\Migration' `
   --todo-file 'D:\Migration\tasks.md' `
   --project-id migration-pilot `
@@ -51,7 +51,7 @@ Inspect `tasks.md` after this first run. If you edit the plan yourself, the next
 strict run can explicitly adopt those reviewed edits:
 
 ```powershell
-python .\arquilo.py run `
+python .\arquilo.py tasklist run `
   --workdir 'D:\Migration' `
   --todo-file 'D:\Migration\tasks.md' `
   --project-id migration-pilot `
@@ -108,7 +108,7 @@ v2 contract. Update consumers that require a positive limit or integer remaining
 ## Logs for metarunners
 
 ```powershell
-python .\arquilo.py run --workdir 'D:\Migration' --todo-file 'D:\Migration\tasks.md' --logs-in-workdir
+python .\arquilo.py tasklist run --workdir 'D:\Migration' --todo-file 'D:\Migration\tasks.md' --logs-in-workdir
 ```
 
 Live logs use:
