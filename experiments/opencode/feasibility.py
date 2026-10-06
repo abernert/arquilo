@@ -182,7 +182,7 @@ class Client:
             if self.logs is not None:
                 save(self.logs / ('http-error-' + str(time.time_ns()) + '.json'), detail)
             # Keep HTTPError identity for the expected unauthenticated-401 probe.
-            exc.reason = str(exc.reason) + ' ' + detail['body'][:2000]
+            exc.msg = str(exc.reason) + ' ' + detail['body'][:2000]
             raise
 
     def call(self, path, method='GET', data=None, timeout=30):
