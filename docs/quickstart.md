@@ -14,7 +14,7 @@ From the cloned repository root:
 python3 --version
 python3 -B arquilo.py --version
 python3 -c "from pathlib import Path; import shutil; p=Path('.local-work/smoke'); p.mkdir(parents=True, exist_ok=False); shutil.copyfile('examples/minimal_todo.md', p/'tasks.md')"
-python3 -B arquilo.py run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --dry-run --dry-run-file .local-work/smoke/preview.md --process-stop-policy controller-only
+python3 -B arquilo.py tasklist run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --dry-run --dry-run-file .local-work/smoke/preview.md --process-stop-policy controller-only
 ```
 
 Then, explicitly opting into model usage:
@@ -23,7 +23,7 @@ Then, explicitly opting into model usage:
 codex --version
 codex login status
 python3 -B arquilo.py doctor --workdir .local-work/smoke --check-decide
-python3 -B arquilo.py run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --process-stop-policy controller-only --max-calls 8
+python3 -B arquilo.py tasklist run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --process-stop-policy controller-only --max-calls 8
 ```
 
 Use `codex login` first if authentication is missing. No credentials belong in
@@ -38,7 +38,7 @@ From the cloned repository root, choose an installed Python 3.11+ interpreter.
 py -3.11 --version
 py -3.11 -B .\arquilo.py --version
 py -3.11 -c "from pathlib import Path; import shutil; p=Path('.local-work/smoke'); p.mkdir(parents=True, exist_ok=False); shutil.copyfile('examples/minimal_todo.md', p/'tasks.md')"
-py -3.11 -B .\arquilo.py run --workdir .\.local-work\smoke --todo-file .\.local-work\smoke\tasks.md --dry-run --dry-run-file .\.local-work\smoke\preview.md --process-stop-policy controller-only
+py -3.11 -B .\arquilo.py tasklist run --workdir .\.local-work\smoke --todo-file .\.local-work\smoke\tasks.md --dry-run --dry-run-file .\.local-work\smoke\preview.md --process-stop-policy controller-only
 ```
 
 After installing and signing into the native Codex CLI:
@@ -47,7 +47,7 @@ After installing and signing into the native Codex CLI:
 codex --version
 codex login status
 py -3.11 -B .\arquilo.py doctor --workdir .\.local-work\smoke --check-decide
-py -3.11 -B .\arquilo.py run --workdir .\.local-work\smoke --todo-file .\.local-work\smoke\tasks.md --process-stop-policy controller-only --max-calls 8
+py -3.11 -B .\arquilo.py tasklist run --workdir .\.local-work\smoke --todo-file .\.local-work\smoke\tasks.md --process-stop-policy controller-only --max-calls 8
 ```
 
 Configure the native Windows sandbox through Codex's documented setup, not by

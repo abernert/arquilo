@@ -62,7 +62,7 @@ macOS/Linux:
 
 ```sh
 python3 -c "from pathlib import Path; import shutil; p=Path('.local-work/smoke'); p.mkdir(parents=True, exist_ok=False); shutil.copyfile('examples/minimal_todo.md', p/'tasks.md')"
-python3 -B arquilo.py run \
+python3 -B arquilo.py tasklist run \
   --workdir .local-work/smoke \
   --todo-file .local-work/smoke/tasks.md \
   --dry-run --dry-run-file .local-work/smoke/preview.md \
@@ -73,7 +73,7 @@ Windows PowerShell:
 
 ```powershell
 py -3.11 -c "from pathlib import Path; import shutil; p=Path('.local-work/smoke'); p.mkdir(parents=True, exist_ok=False); shutil.copyfile('examples/minimal_todo.md', p/'tasks.md')"
-py -3.11 -B .\arquilo.py run `
+py -3.11 -B .\arquilo.py tasklist run `
   --workdir .\.local-work\smoke `
   --todo-file .\.local-work\smoke\tasks.md `
   --dry-run --dry-run-file .\.local-work\smoke\preview.md `
@@ -91,7 +91,7 @@ macOS/Linux:
 ```sh
 codex login status
 python3 -B arquilo.py doctor --workdir .local-work/smoke --check-decide
-python3 -B arquilo.py run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --process-stop-policy controller-only --max-calls 8
+python3 -B arquilo.py tasklist run --workdir .local-work/smoke --todo-file .local-work/smoke/tasks.md --process-stop-policy controller-only --max-calls 8
 ```
 
 Windows:
@@ -99,7 +99,7 @@ Windows:
 ```powershell
 codex login status
 py -3.11 -B .\arquilo.py doctor --workdir .\.local-work\smoke --check-decide
-py -3.11 -B .\arquilo.py run --workdir .\.local-work\smoke --todo-file .\.local-work\smoke\tasks.md --process-stop-policy controller-only --max-calls 8
+py -3.11 -B .\arquilo.py tasklist run --workdir .\.local-work\smoke --todo-file .\.local-work\smoke\tasks.md --process-stop-policy controller-only --max-calls 8
 ```
 
 The explicit limit of 8 is useful for the smoke test. The normal default is `--max-calls 0`, meaning no call-count ceiling; this is not a monetary or token spending cap.
@@ -139,7 +139,7 @@ Useful discovery commands:
 
 ```sh
 python3 -B arquilo.py doctor --help
-python3 -B arquilo.py run --help
+python3 -B arquilo.py tasklist run --help
 python3 -B arquilo.py capabilities
 ```
 

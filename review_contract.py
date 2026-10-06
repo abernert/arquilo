@@ -11,6 +11,11 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from review_confidence import (
+    CONFIDENCE_FIELDS, confidence_prompt_fields, confidence_prompt_rules,
+    confidence_protocol_error, normalize_review_confidence,
+)
+
 DEFAULT_CONTRACT_REVIEW_POLICY_RULES: Tuple[str, ...] = (
     "A correctly documented caveat, open question, qualified statement, or declared hold status is not a blocking issue when the original contract permits that treatment.",
     "Tasks with explicit direct-repair authority are judged on the final corrected artifacts and any required repair log, not merely on the existence of an error described earlier in the review.",
@@ -83,9 +88,11 @@ def review_instructions(review_policy_rules: Optional[Sequence[str]] = None) -> 
         "    }\n"
         "  ],\n"
         '  "breakdown_recommended": true | false,\n'
-        '  "breakdown_reason": "..." | null\n'
+        '  "breakdown_reason": "..." | null,\n'
+        f"{confidence_prompt_fields()}"
         "}\n\n"
         "Rules:\n"
+        f"{confidence_prompt_rules()}"
         "- verdict is FAIL if and only if blocking_issues is non-empty.\n"
         "- If verdict is PASS, set breakdown_recommended=false and breakdown_reason=null.\n"
         "- If breakdown_recommended=false, set breakdown_reason=null, including for a FAIL verdict.\n"
@@ -112,7 +119,11 @@ def review_instructions(review_policy_rules: Optional[Sequence[str]] = None) -> 
         "\nExample of a valid PASS response (illustrative only; verify the actual task before choosing a verdict):\n"
         '{"verdict": "PASS", "short_summary": "The requested results were verified.", '
         '"blocking_issues": [], "non_blocking_observations": [], '
-        '"breakdown_recommended": false, "breakdown_reason": null}\n'
+        '"breakdown_recommended": false, "breakdown_reason": null, '
+        '"confidence": null, "confidence_reason": "This format example is not an actual review.", '
+        '"confidence_breakdown": {"requirements_coverage": null, "implementation_correctness": null, '
+        '"test_evidence": null, "regression_safety": null}, '
+        '"evidence": [], "uncertainties": [], "suggested_checks": []}\n'
     )
 
 
@@ -358,13 +369,14 @@ def _invalid_review(message: str) -> Dict[str, Any]:
         }],
         "non_blocking_observations": [], "breakdown_recommended": False,
         "breakdown_reason": None,
+        **normalize_review_confidence(),
     }
 
 
 def _review_protocol_error(payload: Dict[str, Any]) -> Optional[str]:
     allowed = {"verdict", "short_summary", "issues", "blocking_issues",
                "non_blocking_observations", "breakdown_recommended", "breakdown_reason",
-               "schema_version", "source_format", "valid"}
+               "schema_version", "source_format", "valid"} | CONFIDENCE_FIELDS
     if set(payload) - allowed:
         return "Review contains unknown fields."
     if "valid" in payload and type(payload["valid"]) is not bool:
@@ -457,7 +469,7 @@ def _review_protocol_error(payload: Dict[str, Any]) -> Optional[str]:
             return "Review breakdown_reason must be non-empty text or null."
         if verdict == "PASS" or payload.get("breakdown_recommended") is not True:
             return "Review breakdown_reason contradicts its verdict or recommendation."
-    return None
+    return confidence_protocol_error(payload)
 
 
 def parse_review_classification(review_findings: str) -> Dict[str, Any]:
@@ -634,6 +646,7 @@ def parse_review_classification(review_findings: str) -> Dict[str, Any]:
         "non_blocking_observations": observations,
         "breakdown_recommended": breakdown_recommended,
         "breakdown_reason": breakdown_reason,
+        **normalize_review_confidence(payload),
     }
 
 

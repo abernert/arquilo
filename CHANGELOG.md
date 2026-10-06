@@ -10,6 +10,17 @@
 - Treat Codex profile names as ordinary Codex identifiers instead of blacklisting
   historical-looking names such as `dev` or `yolo`; the explicit sandbox mode
   still prevents a profile name from re-enabling retired ARQUILO YOLO behavior.
+- Add advisory review confidence, evidence, uncertainties and optional follow-up
+  suggestions, plus a read-only summary reporter. Legacy reviews remain valid;
+  confidence is not calibrated and never changes verdict-based acceptance.
+
+- Introduce `arquilo tasklist run` as the canonical task-list command. Keep
+  `arquilo run` as an argument-preserving alias with a short stderr notice.
+  Add offline dispatch, JSON, help, dry-run and removed-policy regressions.
+- Update current CLI examples and document a proposed pipeline MVP, including
+  artifact revisions/amendments, downstream revalidation, process journals and
+  stage context/MCP boundaries. The pipeline runtime is not implemented.
+
 - Explain when an ordinary task review passed but a later plan-integrity check
   blocked automatic DONE. Give conditional owner-recovery guidance without
   changing stop/status/acceptance rules or adding execution retries.
