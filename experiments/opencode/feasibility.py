@@ -163,6 +163,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
 class Client:
     def __init__(self, url, password):
         self.url = url
+        self.logs = None
         self.auth = 'Basic ' + base64.b64encode(('opencode:' + password).encode()).decode()
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -172,7 +173,17 @@ class Client:
             headers['Authorization'] = self.auth
         request = urllib.request.Request(self.url + path, headers=headers, method=method,
                     data=None if data is None else json.dumps(data).encode())
-        return self.opener.open(request, timeout=timeout)
+        try:
+            return self.opener.open(request, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            raw = exc.read(LIMIT + 1)
+            detail = {'path': path, 'method': method, 'status': exc.code,
+                      'body': raw[:LIMIT].decode('utf-8', errors='replace')}
+            if self.logs is not None:
+                save(self.logs / ('http-error-' + str(time.time_ns()) + '.json'), detail)
+            # Keep HTTPError identity for the expected unauthenticated-401 probe.
+            exc.reason = str(exc.reason) + ' ' + detail['body'][:2000]
+            raise
 
     def call(self, path, method='GET', data=None, timeout=30):
         with self.open(path, method, data, timeout) as response:
@@ -265,7 +276,7 @@ def main(argv=None):
               'scope': 'Real OpenCode / canned local provider. No real model, ARQUILO integration or sandbox certification.'}
     fixture, process, events, handles = None, None, None, []
     sessions = []
-    def check(name, fn):
+    def check(name, fn, *, critical=False):
         try:
             detail = fn()
             report['tests'].append({'name': name, 'status': 'PASS', 'detail': detail})
@@ -273,7 +284,8 @@ def main(argv=None):
         except Exception as exc:
             report['tests'].append({'name': name, 'status': 'FAIL', 'detail': repr(exc)})
             print('FAIL', name, repr(exc), flush=True)
-            raise
+            if critical:
+                raise
         finally:
             save(root / 'report.json', report)
     try:
@@ -298,6 +310,7 @@ def main(argv=None):
                     cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=handles[0], stderr=handles[1],
                     start_new_session=os.name != 'nt')
         client = Client(f'http://127.0.0.1:{port}', password)
+        client.logs = logs
         deadline = time.monotonic() + 60
         while True:
             require(process.poll() is None, 'OpenCode server exited; see logs/server.stderr')
@@ -326,7 +339,7 @@ def main(argv=None):
             require(provider.get('options', {}).get('baseURL') == config['provider']['spike']['options']['baseURL'],
                     'Provider URL changed; do not continue')
             return {'healthy': health, 'openapi_sha256': hashlib.sha256(json.dumps(spec,sort_keys=True).encode()).hexdigest()}
-        check('authenticated_native_api_and_fixture_config', infrastructure)
+        check('authenticated_native_api_and_fixture_config', infrastructure, critical=True)
         events = Events(client, logs / 'events.jsonl'); events.start()
         def new_session(case):
             session = client.call('/session', 'POST', {'title': 'ARQUILO spike ' + case})['id']
@@ -429,7 +442,7 @@ def main(argv=None):
         report['event_types'] = sorted({e.get('type', '') for e in events.rows})
         report['provider_request_counts'] = fixture.counts
         require(not any('fixture_error' in r for r in fixture.records), 'Canned provider failed')
-        report['status'] = 'PASS'
+        report['status'] = 'PASS' if all(t['status'] == 'PASS' for t in report['tests']) else 'FAIL'
     except BaseException as exc:
         report['status'] = 'FAIL'
         report['failure'] = repr(exc)
