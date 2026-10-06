@@ -1,0 +1,130 @@
+# Temporary release preparation; this workflow is not merged into main.
+name: Prepare requested ARQUILO 0.7.0
+on:
+  push:
+    branches: [release/prepare-0.7.0]
+    paths: [.github/workflows/prepare-0.7.0.yml]
+permissions:
+  contents: read
+concurrency:
+  group: prepare-arquilo-0.7.0
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/release/prepare-0.7.0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: be6caefef7f74c249dd54a5d0cf39484f8435fcb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: be6caefef7f74c249dd54a5d0cf39484f8435fcb
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Apply only version and release documentation edits
+        shell: python
+        run: |
+          from pathlib import Path
+          def replace_once(name, old, new):
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one release marker in {name}: {old!r}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+          replace_once('VERSION', '0.6.2\n', '0.7.0\n')
+          replace_once('runtime_profile.py', 'ARQUILO_RUNTIME_VERSION = "0.6.2"', 'ARQUILO_RUNTIME_VERSION = "0.7.0"')
+          replace_once('CITATION.cff', 'version: "0.6.2"\ndate-released: 2026-10-04', 'version: "0.7.0"\ndate-released: 2026-10-06')
+          replace_once('README.md', '**Public preview: 0.6.2.**', '**Public preview: 0.7.0.**')
+          replace_once('README.de.md', '**0.6.2 ist eine öffentliche Vorschau**', '**0.7.0 ist eine öffentliche Vorschau**')
+          replace_once('docs/compatibility.md', '## Task-list command namespace (unreleased)', '## Task-list command namespace (ARQUILO 0.7.0)')
+          replace_once('docs/compatibility.md', '## Current names (ARQUILO 0.6.0)', '## Current names (ARQUILO 0.7.0)')
+          replace_once('docs/compatibility.md', 'The public package version is 0.6.0.', 'The public package version is 0.7.0.')
+          replace_once('CHANGELOG.md', '## Unreleased', '## 0.7.0 — 2026-10-06 (public preview)')
+          replace_once('CHANGELOG.md', '\n## 0.6.2 —', '''
+          - Refresh pinned GitHub Actions for checkout (7.0.1), Python setup (7.0.0)
+            and artifact upload (7.0.1); retain the existing multi-file artifact archive.
+
+          ### Upgrade notes
+
+          - Use `python arquilo.py tasklist run ...`. Existing `run` commands still work;
+            wrappers must tolerate the migration notice on stderr. Keep the same workdir,
+            task-file path and state root when continuing existing work; no state or budget
+            reset is required. The unlimited default budget remains unchanged.
+          - Update the controller, workers and review readers together. Older ARQUILO
+            readers may reject the added confidence fields; historical reviews without
+            confidence remain valid in 0.7.0. Scores are uncalibrated reviewer estimates,
+            not correctness probabilities or new acceptance thresholds.
+          - Review trusted Codex user/project/profile settings before use: configured
+            writable roots, temporary directories and exec-policy rules now remain
+            effective. `workspace-write` is not a promise that only the workdir is writable.
+            Production/review modes, unattended approvals, explicit shell-network grants,
+            mandatory reviews and controller-owned state checks remain in place.
+          - A manual DONE adoption after a plan-mutation stop still requires operator
+            inspection and one-time `--accept-plan-changes`; this release does not silently
+            accept modified requirements or remove STOP markers.
+
+          ### Scope
+
+          The pipeline document is a design proposal, not an implemented `pipeline run`.
+          Workbench/Ask from PR #12 is not included. Python 3.11+ and a separately installed
+          Codex CLI remain the prerequisites; there are no new Python runtime dependencies.
+          This is a public preview. Offline/controller and synthetic-provider checks do
+          not establish live Databricks/MDE acceptance, native sandbox certification or
+          empirical calibration of review confidence.
+
+          ## 0.6.2 —''')
+      - name: Run full offline tests and distribution validation
+        run: |
+          python -B -m unittest discover -s tests -v
+          python -B scripts/check_release.py
+          python -B arquilo.py --version
+          python -B scripts/build_runtime_zip.py
+      - name: Create clean release branch without moving main or tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          repo = os.environ['GITHUB_REPOSITORY']
+          source = os.environ['SOURCE_SHA']
+          def api(path, body=None):
+              cmd = ['gh', 'api', path]
+              if body is not None:
+                  cmd += ['--method', 'POST', '--input', '-']
+              result = subprocess.run(cmd, input=None if body is None else json.dumps(body),
+                                      text=True, capture_output=True, check=True)
+              return json.loads(result.stdout)
+          if api(f'repos/{repo}/git/ref/heads/main')['object']['sha'] != source:
+              raise SystemExit('Main changed during release preparation; review the new source first')
+          files = ['VERSION','runtime_profile.py','CITATION.cff','README.md','README.de.md','CHANGELOG.md','docs/compatibility.md']
+          changed = subprocess.check_output(['git','diff','--name-only'], text=True).splitlines()
+          if set(changed) != set(files):
+              raise SystemExit('Unexpected preparation diff: ' + repr(changed))
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          base_tree = subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip()
+          tree = api(f'repos/{repo}/git/trees', {'base_tree':base_tree, 'tree':[
+              {'path':name,'mode':'100644','type':'blob','content':Path(name).read_text(encoding='utf-8')}
+              for name in files]})['sha']
+          commit = api(f'repos/{repo}/git/commits', {
+              'message':'Prepare ARQUILO 0.7.0 public preview\n\nUpdate version, citation, current documentation and release notes after PRs #18, #15 and #17. No task/runtime behavior changes beyond version metadata. Preserve all historical release sections.',
+              'tree':tree,'parents':[source]})['sha']
+          api(f'repos/{repo}/git/refs', {'ref':'refs/heads/release/0.7.0','sha':commit})
+          report = {'commit':commit,'tree':tree,'source':source,
+                    'files':{name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files},
+                    'runtime_sha256':hashlib.sha256(Path('dist/arquilo-0.7.0.zip').read_bytes()).hexdigest()}
+          Path('dist/preparation.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as stream:
+              stream.write('Release preparation (no tag or release yet)\n\n```json\n'+json.dumps(report,indent=2)+'\n```\n')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arquilo-0.7.0-preparation
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
