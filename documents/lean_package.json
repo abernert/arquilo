@@ -3,7 +3,7 @@
   "python_requires": ">=3.11",
   "runtime_dependencies": [],
   "build_dependencies": [],
-  "runtime_file_count": 82,
+  "runtime_file_count": 83,
   "external_runtime": {
     "codex_cli": "Codex CLI with the required Exec contract; verify using arquilo_doctor.py --check-decide (one model call, may incur costs); no version pin",
     "git": "Only for explicitly enabled --git functions",
@@ -74,6 +74,7 @@
     "project_logs.py",
     "removed_features.py",
     "requirements.txt",
+    "review_confidence.py",
     "review_contract.py",
     "reviewed_git.py",
     "run_todos.py",
