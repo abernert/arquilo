@@ -1,5 +1,14 @@
 # Compatibility and naming history
 
+## Hardening compatibility (ARQUILO 0.7.1)
+
+Four-column/tab-indented task headers and directives are code examples,
+not executable tasks. Keep executable entries at zero to three leading
+spaces. Automatic reviewed Git pushes no longer include unrequested
+annotated tags via `push.followTags`. No authentication or controller-state
+reset is needed. See [the changelog](../CHANGELOG.md) and
+[task syntax](../documents/todo_directives.md).
+
 ## Task-list command namespace (ARQUILO 0.7.0)
 
 Use `python arquilo.py tasklist run ...` for task lists. The former
@@ -13,11 +22,11 @@ and `package` are unchanged. `tasklist --help` shows the command group;
 No pipeline command is implemented by this migration. The
 [pipeline proposal](pipeline-mvp-concept.md) is not an executable schema.
 
-## Current names (ARQUILO 0.7.0)
+## Current names (ARQUILO 0.7.1)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.7.0. Individual schema version
+identifiers. The public package version is 0.7.1. Individual schema version
 suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean
