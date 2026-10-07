@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.7.1 — 2026-10-07 (public preview; hardening)
+
+### Controller and publication hardening
+
+- Integrate seven reproduced adversarial-audit repairs and an independently
+  reproduced Git publication-scope repair from PR #21.
+- Ignore Markdown task headers, directives and fences inside code examples
+  indented by four or more columns, including tab indentation. Executable
+  task entries with up to three leading spaces remain supported.
+- Use the existing link-safe controller readers for breakdown-round metadata,
+  workspace summary candidates and result-report feedback. Unsafe linked
+  files fail rather than supplying trusted controller input.
+- Require completed (`DONE`) children before parent acceptance; an obsolete
+  child cannot substitute for a completed child. The separate parent review
+  remains mandatory.
+- Pin and recheck the configured Git push destination. Add `--no-follow-tags`
+  so automatic publication does not include unrequested annotated tags when
+  Git's `push.followTags` setting is enabled. Local tags and user Git
+  configuration are not modified.
+- Escape terminal control characters in the selected worker-event display
+  path while retaining original evidence; this is not general log redaction.
+
+### Regression evidence
+
+- Add 99 adversarial test methods covering plan authority, linked files,
+  review contracts, parent acceptance, crash/resume, budgets, Git publication,
+  diagnostic boundaries and a small deterministic state/input fuzzer.
+  The full suite discovers 431 test methods; platform-specific skips remain
+  explicit and are not counted as passes.
+- Isolate orchestration-test budgets from the user's default state directory.
+  Keep test fixture bytes exact on Windows and preserve Git's configured
+  checkout bytes during cleanup. No failing test or security check is disabled.
+- The hardening PR passed all nine Linux/macOS/Windows × Python 3.11/3.12/3.13
+  CI jobs and all six Codex metadata/loopback compatibility jobs (CLI 0.154.0
+  and 0.159.1). The owner subsequently reported a successful supervised local
+  smoke test and authorized merge and release. This is not a certification
+  of live sandbox enforcement, model correctness or Daybreak entitlement.
+
+### Upgrade notes and boundaries
+
+- Start real task-list entries and control directives with no more than three
+  leading spaces. Move executable entries out of four-column/tab-indented
+  examples before relying on older task lists.
+- No new installation, authentication, provider/model selection or controller
+  state reset is required by this release. Native Codex worker permissions,
+  the read-only review policy and verdict-based acceptance are not relaxed.
+- The pipeline runtime remains unimplemented. A formal reviewer PASS is not
+  proof of factual correctness; optional Git follow-up recovery is not fully
+  idempotent; raw archives are not immutable, encrypted retention-managed
+  storage. Push-destination checks are not atomic locks against concurrent
+  host-level Git configuration changes. ARQUILO remains a public preview.
+
 ## 0.7.0 — 2026-10-06 (public preview)
 
 - Align executing Codex calls with native `workspace-write` semantics: stop
