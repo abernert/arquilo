@@ -153,7 +153,9 @@ class GitSelectionTests(unittest.TestCase):
                     self.git('reset', '--hard', 'HEAD')
                 else:
                     self.git('reset', '--hard', 'HEAD~1')
-                (self.work / 'selected.txt').write_text('original\n', newline="")
+                # Let Git restore its native checkout bytes (including core.autocrlf).
+                self.git('restore', '--source=HEAD', '--staged', '--worktree', '--', 'selected.txt')
+                self.assertEqual(self.git('status', '--porcelain', '--', 'selected.txt'), b'')
 
     def test_explicit_push_and_unpushed_commit_gate(self):
         remote = self.bare('remote.git')
