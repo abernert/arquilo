@@ -182,7 +182,10 @@ class OrchestrationTests(unittest.TestCase):
     def run_fake(self, *, correction=False, archive_error=False):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        base = Path(temp.name).resolve()
+        scratch = Path(temp.name).resolve()
+        base = scratch / 'workspace'
+        base.mkdir()
+        budget_directory = scratch / 'controller-state' / 'budget'
         todo = base/'tasks.md'
         original = "1. ***TASK***: Create an empty hello.txt; retain this exact original criterion.\n"
         todo.write_text(original, encoding="utf-8")
@@ -224,8 +227,15 @@ class OrchestrationTests(unittest.TestCase):
              patch.object(autobuild, '_terminal_beep'), redirect_stdout(io.StringIO()):
             summary = autobuild.start(task='Read tasks.md and perform task 1.', workdir=base,
                 options=AutoBuildOptions(max_steps=3, max_calls=8),
-                context=AutoBuildContext(task_source='todo',todo_identifier='1',decision_todo_file=todo))
+                context=AutoBuildContext(task_source='todo',todo_identifier='1',decision_todo_file=todo,
+                                         budget_directory=budget_directory))
         return summary, calls, seen_contracts
+
+    def test_explicit_test_budget_never_uses_user_default_state(self):
+        with patch('controller_state.default_state_root',
+                   side_effect=AssertionError('Test must use its disposable budget directory')):
+            summary, _, _ = self.run_fake()
+        self.assertTrue(summary.completed)
 
     def test_production_and_readonly_review_complete_offline(self):
         summary, calls, _ = self.run_fake()

@@ -2034,8 +2034,8 @@ class TodoRunner:
             print(f"[warn] outputs: Summary JSON nicht gefunden – {summary_file}")
             return None
         try:
-            payload = json.loads(summary_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            payload = json.loads(safe_io.read_text(summary_file))
+        except (OSError, ValueError) as exc:
             print(f"[warn] outputs: Summary JSON unlesbar – {summary_file}: {exc}")
             return None
         if not isinstance(payload, dict):
@@ -2652,7 +2652,7 @@ class TodoRunner:
             latest = target_dir / "breakdown_plan.json"
             if latest.is_file():
                 try:
-                    payload = json.loads(latest.read_text(encoding="utf-8"))
+                    payload = json.loads(read_utf8(latest))
                 except (OSError, json.JSONDecodeError):
                     payload = {}
                 try:
@@ -3438,7 +3438,8 @@ class TodoRunner:
         if not result_path.exists():
             header = f"# ToDo {identifier.split('.')[0]}\n\n"
             self._atomic_write_text(result_path, header)
-        content = result_path.read_text(encoding="utf-8")
+        with safe_io.open_file(result_path, "r", encoding="utf-8") as stream:
+            content = stream.read()
         heading = "## Letztes Reviewer Feedback"
         new_section = f"{heading}\n\n{review_text.strip()}\n"
         pattern = re.compile(rf"{re.escape(heading)}\n.*?(?=\n## |\Z)", re.DOTALL)
@@ -3955,7 +3956,7 @@ class TodoRunner:
             not_done = {
                 child_id: status
                 for child_id, status in child_statuses.items()
-                if status not in {"DONE", "OBSOLETE"}
+                if status != "DONE"
             }
             if not_done:
                 if force:

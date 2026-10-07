@@ -28,6 +28,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from types import MappingProxyType
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
@@ -297,6 +298,20 @@ def _inject_console_todo_prefix(line: str, todo_id: Optional[str] = None) -> str
     return f"{line[: end_of_timestamp + 1]} [{normalized_todo_id}]" f"{remainder}"
 
 
+def _escape_terminal_controls(value: str) -> str:
+    """Render untrusted event text without executing terminal controls.
+
+    Preserve line feeds used by the existing console layout. Retained event
+    data and diagnostic files remain byte-for-byte separate from this display.
+    """
+    return "".join(
+        character if character == "\n" or unicodedata.category(character) != "Cc"
+        else f"\\x{ord(character):02x}" if ord(character) <= 0xFF
+        else f"\\u{ord(character):04x}"
+        for character in value
+    )
+
+
 def append(path: Path, text: str) -> None:
     with safe_io.open_file(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(text)
@@ -386,7 +401,8 @@ def handle_event(
         if pretty_log_redactor is not None:
             line = pretty_log_redactor(line)
         try:
-            sys.stdout.write(_inject_console_todo_prefix(line, console_todo_id))
+            sys.stdout.write(_escape_terminal_controls(
+                _inject_console_todo_prefix(line, console_todo_id)))
         except (OSError, UnicodeError) as exc:
             if on_log_error is None:
                 raise

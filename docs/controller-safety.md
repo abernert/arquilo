@@ -108,6 +108,19 @@ published automatically. No force push is used. Branch protection can refuse
 the push; use an ordinary feature branch and pull request instead of weakening
 protection. With no `--git`, no automatic Git mutation occurs.
 
+An automatic push requires exactly one configured push destination. The runner
+records its resolved URL at startup and refuses a changed destination before
+committing or pushing. Do not edit the repository's remote configuration while
+the run is active; the comparison is not an atomic lock against another local
+process. A failed push can leave the reviewed commit locally while the run is
+reported as failed. Inspect the local commit and remote ref before retrying;
+completed tasks do not automatically replay the Git step on restart.
+
+The automatic push explicitly disables tag following (`--no-follow-tags`). A
+user setting such as `push.followTags=true` must not publish additional tags
+alongside the selected branch update. Local tags and user configuration are
+left unchanged. Publish tags separately with an explicit owner decision.
+
 ## Smaller error cases
 
 A dry-run report is created exclusively; existing files, including the task file
