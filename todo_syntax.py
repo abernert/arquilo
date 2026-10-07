@@ -29,6 +29,12 @@ def visible_lines(text: str) -> Iterator[tuple[int, str]]:
     in_comment = False
     for index, raw in enumerate(text.splitlines()):
         stripped = raw.strip()
+        # ARQUILO treats four leading columns (including a tab stop) as an
+        # indented code block. Such examples cannot supply task headers or
+        # directives, and their backticks must not open/close a real fence.
+        # Still process an indented closing HTML comment while in_comment.
+        if not in_comment and (raw.startswith("    ") or re.match(r"^ {0,3}\t", raw)):
+            continue
         fence = re.match(r"^(`{3,}|~{3,})", stripped)
         if fence:
             token = fence.group(1)

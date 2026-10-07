@@ -42,13 +42,24 @@ class ReviewedGit:
         conflicts = sorted(set(self.paths) & dirty)
         if conflicts:
             raise ReviewedGitError('Selected Git paths already have uncommitted changes; commit/stash them first: ' + ', '.join(conflicts))
-        self.remote = self.remote_branch = None
+        self.remote = self.remote_branch = self.push_destination = None
         if push:
             self.remote = self.git('config', '--get', 'branch.' + self.branch[11:] + '.remote').strip().decode()
             self.remote_branch = self.git('config', '--get', 'branch.' + self.branch[11:] + '.merge').strip().decode()
             upstream = self.git('rev-parse', '--verify', '@{upstream}').strip().decode()
             if upstream != self.head or not self.remote_branch.startswith('refs/heads/'):
                 raise ReviewedGitError('--git-push requires HEAD at its configured upstream; push unrelated commits manually first.')
+            self.push_destination = self._push_destination()
+
+    def _push_destination(self):
+        destinations = self.git('remote', 'get-url', '--push', '--all', '--', self.remote).splitlines()
+        if len(destinations) != 1 or not destinations[0]:
+            raise ReviewedGitError('--git-push requires exactly one configured push destination.')
+        return destinations[0]
+
+    def _check_push_destination(self):
+        if self.push and self._push_destination() != self.push_destination:
+            raise ReviewedGitError('Git push destination changed outside ARQUILO; no automatic commit/push.')
 
     def git(self, *args, data=None, index=None):
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
@@ -88,6 +99,7 @@ class ReviewedGit:
                 or self.git('rev-parse', 'HEAD').strip().decode() != self.head
                 or self.git('ls-files', '--stage', '-z') != self.initial_index):
             raise ReviewedGitError('Git HEAD/index changed outside ARQUILO; no automatic commit/push.')
+        self._check_push_destination()
         dirty = self._dirty()
         selected = sorted(set(self.paths) & dirty)
         if not selected:
@@ -126,5 +138,6 @@ class ReviewedGit:
         self.git('update-index', '-z', '--index-info', data=changes)
         self.initial_index = self.git('ls-files', '--stage', '-z')
         if self.push:
-            self.git('push', '--porcelain', '--', self.remote, new + ':' + self.remote_branch)
+            self._check_push_destination()
+            self.git('push', '--porcelain', '--no-follow-tags', '--', self.remote, new + ':' + self.remote_branch)
         return {'commit': new, 'paths': selected, 'pushed': self.push}

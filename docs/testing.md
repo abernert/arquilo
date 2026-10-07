@@ -125,3 +125,32 @@ private worker IPC despite untrusted public summaries, opt-in precedence,
 retained process_stop, unchanged Codex policy, parallel batch stop boundaries,
 and independent log runs. No real model, Databricks tenant or native MDE
 acceptance is inferred from these regressions.
+
+## Adversarial integration regressions
+
+`tests/adversarial/` extends the offline suite with synthetic controller, parser,
+review, state, Git, configuration and diagnostic cases. The normal full-suite
+command discovers these tests; a focused run from the repository root is:
+
+```sh
+PYTHONPATH=tests python3 -B -m unittest discover -s tests/adversarial -v
+```
+
+The full-suite command remains the portable default, including on Windows.
+`test_peer_review.py` adds independent boundary variants and an actual local-Git
+regression for unwanted annotated tags when `push.followTags` is enabled. It uses
+no external remote. The core orchestration tests supply an explicit disposable
+budget directory outside their workspaces instead of requiring access to the
+user's default state directory. Dedicated default-state path tests remain. The subprocess-stream fixture invokes
+a local Python script through an explicitly mocked launcher resolution, so it
+does not rely on POSIX shebang execution. Literal Git path tests distinguish
+POSIX colon filenames from Windows invalid/stream components. These fixture
+changes still require a real Windows CI run; Linux success does not certify it.
+
+Run release/integration checks in a clean source checkout. Audit task lists,
+private reports and logs should remain outside that checkout (or in an already
+excluded scratch directory). A local Git ignore alone does not narrow the naming
+check's filesystem walk. Do not disable that guard to hide an audit input.
+
+A passing offline suite does not prove native Codex sandbox enforcement,
+Daybreak entitlement, live model correctness, or an immutable audit archive.

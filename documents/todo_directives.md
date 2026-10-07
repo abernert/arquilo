@@ -32,6 +32,19 @@ Directive lines appear directly above a task:
 - The complete current file is validated before selection, including WAIT/STOP, and before AutoBuild. Invalid or removed keys are errors; they are not treated as defaults or successful no-ops.
 - Quoting uses the existing POSIX text grammar on every platform; it is not shell execution. Quote Windows backslash paths, for example `workspace='C:\Project Space\Part'`, or use forward slashes. The path must match the host and remain inside the main workspace. The quote grammar performs no variable, tilde, or command substitution.
 
+## Indented examples and existing plans
+
+For scheduling, ARQUILO ignores lines beginning with four ASCII spaces or a tab
+preceded by zero to three ASCII spaces. This applies to task headers, CFG, WAIT,
+STOP and fence markers. Lines with up to three leading spaces remain eligible.
+This is an explicit lexical task-file rule, not a complete Markdown renderer.
+A closing HTML comment is still processed so later real tasks remain visible.
+
+Before updating an existing plan, inspect any task headers or directives indented
+by four columns: these now count as examples, not executable entries. Use
+unindented headers/directives for executable work. Do not automatically reset a
+controller journal or adopt changed task requirements to suppress a mismatch.
+
 ## CFG options
 
 Supported keys:
