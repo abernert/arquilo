@@ -268,7 +268,7 @@ class CrashResumeBudgetTests(IsolatedControllerCase):
         context = AutoBuildContext(budget_directory=self.budget(runner), budget_root_id="1")
         stale = runner.state_dir / "worker_calls" / "stale" / "summary.json"
         safe_io.mkdir(stale.parent)
-        stale.write_text('{"completed":true}', encoding="utf-8")
+        stale.write_text('{"completed":true}', encoding="utf-8", newline="")
         private_paths = []
 
         def missing_return(command, **kwargs):
@@ -276,7 +276,7 @@ class CrashResumeBudgetTests(IsolatedControllerCase):
             private = Path(json.loads(request.read_text())["options"]["summary_json"])
             private_paths.append(private)
             self.assertFalse(private.is_relative_to(self.work))
-            public.write_text('{"completed":true}\n{"completed":true}', encoding="utf-8")
+            public.write_text('{"completed":true}\n{"completed":true}', encoding="utf-8", newline="")
             return subprocess.CompletedProcess(command, 0, b"duplicate success", b"")
 
         with patch.object(run_todos.subprocess, "run", side_effect=missing_return):

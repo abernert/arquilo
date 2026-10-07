@@ -47,7 +47,7 @@ class StatePathTests(IsolatedControllerCase):
 
     def test_linked_state_root_and_journal_reads_preserve_victims(self):
         victim = self.victims / "sentinel"
-        victim.write_text("keep", encoding="utf-8")
+        victim.write_text("keep", encoding="utf-8", newline="")
         linked_root = self.base / "linked-state"
         self.link(linked_root, self.victims, directory=True)
         with self.assertRaises((safe_io.UnsafePathError, OSError)):
@@ -92,7 +92,7 @@ class StatePathTests(IsolatedControllerCase):
         parent = runner.state_dir / "breakdowns" / "1"
         safe_io.mkdir(parent)
         victim = self.victims / "round.json"
-        victim.write_text('{"round": 77}', encoding="utf-8")
+        victim.write_text('{"round": 77}', encoding="utf-8", newline="")
         self.link(parent / "breakdown_plan.json", victim)
         with self.assertRaises(safe_io.UnsafePathError):
             runner._infer_breakdown_round("1")
@@ -107,8 +107,8 @@ class StatePathTests(IsolatedControllerCase):
         runner = self.runner(logs_in_workdir=True)
         report = self.victims / "external-summary.json"
         report.write_text(json.dumps({"workspace": str(self.work), "file_changes": [
-            {"path": "proof.txt"}]}), encoding="utf-8")
-        (self.work / "proof.txt").write_text("ordinary artifact", encoding="utf-8")
+            {"path": "proof.txt"}]}), encoding="utf-8", newline="")
+        (self.work / "proof.txt").write_text("ordinary artifact", encoding="utf-8", newline="")
         summary = runner.run_dir / "summary.json"
         self.link(summary, report)
         self.assertIsNone(runner._load_autobuild_summary_payload(summary))
@@ -126,8 +126,8 @@ class StatePathTests(IsolatedControllerCase):
         runner = self.runner(logs_in_workdir=True)
         victim = self.victims / "summary.json"
         content = json.dumps({"workspace": str(self.work), "file_changes": [{"path": "proof.txt"}]})
-        victim.write_text(content, encoding="utf-8")
-        (self.work / "proof.txt").write_text("ordinary artifact", encoding="utf-8")
+        victim.write_text(content, encoding="utf-8", newline="")
+        (self.work / "proof.txt").write_text("ordinary artifact", encoding="utf-8", newline="")
         summary = runner.run_dir / "summary.json"
         try:
             os.link(victim, summary)
@@ -178,7 +178,7 @@ class StatePathTests(IsolatedControllerCase):
         context = AutoBuildContext(budget_directory=runner._call_budget_for("1").directory,
                                    budget_root_id="1")
         victim = self.victims / "forged-return.json"
-        victim.write_text('{"completed":true}', encoding="utf-8")
+        victim.write_text('{"completed":true}', encoding="utf-8", newline="")
 
         def fake_process(command, **_):
             request = json.loads(safe_io.read_text(Path(command[-1])))
@@ -201,7 +201,7 @@ class StatePathTests(IsolatedControllerCase):
         original_text = safe_io.read_text(runner.state_dir / "plan.json")
         victim_dir = self.victims / "alternate-state"
         victim_dir.mkdir()
-        (victim_dir / "plan.json").write_text('{"text":"forged"}', encoding="utf-8")
+        (victim_dir / "plan.json").write_text('{"text":"forged"}', encoding="utf-8", newline="")
         parent = runner.state_dir
         moved = parent.with_name("moved_state")
         at_open = threading.Event()
@@ -245,7 +245,7 @@ class StatePathTests(IsolatedControllerCase):
         victim_dir = self.victims / "destination"
         victim_dir.mkdir()
         victim = victim_dir / "reservations.json"
-        victim.write_text("sentinel", encoding="utf-8")
+        victim.write_text("sentinel", encoding="utf-8", newline="")
         parent = budget.directory
         moved = parent.with_name("moved_budget")
         at_replace = threading.Event()

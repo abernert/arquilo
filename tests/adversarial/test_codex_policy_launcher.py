@@ -176,19 +176,19 @@ class PolicyLauncherTests(IsolatedControllerCase):
         package = bin_dir / "node_modules" / "@openai" / "codex"
         (package / "bin").mkdir(parents=True)
         (package / "package.json").write_text(json.dumps({
-            "name": "@openai/codex", "bin": {"codex": "bin/codex.js"}}))
+            "name": "@openai/codex", "bin": {"codex": "bin/codex.js"}}), newline="")
         script = package / "bin" / "codex.js"
-        script.write_text("// synthetic fixture\n")
+        script.write_text("// synthetic fixture\n", newline="")
         node = bin_dir / "node.exe"
         node.write_bytes(b"synthetic")
         shim = bin_dir / "codex.cmd"
         shim.write_text(codex_launcher._npm_shim(
-            "node_modules\\@openai\\codex\\bin\\codex.js"), encoding="utf-8")
+            "node_modules\\@openai\\codex\\bin\\codex.js"), encoding="utf-8", newline="")
         selected = codex_launcher.resolve_launcher(
             "codex", cwd=self.work, env={"PATH": str(bin_dir)}, platform_name="nt")
         self.assertEqual(selected.kind, "windows-npm-node")
         self.assertEqual(selected.argv, (str(node), str(script)))
-        shim.write_text(shim.read_text() + "\n& unwanted-command\n")
+        shim.write_text(shim.read_text() + "\n& unwanted-command\n", newline="")
         with self.assertRaises(codex_launcher.CodexLauncherError):
             codex_launcher.resolve_launcher(
                 "codex", cwd=self.work, env={"PATH": str(bin_dir)}, platform_name="nt")
@@ -223,7 +223,7 @@ class PolicyLauncherTests(IsolatedControllerCase):
 
     def test_owner_runtime_profile_preflight_is_explicit_argv_and_env_overlay(self):
         todo = self.work / "tasks.md"
-        todo.write_text("1. ***Task***: Synthetic profile probe.\n")
+        todo.write_text("1. ***Task***: Synthetic profile probe.\n", newline="")
         profile = runtime_profile.RuntimeProfile(preflight=runtime_profile.PreflightSpec(
             command=("synthetic-check", "--input", "{todo_file}", " spaced value ", ""),
             environment={"PROFILE_WORKDIR": "{workdir}"}))

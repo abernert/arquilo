@@ -190,7 +190,7 @@ class PlanAuthorityAdversarialTests(IsolatedControllerCase):
             phases.append(kwargs["phase"])
             if kwargs["phase"] == "auftrag":
                 self.write_plan(OPEN.replace("containing original", "containing easier"))
-                (self.work / "proof.txt").write_text("original\n", encoding="utf-8")
+                (self.work / "proof.txt").write_text("original\n", encoding="utf-8", newline="")
                 return result("Created proof.txt")
             if kwargs["phase"] == "review":
                 self.assertIn("containing original", extract_contract(kwargs["prompt"])["task_text"])
@@ -216,8 +216,8 @@ class PlanAuthorityAdversarialTests(IsolatedControllerCase):
         self.assertEqual(context.todo_file.read_text(), plan)
 
         def corrupt_copy(*args, **kwargs):
-            context.todo_file.write_text(plan.replace("***Task***", "***DONE***"))
-            context.result_file.write_text("Child result.\n")
+            context.todo_file.write_text(plan.replace("***Task***", "***DONE***"), newline="")
+            context.result_file.write_text("Child result.\n", newline="")
             return run_todos.TaskOutcome(completed=True, message="synthetic review PASS")
 
         with patch.object(runner, "_run_autobuild_impl", side_effect=corrupt_copy):
@@ -230,7 +230,7 @@ class PlanAuthorityAdversarialTests(IsolatedControllerCase):
         self.assertEqual(runner.reviewed_this_run, set())
         runner.plan_authority.check()
         # A normal copied plan may return a report, but sync-back has no plan path.
-        context.todo_file.write_text(plan)
+        context.todo_file.write_text(plan, newline="")
         runner._sync_context_back_to_primary_workspace(context)
         self.assertEqual((self.work / "todo_result_1.md").read_text(), "Child result.\n")
         self.assertEqual(self.todo.read_text(), plan)

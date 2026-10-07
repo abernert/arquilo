@@ -34,7 +34,8 @@ class IsolatedControllerCase(unittest.TestCase):
         self.todo = self.work / "tasks.md"
 
     def write_plan(self, text: str) -> None:
-        self.todo.write_text(text, encoding="utf-8")
+        # Keep exact fixture bytes: Windows text mode must not rewrite LF to CRLF.
+        self.todo.write_text(text, encoding="utf-8", newline="")
 
     def runner(self, **overrides):
         options = dict(

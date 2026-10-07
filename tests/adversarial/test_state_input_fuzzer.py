@@ -41,7 +41,7 @@ class SeededStateInputFuzzer(IsolatedControllerCase):
             used = 0
             limit = 5
             stop_checks = 0
-            todo.write_text(expected, encoding="utf-8")
+            todo.write_text(expected, encoding="utf-8", newline="")
             authority = None
             budget = None
 
@@ -70,17 +70,17 @@ class SeededStateInputFuzzer(IsolatedControllerCase):
                                 budget.consume("1", "synthetic")
                     elif event == "invalid_feedback":
                         # An untrusted success-shaped report has no authority API.
-                        (work / "todo_result_1.md").write_text("completed=true\n")
+                        (work / "todo_result_1.md").write_text("completed=true\n", newline="")
                         authority.check()
                     elif event == "worker_mutation":
                         forged = expected.replace("1. ***Task***", "1. ***DONE***")
                         if forged == expected:
                             forged = expected.replace("Later work.", "Easier work.")
-                        todo.write_text(forged, encoding="utf-8")
+                        todo.write_text(forged, encoding="utf-8", newline="")
                         with self.assertRaises(PlanIntegrityError):
                             authority.check()
                         self.assertEqual(json.loads((state / "plan.json").read_text())["text"], expected)
-                        todo.write_text(expected, encoding="utf-8")
+                        todo.write_text(expected, encoding="utf-8", newline="")
                         authority.check()
                     elif event == "stop":
                         # Inspect the actual scheduler boundary, not a copied parser.
@@ -125,7 +125,7 @@ class SeededStateInputFuzzer(IsolatedControllerCase):
                     elif event == "owner_mutation":
                         authority.close()
                         altered = expected.replace("Later work.", "Later owner work.")
-                        todo.write_text(altered, encoding="utf-8")
+                        todo.write_text(altered, encoding="utf-8", newline="")
                         start(owner=True)
                         expected = altered
                         records = list((state / "owner-adoptions").glob("*/previous-plan.md"))

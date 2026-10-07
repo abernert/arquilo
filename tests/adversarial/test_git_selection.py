@@ -27,7 +27,7 @@ class GitSelectionTests(unittest.TestCase):
         self.git('config', 'user.name', 'Synthetic Owner')
         self.git('config', 'user.email', 'owner@example.invalid')
         for name in ('selected.txt', 'staged.txt', 'private.txt'):
-            (self.work / name).write_text('original\n')
+            (self.work / name).write_text('original\n', newline="")
         self.git('add', '--', 'selected.txt', 'staged.txt', 'private.txt')
         self.git('commit', '-qm', 'base')
 
@@ -45,14 +45,14 @@ class GitSelectionTests(unittest.TestCase):
         return set(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', '-z', 'HEAD').split(b'\0')) - {b''}
 
     def test_literal_selection_preserves_unselected_index_and_bytes(self):
-        (self.work / 'staged.txt').write_text('private staged\n')
+        (self.work / 'staged.txt').write_text('private staged\n', newline="")
         self.git('add', '--', 'staged.txt')
-        (self.work / 'private.txt').write_text('private unstaged\n')
-        (self.work / 'untracked-secret').write_text('private untracked\n')
+        (self.work / 'private.txt').write_text('private unstaged\n', newline="")
+        (self.work / 'untracked-secret').write_text('private untracked\n', newline="")
         selected = ReviewedGit(self.work, ['selected.txt', '[literal].txt'], self.state)
-        (self.work / 'selected.txt').write_text('approved\n')
-        (self.work / '[literal].txt').write_text('literal\n')
-        (self.work / 'literal.txt').write_text('not selected\n')
+        (self.work / 'selected.txt').write_text('approved\n', newline="")
+        (self.work / '[literal].txt').write_text('literal\n', newline="")
+        (self.work / 'literal.txt').write_text('not selected\n', newline="")
         result = selected.commit('local selection')
         self.assertFalse(result['pushed'])
         self.assertEqual(self.tree_paths(), {b'selected.txt', b'[literal].txt'})
@@ -76,15 +76,15 @@ class GitSelectionTests(unittest.TestCase):
             names.append(':magic.txt')
         selected = ReviewedGit(self.work, names, self.state)
         for name in names:
-            (self.work / name).write_text('literal\n', encoding='utf-8')
+            (self.work / name).write_text('literal\n', encoding='utf-8', newline="")
         selected.commit('literal option-like paths')
         self.assertEqual(self.tree_paths(), {os.fsencode(name) for name in names})
 
     def test_initial_dirty_staged_and_untracked_selection_rejected(self):
         for name, change in (
-            ('selected.txt', lambda: (self.work / 'selected.txt').write_text('dirty')),
-            ('staged.txt', lambda: (self.work / 'staged.txt').write_text('staged')),
-            ('new.txt', lambda: (self.work / 'new.txt').write_text('untracked')),
+            ('selected.txt', lambda: (self.work / 'selected.txt').write_text('dirty', newline="")),
+            ('staged.txt', lambda: (self.work / 'staged.txt').write_text('staged', newline="")),
+            ('new.txt', lambda: (self.work / 'new.txt').write_text('untracked', newline="")),
         ):
             with self.subTest(name=name):
                 change()
@@ -98,7 +98,7 @@ class GitSelectionTests(unittest.TestCase):
     def test_link_replacement_does_not_commit_outside_bytes(self):
         selected = ReviewedGit(self.work, ['selected.txt'], self.state)
         victim = self.root / 'victim'
-        victim.write_text('sentinel\n')
+        victim.write_text('sentinel\n', newline="")
         (self.work / 'selected.txt').unlink()
         try:
             (self.work / 'selected.txt').symlink_to(victim)
@@ -113,7 +113,7 @@ class GitSelectionTests(unittest.TestCase):
     def test_hardlink_replacement_and_selected_deletion(self):
         selected = ReviewedGit(self.work, ['selected.txt'], self.state)
         victim = self.root / 'victim'
-        victim.write_text('sentinel\n')
+        victim.write_text('sentinel\n', newline="")
         (self.work / 'selected.txt').unlink()
         try:
             os.link(victim, self.work / 'selected.txt')
@@ -137,11 +137,11 @@ class GitSelectionTests(unittest.TestCase):
                 if mutation == 'head':
                     self.git('commit', '--allow-empty', '-qm', 'owner commit')
                 elif mutation == 'index':
-                    (self.work / 'staged.txt').write_text('owner staged')
+                    (self.work / 'staged.txt').write_text('owner staged', newline="")
                     self.git('add', '--', 'staged.txt')
                 else:
                     self.git('switch', '-q', '-c', 'another')
-                (self.work / 'selected.txt').write_text('worker output')
+                (self.work / 'selected.txt').write_text('worker output', newline="")
                 current = self.git('rev-parse', 'HEAD')
                 with self.assertRaises(ReviewedGitError):
                     selected.commit('must refuse')
@@ -153,14 +153,14 @@ class GitSelectionTests(unittest.TestCase):
                     self.git('reset', '--hard', 'HEAD')
                 else:
                     self.git('reset', '--hard', 'HEAD~1')
-                (self.work / 'selected.txt').write_text('original\n')
+                (self.work / 'selected.txt').write_text('original\n', newline="")
 
     def test_explicit_push_and_unpushed_commit_gate(self):
         remote = self.bare('remote.git')
         self.git('remote', 'add', 'origin', str(remote))
         self.git('push', '-qu', 'origin', 'HEAD')
         selected = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
-        (self.work / 'selected.txt').write_text('approved\n')
+        (self.work / 'selected.txt').write_text('approved\n', newline="")
         result = selected.commit('reviewed local push')
         self.assertTrue(result['pushed'])
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', selected.remote_branch).strip(),
@@ -176,7 +176,7 @@ class GitSelectionTests(unittest.TestCase):
         branch = self.git('symbolic-ref', 'HEAD').strip().decode()
         original = self.git('--git-dir', str(remote), 'rev-parse', branch).strip()
         selected = ReviewedGit(self.work, ['selected.txt'], self.state)
-        (self.work / 'selected.txt').write_text('local only\n')
+        (self.work / 'selected.txt').write_text('local only\n', newline="")
         result = selected.commit('local only')
         self.assertFalse(result['pushed'])
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', branch).strip(), original)
@@ -188,7 +188,7 @@ class GitSelectionTests(unittest.TestCase):
         self.git('push', '-qu', 'origin', 'HEAD')
         selected = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
         original = self.git('rev-parse', 'HEAD').strip()
-        (self.work / 'selected.txt').write_text('reviewed bytes\n')
+        (self.work / 'selected.txt').write_text('reviewed bytes\n', newline="")
         real_git = selected.git
         def fail_commit_tree(*args, **kwargs):
             if args[0] == 'commit-tree':
@@ -210,7 +210,7 @@ class GitSelectionTests(unittest.TestCase):
         other = self.git('rev-parse', 'HEAD').strip()
         self.git('push', '-q', 'origin', 'HEAD')
         self.git('reset', '--hard', initial_head.decode())
-        (self.work / 'selected.txt').write_text('reviewed local bytes\n')
+        (self.work / 'selected.txt').write_text('reviewed local bytes\n', newline="")
         with self.assertRaises(ReviewedGitError):
             selected.commit('push must fail')
         self.assertNotEqual(self.git('rev-parse', 'HEAD').strip(), initial_head)
@@ -224,7 +224,7 @@ class GitSelectionTests(unittest.TestCase):
         self.git('push', '-qu', 'origin', 'HEAD')
         selected = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
         initial_head = self.git('rev-parse', 'HEAD')
-        (self.work / 'selected.txt').write_text('reviewed bytes\n')
+        (self.work / 'selected.txt').write_text('reviewed bytes\n', newline="")
         self.git('config', 'remote.origin.pushurl', str(redirect))
         try:
             result = selected.commit('must not redirect')
@@ -255,7 +255,7 @@ class GitSelectionTests(unittest.TestCase):
         self.git('push', '-qu', 'origin', 'HEAD')
         selected = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
         initial_head = self.git('rev-parse', 'HEAD').strip()
-        (self.work / 'selected.txt').write_text('reviewed bytes\n')
+        (self.work / 'selected.txt').write_text('reviewed bytes\n', newline="")
         real_git = selected.git
         changed = False
 

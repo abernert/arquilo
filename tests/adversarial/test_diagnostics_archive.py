@@ -110,7 +110,7 @@ class DiagnosticArchiveTests(unittest.TestCase):
         work = self.base / "work"
         work.mkdir()
         todo = work / "tasks.md"
-        todo.write_text("1. ***Task***: Check.\n", encoding="utf-8")
+        todo.write_text("1. ***Task***: Check.\n", encoding="utf-8", newline="")
         project = project_logs.ProjectLogs("audit", root / "audit", root / "state")
         started = datetime(2026, 10, 7, tzinfo=UTC)
         first = project.new_run(started, run_id="same", workspace=work, todo=todo)

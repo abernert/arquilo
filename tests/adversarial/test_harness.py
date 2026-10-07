@@ -10,12 +10,36 @@ from test_public_runtime import PASS, extract_contract, result
 
 
 class HarnessSelfTests(IsolatedControllerCase):
+    def test_plan_fixture_preserves_lf_and_crlf_in_journal(self):
+        for ending in ("\n", "\r\n"):
+            with self.subTest(ending=repr(ending)), self.scratch() as root:
+                work = root / "workspace"
+                work.mkdir()
+                todo = work / "tasks.md"
+                plan = "1. ***Task***: Preserve exact fixture bytes." + ending
+                # Exercise the common writer without changing production I/O.
+                original_todo = self.todo
+                try:
+                    self.todo = todo
+                    self.write_plan(plan)
+                finally:
+                    self.todo = original_todo
+                self.assertEqual(todo.read_bytes(), plan.encode("utf-8"))
+                runner = self.runner(todo_file=todo, workdir=work,
+                                     state_dir=root / "controller-state")
+                try:
+                    journal = json.loads((runner.state_dir / "plan.json").read_bytes())
+                    self.assertEqual(journal["text"], plan)
+                    self.assertEqual(todo.read_bytes(), plan.encode("utf-8"))
+                finally:
+                    runner.close()
+
     def test_scratch_is_cleaned_after_exception(self):
         self.assertFalse(self.state_root.is_relative_to(self.work))
         self.assertTrue(self.victims.is_relative_to(self.base))
         with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
             with self.scratch() as scratch:
-                (scratch / "test-only.txt").write_text("test data", encoding="utf-8")
+                (scratch / "test-only.txt").write_text("test data", encoding="utf-8", newline="")
                 raise RuntimeError("synthetic failure")
         self.assertFalse(scratch.exists())
 

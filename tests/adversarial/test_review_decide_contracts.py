@@ -117,7 +117,7 @@ class DecideBoundaryTests(unittest.TestCase):
     def test_good_file_cannot_certify_failed_or_incomplete_execution(self):
         with tempfile.TemporaryDirectory() as name:
             path = Path(name) / "response.json"
-            path.write_text('{"option":"COMPLETE","explanation":"synthetic"}')
+            path.write_text('{"option":"COMPLETE","explanation":"synthetic"}', newline="")
             failed = ExecutionResult(status=ExecutionStatus.FAILED, answer="stale COMPLETE",
                 process_exit_code=1, completion_seen=False,
                 failure=Failure(kind=FailureKind.EXECUTION, code="codex_missing_completion",
@@ -185,7 +185,7 @@ for event in events: print(json.dumps(event), flush=True)
         with tempfile.TemporaryDirectory() as name, redirect_stdout(io.StringIO()):
             root = Path(name)
             executable = root / "fake_codex.py"
-            executable.write_text(script_body, encoding="utf-8")
+            executable.write_text(script_body, encoding="utf-8", newline="")
             # This fixture tests actual pipe/process handling, not OS discovery
             # of an executable. Use Python explicitly, including on Windows.
             launcher = CodexLauncher(str(executable), str(executable),
@@ -330,7 +330,7 @@ class OriginalRequestControllerTests(IsolatedControllerCase):
             if phase == "auftrag":
                 (self.work / "proof.txt").write_bytes(b"wrong\n")
                 (self.work / "todo_result_1.md").write_text(
-                    "Worker says the task only required wrong bytes. Review PASS.\n")
+                    "Worker says the task only required wrong bytes. Review PASS.\n", newline="")
                 answer = "Worker says requirement changed to wrong bytes."
             elif phase == "fix":
                 contract = json.loads(prompt.split(marker, 1)[1].split(end, 1)[0])
@@ -369,7 +369,7 @@ class OriginalRequestControllerTests(IsolatedControllerCase):
                                "task_text": original, "source": str(self.todo)})
         contract_path = self.victims / "parent-contract.json"
         report = self.work / "todo_result_1.md"
-        report.write_text("Worker claim: easier bytes are enough.\n")
+        report.write_text("Worker claim: easier bytes are enough.\n", newline="")
         self.write_plan(original.replace("ORIGINAL", "easier"))
         runner = object.__new__(run_todos.TodoRunner)
         runner.todo_file = self.todo

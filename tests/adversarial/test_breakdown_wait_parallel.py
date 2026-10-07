@@ -246,11 +246,11 @@ class BreakdownWaitParallelTests(IsolatedControllerCase):
         def worker(identifier, *args, **kwargs):
             context_file = kwargs["result_file_override"]
             if identifier == "1":
-                context_file.write_text("alpha\n", encoding="utf-8")
+                context_file.write_text("alpha\n", encoding="utf-8", newline="")
                 first_ready.set()
             else:
                 self.assertTrue(first_ready.wait(5), "first worker did not reach handoff")
-                context_file.write_text("beta\n", encoding="utf-8")
+                context_file.write_text("beta\n", encoding="utf-8", newline="")
             return run_todos.TaskOutcome(completed=True, message="Reviewed worker output")
         with patch.object(runner, "_run_autobuild_impl", side_effect=worker), redirect_stdout(io.StringIO()):
             runner.run()
@@ -273,7 +273,7 @@ class BreakdownWaitParallelTests(IsolatedControllerCase):
         self.write_plan(plan)
         runner = self.runner()
         def worker(identifier, *args, **kwargs):
-            kwargs["result_file_override"].write_text(identifier + " report\n", encoding="utf-8")
+            kwargs["result_file_override"].write_text(identifier + " report\n", encoding="utf-8", newline="")
             if identifier == "1":
                 return run_todos.TaskOutcome(completed=True, abort=True, message="Conflicting completion")
             (self.work / "second.txt").write_bytes(b"second\n")
@@ -299,7 +299,7 @@ class BreakdownWaitParallelTests(IsolatedControllerCase):
         self.write_plan(plan)
         runner = self.runner()
         def worker(identifier, *args, **kwargs):
-            kwargs["result_file_override"].write_text("same report\n", encoding="utf-8")
+            kwargs["result_file_override"].write_text("same report\n", encoding="utf-8", newline="")
             (self.work / ("first.txt" if identifier == "1" else "second.txt")).write_bytes(identifier.encode())
             return run_todos.TaskOutcome(completed=True, message="Reviewed")
         with patch.object(runner, "_run_autobuild_impl", side_effect=worker), redirect_stdout(io.StringIO()):
