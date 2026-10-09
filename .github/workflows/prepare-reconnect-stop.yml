@@ -1,0 +1,110 @@
+# Temporary integration helper, excluded from the resulting fix branch.
+name: Prepare reviewed reconnect-stop fix
+on:
+  push:
+    branches: [validation/reconnect-stop-propagation]
+    paths: [.github/workflows/prepare-reconnect-stop.yml]
+permissions:
+  contents: read
+concurrency:
+  group: prepare-reconnect-stop-propagation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/validation/reconnect-stop-propagation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: 46d2b2490fe7ca6f20fa48c3523e4e570e2b9969
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 46d2b2490fe7ca6f20fa48c3523e4e570e2b9969
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Restore and verify reviewed public-code-only patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64, hashlib, json, lzma, os, subprocess
+          from pathlib import Path
+          repo = os.environ['GITHUB_REPOSITORY']
+          chunks = ['09cb3759b4306756360321f0e3531a2db3623b29',
+                    'b39b4df2b1221713b5e0879dae52fc4b0439b337',
+                    '9dd725d580d39932ea6ea2750183a68a1097e134',
+                    '0d1b56cef39b882028106cd16bc0d92c4092a6f9']
+          packed = bytearray()
+          for sha in chunks:
+              blob = json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/git/blobs/{sha}']))
+              raw = base64.b64decode(blob['content'])
+              actual = hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+              if actual != sha:
+                  raise SystemExit('Patch chunk digest mismatch')
+              packed.extend(raw)
+          patch = lzma.decompress(packed)
+          expected = 'caa4a35675bb1cf53e6977b91720c1e8091a8384146e2a14816ab86c0eef7cfc'
+          if hashlib.sha256(patch).hexdigest() != expected:
+              raise SystemExit('Patch SHA-256 mismatch')
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          paths = ['CHANGELOG.md','autobuild.py','autobuild_contract.py','codex_transport.py',
+                   'docs/architecture.md','docs/testing.md','docs/troubleshooting.md','run_todos.py',
+                   'runtime_failure.py','tests/test_reconnect_stop.py',
+                   'tests/test_reconnect_stop_controller.py','tests/test_reconnect_stop_faults.py']
+          changed = subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()
+          untracked = subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+          if set(changed + untracked) != set(paths):
+              raise SystemExit('Unexpected patch paths')
+          subprocess.run(['git','diff','--check'],check=True)
+          Path(os.environ['RUNNER_TEMP'],'fix-paths.json').write_text(json.dumps(paths),encoding='utf-8')
+      - name: Complete offline regressions
+        run: python -B -m unittest discover -s tests -v
+      - name: Validate and build runtime
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Publish only tested code and synthetic fixtures to the fix branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          repo = os.environ['GITHUB_REPOSITORY']
+          source = os.environ['SOURCE_SHA']
+          def api(path, body=None):
+              args = ['gh','api',path]
+              if body is not None:
+                  args += ['--method','POST','--input','-']
+              result = subprocess.run(args,input=None if body is None else json.dumps(body),
+                                      text=True,capture_output=True,check=True)
+              return json.loads(result.stdout)
+          if api(f'repos/{repo}/git/ref/heads/main')['object']['sha'] != source:
+              raise SystemExit('Main changed; review the new baseline before publishing')
+          paths = json.loads(Path(os.environ['RUNNER_TEMP'],'fix-paths.json').read_text())
+          tree = api(f'repos/{repo}/git/trees',{
+              'base_tree':'dc5bcf9769afc7a1c125d488b7c36c48334d0ba7',
+              'tree':[{'path':p,'mode':'100644','type':'blob','content':Path(p).read_text(encoding='utf-8')} for p in paths]})['sha']
+          commit = api(f'repos/{repo}/git/commits',{
+              'message':'Preserve stop facts and distinguish provisional reconnect diagnostics\n\nKeep genuine failure precedence, evidenced process exits, first stop reason, validated private worker metadata and the actual terminal capture. Add synthetic subprocess/fault/controller regressions and current documentation. No original handoff data, version bump, policy relaxation or automatic task retries.',
+              'tree':tree,'parents':[source]})['sha']
+          api(f'repos/{repo}/git/refs',{'ref':'refs/heads/fix/reconnect-stop-propagation','sha':commit})
+          report = {'source':source,'commit':commit,'tree':tree,
+                    'patch_sha256':'caa4a35675bb1cf53e6977b91720c1e8091a8384146e2a14816ab86c0eef7cfc',
+                    'files':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
+                    'runtime_sha256':hashlib.sha256(Path('dist/arquilo-0.7.1.zip').read_bytes()).hexdigest()}
+          Path('dist/integration-verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as output:
+              output.write('Tested fix branch created; main and tags unchanged.\n\n```json\n'+json.dumps(report,indent=2)+'\n```\n')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arquilo-reconnect-stop-verification
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
