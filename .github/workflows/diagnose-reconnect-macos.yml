@@ -1,0 +1,59 @@
+# Temporary diagnostic helper; not part of the product PR.
+name: Diagnose synthetic reconnect cleanup on macOS
+on:
+  push:
+    branches: [validation/reconnect-macos-diagnostics]
+    paths: [.github/workflows/diagnose-reconnect-macos.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 63632563248e133e78f4a317e2abc0dacf6bcc1d
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Capture only synthetic test diagnostics and public source
+        shell: python
+        run: |
+          import contextlib, io, json, os, subprocess, sys, unittest
+          from pathlib import Path
+          root = Path.cwd()
+          out = Path(os.environ['RUNNER_TEMP']) / 'reconnect-diagnostic'
+          out.mkdir()
+          subprocess.run(['git', 'archive', '--format=zip', '-o', str(out/'public-source.zip'), 'HEAD'], check=True)
+          sys.path[:0] = [str(root), str(root/'tests')]
+          import test_reconnect_stop as tests
+          import codex_transport as transport
+          recorded = []
+          original = transport.execute
+          def capture(*args, **kwargs):
+              result = original(*args, **kwargs)
+              recorded.append({'error': result.trace.execution_error,
+                               'stream_errors': result.trace.stream_errors,
+                               'capture': result.trace.capture,
+                               'stop': result.trace.process_stop_triggered,
+                               'stop_details': result.trace.process_stop_details})
+              return result
+          transport.execute = capture
+          suite = unittest.TestSuite([
+              tests.SequenceTests('test_plain_stop_and_reconnect_stop_archive_and_cleanup'),
+              tests.SequenceTests('test_post_turn_cleanup_exception_is_preserved'),
+              tests.SequenceTests('test_stall_and_total_timeouts_remain_failures')])
+          output = io.StringIO()
+          with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+              result = unittest.TextTestRunner(stream=output, verbosity=2).run(suite)
+          (out/'tests.log').write_text(output.getvalue(), encoding='utf-8')
+          (out/'captures.json').write_text(json.dumps(recorded, indent=2, default=str), encoding='utf-8')
+          print(json.dumps({'test_success':result.wasSuccessful(), 'captures':recorded}, default=str, indent=2))
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: synthetic-reconnect-macos-diagnostics
+          path: ${{ runner.temp }}/reconnect-diagnostic/*
+          if-no-files-found: error
+          retention-days: 7
