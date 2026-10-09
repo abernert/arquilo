@@ -1,0 +1,82 @@
+# Temporary fixture-only preparation; not part of the product PR.
+name: Prepare deterministic reconnect timeout fixture
+on:
+  push:
+    branches: [validation/reconnect-timeout-fixture]
+    paths: [.github/workflows/prepare-reconnect-fixture.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 2e576d52ce258b640b9905bbc8758f7ae1cb8e44
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Order synthetic timeout after fixture readiness, not interpreter startup
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib
+          p=Path('tests/test_reconnect_stop.py')
+          text=p.read_text()
+          def change(old,new):
+              global text
+              if text.count(old)!=1: raise SystemExit('Unexpected fixture source')
+              text=text.replace(old,new,1)
+          change('import threading\n','import threading\nimport time\n')
+          change('sys.stdin.buffer.read()\nfor event in s["events"]:', 'if not s.get("ready_before_launch_return"):\n    sys.stdin.buffer.read()\nfor event in s["events"]:')
+          change('Path(s["ready"]).write_text("ready", encoding="utf-8")\nif s.get("stop"):', 'Path(s["ready"]).write_text("ready", encoding="utf-8")\nif s.get("ready_before_launch_return"):\n    sys.stdin.buffer.read()\nif s.get("stop"):')
+          change('            self.processes.append(proc)\n            return proc', '''            self.processes.append(proc)
+                      if spec.get("ready_before_launch_return"):
+                          # Timeout sequences must begin with their intended event,
+                          # not depend on Python startup completing within 400 ms.
+                          deadline = time.monotonic() + 5
+                          while not Path(spec["ready"]).exists():
+                              if proc.poll() is not None or time.monotonic() >= deadline:
+                                  raise AssertionError("Synthetic CLI did not reach readiness")
+                              time.sleep(.01)
+                      return proc''')
+          change('spec = {"events": [RECONNECT], "mode": mode}', 'spec = {"events": [RECONNECT], "mode": mode, "ready_before_launch_return": True}')
+          raw=text.encode()
+          sha=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          if sha!='bd7067e467a8a6bc509385bbd558d91572145994': raise SystemExit('Fixture byte check failed: '+sha)
+          p.write_text(text)
+      - name: Run full regressions and distribution validation
+        run: |
+          git diff --check
+          python -B -m unittest discover -s tests -v
+          python -B scripts/check_release.py
+      - name: Prepare commit without advancing the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json,os,subprocess
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY'];base='2e576d52ce258b640b9905bbc8758f7ae1cb8e44'
+          def api(path,body=None):
+              cmd=['gh','api',path]
+              if body is not None:cmd+=['--method','POST','--input','-']
+              return json.loads(subprocess.run(cmd,input=None if body is None else json.dumps(body),text=True,capture_output=True,check=True).stdout)
+          if api(f'repos/{repo}/git/ref/heads/fix/reconnect-stop-propagation')['object']['sha']!=base:raise SystemExit('PR advanced')
+          path='tests/test_reconnect_stop.py'
+          if subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()!=[path]:raise SystemExit('Unexpected diff')
+          tree=api(f'repos/{repo}/git/trees',{'base_tree':'c4a5ccdf717d6e654ecb4537fbe21bcfe17373d6','tree':[{'path':path,'type':'blob','mode':'100644','content':Path(path).read_text()}]})['sha']
+          commit=api(f'repos/{repo}/git/commits',{'tree':tree,'parents':[base],'message':'Synchronize synthetic timeout fixtures before collecting timed events\n\nWait for the explicit fixture-ready signal before starting the collector watchdog. Preserve production timeouts and test assertions; avoid dependence on Python startup speed.'})['sha']
+          report={'commit':commit,'tree':tree,'base':base}
+          Path(os.environ['RUNNER_TEMP'],'candidate.json').write_text(json.dumps(report))
+          print(json.dumps(report,indent=2))
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reconnect-fixture-candidate
+          path: ${{ runner.temp }}/candidate.json
+          if-no-files-found: error
+          retention-days: 7
