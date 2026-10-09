@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -48,7 +49,8 @@ STUB = r'''
 import json, os, sys, time
 from pathlib import Path
 s = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-sys.stdin.buffer.read()
+if not s.get("ready_before_launch_return"):
+    sys.stdin.buffer.read()
 for event in s["events"]:
     sys.stdout.buffer.write((json.dumps(event) + "\n").encode("utf-8"))
 if s.get("bad_utf8"):
@@ -57,6 +59,8 @@ sys.stdout.buffer.flush()
 sys.stderr.buffer.write(b"synthetic stderr\n")
 sys.stderr.buffer.flush()
 Path(s["ready"]).write_text("ready", encoding="utf-8")
+if s.get("ready_before_launch_return"):
+    sys.stdin.buffer.read()
 if s.get("stop"):
     Path(s["stop"]).write_text(s["reason"], encoding="utf-8")
 mode = s.get("mode", "exit")
@@ -103,6 +107,14 @@ class Fixture(unittest.TestCase):
             path.write_text(json.dumps(spec), encoding="utf-8")
             proc = original([sys.executable, "-B", str(self.stub), str(path)], cwd=cwd, env=env)
             self.processes.append(proc)
+            if spec.get("ready_before_launch_return"):
+                # Timeout sequences must begin with their intended event,
+                # not depend on Python startup completing within 400 ms.
+                deadline = time.monotonic() + 5
+                while not Path(spec["ready"]).exists():
+                    if proc.poll() is not None or time.monotonic() >= deadline:
+                        raise AssertionError("Synthetic CLI did not reach readiness")
+                    time.sleep(.01)
             return proc
         with patch.object(transport, "_start_process", side_effect=start) as mock:
             yield mock
@@ -194,7 +206,7 @@ class SequenceTests(Fixture):
         for mode, timeouts, expected in (("wait", transport.TransportTimeouts(stall=.4, total=4, kill_grace=.05), "codex_stalled"),
                 ("activity", transport.TransportTimeouts(stall=2, total=.6, kill_grace=.05), "codex_timeout")):
             with self.subTest(mode=mode):
-                spec = {"events": [RECONNECT], "mode": mode}
+                spec = {"events": [RECONNECT], "mode": mode, "ready_before_launch_return": True}
                 result = self.execute(spec, replace(self.request(), timeouts=timeouts))
                 self.assertEqual(result.trace.execution_error["code"], expected)
                 self.assertFalse(result.trace.process_stop_triggered)
