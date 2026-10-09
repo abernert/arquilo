@@ -1,0 +1,71 @@
+# Temporary patch preparation, never merged into the product branch.
+name: Prepare macOS cleanup follow-up for reconnect fix
+on:
+  push:
+    branches: [validation/prepare-reconnect-macos-fix]
+    paths: [.github/workflows/prepare-reconnect-macos-fix.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 63632563248e133e78f4a317e2abc0dacf6bcc1d
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Apply checked public-code-only patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64,hashlib,json,os,subprocess,zlib
+          repo=os.environ['GITHUB_REPOSITORY']
+          result=subprocess.check_output(['gh','api',f'repos/{repo}/git/blobs/f8019a7debf6f12f288410b42cc960be8db91fd2'],text=True)
+          encoded=base64.b64decode(json.loads(result)['content'])
+          patch=zlib.decompress(base64.b64decode(encoded))
+          if hashlib.sha256(patch).hexdigest()!='d8bd47f8c8d611b193fa813526f77d3c63d0ca727552ce76b98ed42a5155e8be':
+              raise SystemExit('Patch digest mismatch')
+          subprocess.run(['git','apply','--unidiff-zero','--index','-'],input=patch,check=True)
+      - name: Validate patch and full suite
+        run: |
+          git diff --cached --check
+          python -B -m unittest discover -s tests -v
+          python -B scripts/check_release.py
+      - name: Create candidate commit only, leave branch for explicit compare/update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json,os,subprocess
+          from pathlib import Path
+          repo=os.environ['GITHUB_REPOSITORY']
+          base='63632563248e133e78f4a317e2abc0dacf6bcc1d'
+          def api(path,body=None):
+              cmd=['gh','api',path]
+              if body is not None: cmd+=['--method','POST','--input','-']
+              return json.loads(subprocess.run(cmd,input=None if body is None else json.dumps(body),text=True,capture_output=True,check=True).stdout)
+          if api(f'repos/{repo}/git/ref/heads/fix/reconnect-stop-propagation')['object']['sha']!=base:
+              raise SystemExit('Branch advanced; reconcile first')
+          files=['process_tree.py','tests/test_reconnect_stop_process_tree.py','CHANGELOG.md']
+          changed=subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines()
+          if set(changed)!=set(files): raise SystemExit('Unexpected changed files')
+          tree=api(f'repos/{repo}/git/trees',{'base_tree':'10c8ae11e16964530b415e1df7578942e68e8fd2','tree':[{'path':p,'mode':'100644','type':'blob','content':Path(p).read_text()} for p in files]})['sha']
+          local=subprocess.check_output(['git','write-tree'],text=True).strip()
+          if tree!=local: raise SystemExit('Tree mismatch')
+          commit=api(f'repos/{repo}/git/commits',{'tree':tree,'parents':[base],'message':'Preserve real cleanup errors while resolving Darwin killed-leader reap races\n\nRequire prior controller signal, matching reaped exit, and whole-group ESRCH before dismissing a follow-up EPERM. Never ignore a live group or actual permission failure. Add eight synthetic regression methods, including repeated native cleanup.'})['sha']
+          report={'commit':commit,'tree':tree,'base':base,'files':files}
+          print(json.dumps(report,indent=2))
+          Path(os.environ['RUNNER_TEMP'],'candidate.json').write_text(json.dumps(report,indent=2))
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reconnect-macos-candidate
+          path: ${{ runner.temp }}/candidate.json
+          if-no-files-found: error
+          retention-days: 7
