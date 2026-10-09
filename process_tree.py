@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from typing import Any
@@ -100,6 +101,27 @@ class ProcessTree:
                             os.killpg(proc.pid, sig)
                         except ProcessLookupError:
                             return False
+                        except PermissionError:
+                            # Darwin can reject killpg for a group containing
+                            # only the just-killed, not-yet-reaped leader. Do
+                            # not equate EPERM with success: first reap that
+                            # leader, then require the *whole group* to be gone.
+                            # Live/inaccessible descendants and permission
+                            # failures before any successful signal still fail.
+                            if sys.platform == "darwin" and result.actions:
+                                rc = proc.poll()
+                                killed_by_us = rc in [
+                                    -int(signal.Signals[action]) for action in result.actions
+                                    if action in {"SIGTERM", "SIGKILL"}]
+                                if killed_by_us:
+                                    try:
+                                        os.killpg(proc.pid, 0)
+                                    except ProcessLookupError:
+                                        result.actions.append("group_absent_after_reap")
+                                        return False
+                                    except PermissionError:
+                                        pass
+                            raise
                         result.actions.append(signal.Signals(sig).name)
                         return True
 
@@ -112,7 +134,7 @@ class ProcessTree:
                             try:
                                 os.killpg(proc.pid, 0)
                             except ProcessLookupError:
-                                break
+                                return  # No remaining group; do not send a redundant KILL.
                             except PermissionError:
                                 # kill(0) is only an existence probe. macOS
                                 # can return EPERM while a killed member exits.

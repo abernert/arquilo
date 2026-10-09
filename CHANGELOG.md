@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- On macOS, reap a leader killed by this controller before checking an EPERM
+  from a follow-up group signal. Ignore that race only when a new whole-group
+  probe proves ESRCH; live/inaccessible groups and actual permission failures
+  remain fatal. Never send a redundant SIGKILL after confirmed group absence.
+
 - Classify only the documented pre-terminal WebSocket reconnect notice as a
   provisional diagnostic. Preserve its original event and ordinal; keep unknown
   errors, terminal failures, missing completion/answer and timeouts fatal.
