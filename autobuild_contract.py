@@ -116,6 +116,58 @@ class AutoBuildResultError(ValueError):
     """A malformed result is a technical boundary error, not a user option error."""
 
 
+def _optional_path(record: dict, key: str) -> None:
+    if key in record and record[key] is not None and (
+            not isinstance(record[key], str) or not record[key].strip() or "\0" in record[key]):
+        raise AutoBuildResultError(f"Invalid AutoBuild diagnostic path: {key}")
+
+
+def _stop_metadata(record: dict) -> None:
+    if "process_stop_triggered" in record and type(record["process_stop_triggered"]) is not bool:
+        raise AutoBuildResultError("Invalid diagnostic stop flag")
+    details = record.get("process_stop_details")
+    # Old v1 payloads may omit the reason or carry null. New writers always
+    # provide an explicit fallback; never infer a reason from last_answer.
+    if details is not None and (not isinstance(details, str) or not details.strip()):
+        raise AutoBuildResultError("Invalid diagnostic stop details")
+    if details is not None and record.get("process_stop_triggered") is not True:
+        raise AutoBuildResultError("Stop details without an observed stop")
+
+
+def _validate_diagnostic_metadata(payload: dict) -> None:
+    _stop_metadata(payload)
+    attempts = payload.get("execution_attempts", [])
+    if not isinstance(attempts, list) or any(not isinstance(a, dict) for a in attempts):
+        raise AutoBuildResultError("Invalid execution_attempts")
+    for attempt in attempts:
+        _stop_metadata(attempt)
+        for key in ("capture_directory", "stderr_file"):
+            _optional_path(attempt, key)
+        if "stream_diagnostics" in attempt:
+            diagnostics = attempt["stream_diagnostics"]
+            if not isinstance(diagnostics, list):
+                raise AutoBuildResultError("Invalid stream diagnostics")
+            for diagnostic in diagnostics:
+                if (not isinstance(diagnostic, dict) or diagnostic.get("kind") != "codex_reconnect"
+                        or type(diagnostic.get("event_index")) is not int or diagnostic["event_index"] < 1
+                        or not isinstance(diagnostic.get("event"), dict)
+                        or diagnostic["event"].get("type") != "error"
+                        or not isinstance(diagnostic["event"].get("message"), str)):
+                    raise AutoBuildResultError("Invalid reconnect diagnostic")
+    terminal = payload.get("terminal_attempt")
+    if terminal is not None:
+        if (not isinstance(terminal, dict) or set(terminal) != {"phase", "index", "capture_directory"}
+                or not isinstance(terminal["phase"], str)
+                or terminal["phase"] not in {"task", "review", "decide"}
+                or type(terminal["index"]) is not int or terminal["index"] < 1):
+            raise AutoBuildResultError("Invalid terminal_attempt")
+        _optional_path(terminal, "capture_directory")
+        matches = [a for a in attempts if a.get("phase") == terminal["phase"]
+                   and type(a.get("index")) is int and a["index"] == terminal["index"]]
+        if len(matches) != 1 or matches[0].get("capture_directory") != terminal["capture_directory"]:
+            raise AutoBuildResultError("Terminal attempt does not identify exactly one returned execution")
+
+
 def validate_result(payload: Any, *, process_exit_code: int | None = None) -> dict:
     """Validate the same summary at the in-process and Python-worker boundaries."""
     if not isinstance(payload, dict):
@@ -123,6 +175,7 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
     for name in ("completed", "process_stop_triggered", "review_required"):
         if type(payload.get(name)) is not bool:
             raise AutoBuildResultError(f"Invalid AutoBuild summary field: {name}")
+    _validate_diagnostic_metadata(payload)
     code = payload.get("exit_code")
     if type(code) is not int or code not in {int(v) for v in ExitCode}:
         raise AutoBuildResultError("Invalid AutoBuild exit_code")

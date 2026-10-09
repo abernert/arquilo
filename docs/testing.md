@@ -154,3 +154,40 @@ check's filesystem walk. Do not disable that guard to hide an audit input.
 
 A passing offline suite does not prove native Codex sandbox enforcement,
 Daybreak entitlement, live model correctness, or an immutable audit archive.
+
+
+## Reconnect/stop propagation regressions
+
+Run the focused synthetic sequence suite, then the complete suite:
+
+```sh
+python3 -B -m unittest discover -s tests -p 'test_reconnect_stop*.py' -v
+python3 -B -m unittest discover -s tests -v
+python3 -B scripts/check_release.py
+```
+
+`test_reconnect_stop.py` drives actual transport subprocesses, byte capture,
+EOF, terminal events and process-tree cleanup with a temporary Python CLI stub.
+It covers the narrow notice grammar, successful completion, real failure,
+missing completion/answer, stall/total timeout, expected post-turn cleanup,
+pre-start cancellation and natural nonzero exit before stop.
+
+`test_reconnect_stop_faults.py` injects read/log/decode/cleanup/archive faults,
+orders early/late stdin errors in both queue paths, and verifies stops observed
+after another shutdown cause. Barrier/queue/process-state checks establish the
+ordering; short waits are watchdogs, not evidence of completion. Decide and
+AutoBuild error returns retain their independent stop facts and error precedence.
+
+`test_reconnect_stop_controller.py` tests sequential and parallel controllers,
+real private Python-worker subprocesses, malformed/exit-mismatched returns,
+additive/legacy JSON validation, and thread-safe per-attempt path deduplication.
+Production -> FAIL review -> stopped correction explicitly tests the terminal
+capture pointer; no public summary is re-read as authority. Real errors plus
+stop remain failed, and no later task/phase is scheduled or marked DONE.
+
+All fixtures and events are synthetic. They use temporary workspaces and private
+state, no original user prompts/logs, credentials or model requests. Positive
+cases check complete capture and cleanup; intentional archive faults must remain
+visible. Keep the existing Windows/macOS/Linux and Python matrices, metadata and
+loopback-provider compatibility checks. These tests validate the controller,
+not a particular corporate network or live model/sandbox deployment.
