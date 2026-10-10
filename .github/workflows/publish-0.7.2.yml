@@ -1,0 +1,158 @@
+# One-time owner-requested publication. Kept off main and out of the runtime.
+name: Publish requested ARQUILO 0.7.2
+on:
+  push:
+    branches: [release/prepare-0.7.2]
+    paths: [.github/workflows/publish-0.7.2.yml]
+permissions:
+  contents: read
+concurrency:
+  group: publish-requested-arquilo-0.7.2
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/release/prepare-0.7.2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: 7b757e88dda6bb3c46963ff738a6151eec57a929
+      EXPECTED_TREE: 1eebccd919f8e45eb8c28f85500e3e41d22e616b
+      EXPECTED_ZIP: 6ef0804709d3fa0d0c6b89b4e73074d3ce6823b9ef9dd13484b820fa7d14c869
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 7b757e88dda6bb3c46963ff738a6151eec57a929
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Require the exact source and complete green final-main matrices
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, os, subprocess, time
+          from pathlib import Path
+          repo, sha = os.environ['GITHUB_REPOSITORY'], os.environ['SOURCE_SHA']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh','api',path], text=True))
+          assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == sha
+          assert subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip() == os.environ['EXPECTED_TREE']
+          assert Path('VERSION').read_text().strip() == '0.7.2'
+          if api(f'repos/{repo}/git/ref/heads/main')['object']['sha'] != sha:
+              raise SystemExit('Main moved; inspect release source before publishing')
+          required = {'.github/workflows/ci.yml':9, '.github/workflows/codex-compatibility.yml':6}
+          deadline = time.monotonic() + 480
+          while True:
+              runs = api(f'repos/{repo}/actions/runs?head_sha={sha}&event=push&per_page=30')['workflow_runs']
+              selected = {path:max((r for r in runs if r['path']==path and r['head_branch']=='main'), key=lambda r:r['id'], default=None) for path in required}
+              for path, run in selected.items():
+                  if run and run['status']=='completed' and run['conclusion']!='success':
+                      raise SystemExit(f'Required final-main check failed: {path}: {run["conclusion"]}')
+              if all(r and r['status']=='completed' and r['conclusion']=='success' for r in selected.values()):
+                  break
+              if time.monotonic() >= deadline:
+                  raise SystemExit('Final-main validation did not finish; no tag or release created')
+              time.sleep(10)
+          report = {}
+          for path, expected in required.items():
+              run = selected[path]
+              jobs = api(f'repos/{repo}/actions/runs/{run["id"]}/jobs?per_page=100')['jobs']
+              if len(jobs)!=expected or any(j['status']!='completed' or j['conclusion']!='success' for j in jobs):
+                  raise SystemExit(f'Incomplete or non-green matrix: {path}')
+              report[path] = {'run_id':run['id'],'sha':run['head_sha'],'conclusion':run['conclusion'],
+                              'jobs':[{ 'name':j['name'],'conclusion':j['conclusion']} for j in jobs]}
+          Path(os.environ['RUNNER_TEMP'],'final-main-checks.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
+          print(json.dumps(report,indent=2))
+      - name: Offline regression tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Validate and build licensed runtime
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Verify package and extract only 0.7.2 release notes
+        shell: python
+        run: |
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          archive = Path('dist/arquilo-0.7.2.zip')
+          checksum = Path('dist/arquilo-0.7.2.zip.sha256')
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          assert actual == os.environ['EXPECTED_ZIP']
+          assert checksum.read_text(encoding='utf-8') == actual + '  arquilo-0.7.2.zip\n'
+          with zipfile.ZipFile(archive) as z:
+              assert z.testzip() is None
+              manifest = json.loads(z.read('documents/lean_package.json'))
+              assert manifest['runtime_file_count'] == 83 == len(z.namelist()) == len(set(z.namelist()))
+              assert set(z.namelist()) == set(manifest['runtime_files'])
+              assert z.read('VERSION').strip() == b'0.7.2'
+          heading = '## 0.7.2 — 2026-10-10 (public preview)'
+          text = Path('CHANGELOG.md').read_text(encoding='utf-8')
+          assert text.count(heading)==1
+          notes = heading + text.split(heading,1)[1].split('\n## ',1)[0]
+          notes += '\n\nSource commit: `' + os.environ['SOURCE_SHA'] + '`.\nRuntime ZIP SHA-256: `' + actual + '`.\n'
+          Path(os.environ['RUNNER_TEMP'],'release-notes.md').write_text(notes,encoding='utf-8')
+      - name: Create exact tag without moving existing refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, os, subprocess
+          repo, sha = os.environ['GITHUB_REPOSITORY'], os.environ['SOURCE_SHA']
+          current = json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/git/ref/heads/main'],text=True))
+          if current['object']['sha'] != sha:
+              raise SystemExit('Main moved during validation; no publication')
+          release = subprocess.run(['gh','api',f'repos/{repo}/releases/tags/v0.7.2'],capture_output=True,text=True)
+          if release.returncode==0:
+              raise SystemExit('Release v0.7.2 exists; refusing to overwrite it')
+          if 'HTTP 404' not in release.stderr:
+              raise SystemExit(release.stderr)
+          tag = subprocess.run(['gh','api',f'repos/{repo}/git/ref/tags/v0.7.2'],capture_output=True,text=True)
+          if tag.returncode==0:
+              obj=json.loads(tag.stdout)['object']
+              if obj['type']!='commit' or obj['sha']!=sha:
+                  raise SystemExit('Existing v0.7.2 tag points elsewhere; refusing to move it')
+          elif 'HTTP 404' in tag.stderr:
+              subprocess.run(['gh','api','--method','POST',f'repos/{repo}/git/refs',
+                              '-f','ref=refs/tags/v0.7.2','-f',f'sha={sha}'],check=True)
+          else:
+              raise SystemExit(tag.stderr)
+      - name: Upload draft assets, verify download, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          repo, sha = os.environ['GITHUB_REPOSITORY'], os.environ['SOURCE_SHA']
+          subprocess.run(['gh','release','create','v0.7.2','dist/arquilo-0.7.2.zip','dist/arquilo-0.7.2.zip.sha256',
+                          '--repo',repo,'--verify-tag','--target',sha,'--draft','--prerelease',
+                          '--title','ARQUILO 0.7.2 — public preview',
+                          '--notes-file',str(Path(os.environ['RUNNER_TEMP'],'release-notes.md'))],check=True)
+          download = Path(os.environ['RUNNER_TEMP'],'roundtrip')
+          subprocess.run(['gh','release','download','v0.7.2','--repo',repo,'--dir',str(download)],check=True)
+          expected = {'arquilo-0.7.2.zip','arquilo-0.7.2.zip.sha256'}
+          assert {p.name for p in download.iterdir()} == expected
+          for name in expected:
+              assert (download/name).read_bytes() == (Path('dist')/name).read_bytes()
+          subprocess.run(['gh','release','edit','v0.7.2','--repo',repo,'--draft=false','--prerelease','--latest=false'],check=True)
+          release = json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/tags/v0.7.2'],text=True))
+          assert release['draft'] is False and release['prerelease'] is True
+          assert {a['name'] for a in release['assets']} == expected
+          report = {'source_sha':sha,'tag':'v0.7.2','release_id':release['id'],'url':release['html_url'],
+                    'draft':release['draft'],'prerelease':release['prerelease'],
+                    'runtime_zip_sha256':os.environ['EXPECTED_ZIP'],'runtime_files':83,
+                    'download_roundtrip':'byte-identical',
+                    'final_main_checks':json.loads(Path(os.environ['RUNNER_TEMP'],'final-main-checks.json').read_text())}
+          Path('dist/publication.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(report,indent=2))
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arquilo-0.7.2-published
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
