@@ -46,7 +46,7 @@ from codex_transport import (
     CodexExecutionError,
     _terminate_process_group,
 )
-from runtime_failure import execution_error, failure_exit_code, EXIT_INCOMPLETE
+from runtime_failure import execution_error, failure_exit_code, EXIT_INCOMPLETE, stop_reason
 from autobuild_contract import (AutoBuildOptions, AutoBuildContext, call_payload, decode_call,
                                 core_status, validate_result, strict_object, AutoBuildResultError)
 from decision_request import (
@@ -252,22 +252,30 @@ class AutoBuildSummary:
     review_required: bool = True
     call_budget: Optional[Dict[str, Any]] = None
     budget_exhausted: Optional[Dict[str, Any]] = None
+    terminal_attempt: Optional[Dict[str, Any]] = None
+    decision_history: List[RunResult] = field(default_factory=list)
 
 
 def run_result_error(result: RunResult, phase: str) -> Optional[Dict[str, Any]]:
     """Also honour error signals from custom runners / test doubles."""
-    if isinstance(result.execution_error, dict):
-        paths = ({"capture_directory": str(result.capture_dir),
-                  "stderr_file": str(result.capture_dir / "stderr.bin")}
-                 if result.capture_dir is not None else {})
-        return {**result.execution_error, "phase": phase, **paths}
-    if result.turn_failed or result.stream_errors:
-        return execution_error(
-            json.dumps(result.turn_failed or result.stream_errors, ensure_ascii=False),
-            code="codex_turn_failed", phase=phase,
-            process_exit_code=result.process_exit_code,
-        )
-    return None
+    error = codex_transport.fatal_run_error(result, phase=phase)
+    if error is None:
+        return None
+    paths = ({"capture_directory": str(result.capture_dir),
+              "stderr_file": str(result.capture_dir / "stderr.bin")}
+             if result.capture_dir is not None else {})
+    return {**error, "phase": phase, **paths}
+
+
+def attempt_document(run: RunResult, phase: str, index: int) -> dict:
+    return {"phase": phase, "index": index, "turn_completed": run.turn_completed,
+        "turn_failed": run.turn_failed, "process_exit_code": run.process_exit_code,
+        "execution_error": run.execution_error, "post_turn_cleanup": run.post_turn_cleanup,
+        "capture_directory": str(run.capture_dir) if run.capture_dir is not None else None,
+        "stderr_file": str(run.capture_dir / "stderr.bin") if run.capture_dir is not None else None,
+        "stream_diagnostics": list(run.stream_diagnostics),
+        "process_stop_triggered": run.process_stop_triggered,
+        "process_stop_details": stop_reason(run.process_stop_details) if run.process_stop_triggered else None}
 
 
 def summary_exit_code(summary: AutoBuildSummary) -> int:
@@ -577,18 +585,17 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
     payload["budget_exhausted"] = summary.budget_exhausted
     if summary.execution_error or summary.process_stop_triggered:
         payload["completed"] = False
-    payload["execution_attempts"] = [
-        {"phase": phase, "index": index, "turn_completed": run.turn_completed,
-         "turn_failed": run.turn_failed, "process_exit_code": run.process_exit_code,
-         "execution_error": run.execution_error, "post_turn_cleanup": run.post_turn_cleanup,
-         "capture_directory": str(run.capture_dir) if run.capture_dir is not None else None,
-         "stderr_file": str(run.capture_dir / "stderr.bin") if run.capture_dir is not None else None}
-        for phase, history in (("task", summary.run_history), ("review", summary.review_history))
-        for index, run in enumerate(history, start=1)
-    ]
+    # Retain the historical grouped order; terminal_attempt explicitly names
+    # the last executed call, which may be a fix *before* an older review here.
+    payload["execution_attempts"] = [attempt_document(run, phase, index)
+        for phase, history in (("task", summary.run_history), ("review", summary.review_history),
+                               ("decide", summary.decision_history))
+        for index, run in enumerate(history, start=1)]
+    payload["terminal_attempt"] = summary.terminal_attempt
     payload["readonly_result_path"] = readonly_path
     payload["process_stop_triggered"] = bool(summary.process_stop_triggered)
-    payload["process_stop_details"] = summary.process_stop_details
+    payload["process_stop_details"] = (stop_reason(summary.process_stop_details)
+                                       if summary.process_stop_triggered else None)
     payload["review_findings"] = summary.review_findings
     payload["review_contract_version"] = AUTOBUILD_REVIEW_CONTRACT_VERSION
     payload["final_failure_contract_version"] = AUTOBUILD_FINAL_FAILURE_CONTRACT_VERSION
@@ -1063,6 +1070,17 @@ def start(
     latest_review_findings: Optional[str] = None
     latest_review_classification: Optional[Dict[str, Any]] = None
     review_contract_text: Optional[str] = None
+    terminal_attempt: Optional[dict] = None
+    decision_history: List[RunResult] = []
+
+    def record_run(run: RunResult, phase: str, index: int) -> None:
+        nonlocal process_stop_triggered, process_stop_details, terminal_attempt
+        terminal_attempt = {"phase": phase, "index": index,
+                            "capture_directory": str(run.capture_dir) if run.capture_dir is not None else None}
+        if run.process_stop_triggered:
+            if not process_stop_triggered:
+                process_stop_details = stop_reason(run.process_stop_details)
+            process_stop_triggered = True
     review_contract_path = pretty_log.parent / f"review_contract_{uuid4().hex}.json"
 
     def _record_decision_payload(decision: DecisionResult) -> None:
@@ -1137,6 +1155,7 @@ def start(
             break
         auftrag_runs += 1
         auftrag_history.append(result)
+        record_run(result, "task", len(auftrag_history))
         runtime_error = run_result_error(result, stage_name)
         if runtime_error:
             last_answer = runtime_error["message"]
@@ -1145,8 +1164,6 @@ def start(
         last_answer = result.end_answer
 
         if result.process_stop_triggered:
-            process_stop_triggered = True
-            process_stop_details = result.process_stop_details
             note = (
                 result.process_stop_details
                 or "process_stop-Datei signalisiert manuellen Eingriff."
@@ -1197,13 +1214,12 @@ def start(
             break
         review_runs += 1
         review_history.append(review_result)
+        record_run(review_result, "review", len(review_history))
         runtime_error = run_result_error(review_result, "review")
         if runtime_error:
             completed = False
             break
         if review_result.process_stop_triggered:
-            process_stop_triggered = True
-            process_stop_details = review_result.process_stop_details
             note = (
                 review_result.process_stop_details
                 or "process_stop-Datei signalisiert manuellen Eingriff während der Review."
@@ -1259,19 +1275,28 @@ def start(
             completed = False
             call = exc.call
             execution = call.result.execution if call is not None else None
+            trace = call.attempt.result.trace if call is not None and call.attempt is not None else None
+            if trace is not None:
+                decision_history.append(trace)
+                record_run(trace, "decide", len(decision_history))
+                runtime_error = run_result_error(trace, "decide")
             decision_payload = {
                 "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                 "selected_option": None, "explanation": None, "source": "codex_exec",
                 "fallback_used": False, "error": str(exc), "error_code": exc.code,
                 "archive": _decision_archive_payload(call) if call is not None else None,
             }
-            if exc.code == "call_budget_exhausted":
+            if runtime_error is not None:
+                pass  # Preserve the genuine failure as well as any observed stop.
+            elif exc.code == "call_budget_exhausted":
                 budget_exhausted = {**call_budget.snapshot(),
                     "blocked_task_id": todo_identifier or "standalone", "blocked_phase": budget_phase("decide")}
             elif exc.code == "decision_cancelled" and (
                     execution is None or execution.status is ExecutionStatus.CANCELLED):
+                if not process_stop_triggered:
+                    process_stop_details = stop_reason(
+                        execution.cancellation_reason if execution is not None else None)
                 process_stop_triggered = True
-                process_stop_details = str(exc)
             else:
                 runtime_error = execution_error(str(exc), code=exc.code, phase="decide",
                     process_exit_code=execution.process_exit_code if execution is not None else None)
@@ -1351,6 +1376,8 @@ def start(
         readonly_result_path=readonly_result_path,
         run_history=auftrag_history,
         review_history=review_history,
+        terminal_attempt=terminal_attempt,
+        decision_history=decision_history,
     )
     if runtime_error is not None and not runtime_error.get("stderr_file"):
         trace = None
@@ -1369,9 +1396,6 @@ def start(
     summary_obj.call_budget = call_budget.snapshot()
     summary_obj.budget_exhausted = budget_exhausted
     summary_obj.review_required = True
-    if runtime_error is not None:
-        summary_obj.completed = False
-        append(pretty_log, f"[{ts()}] [execution_error] {json.dumps(runtime_error, ensure_ascii=False)}\n")
     summary_obj.process_stop_triggered = process_stop_triggered
     summary_obj.process_stop_details = process_stop_details
     summary_obj.model = model
@@ -1380,13 +1404,34 @@ def start(
     summary_obj.review_findings = latest_review_findings
     summary_obj.review_classification = latest_review_classification
 
+    def note_archive_failure(exc: Exception) -> None:
+        summary_obj.completed = False
+        if summary_obj.execution_error is None:
+            summary_obj.execution_error = execution_error(
+                f"Cannot archive AutoBuild result: {exc}", code="autobuild_archive_failed", phase="archive")
+        else:
+            summary_obj.execution_error = dict(summary_obj.execution_error)
+        summary_obj.execution_error.setdefault("archive_errors", []).append(
+            {"type": type(exc).__name__, "message": str(exc)})
+
+    if runtime_error is not None:
+        summary_obj.completed = False
+        try:
+            append(pretty_log, f"[{ts()}] [execution_error] {json.dumps(runtime_error, ensure_ascii=False)}\n")
+        except (OSError, UnicodeError) as exc:
+            note_archive_failure(exc)
     if summary_json_path is not None:
-        written_path = write_summary_json(summary_obj, summary_json_path)
-        summary_obj.summary_json_path = written_path
-        append(
-            pretty_log,
-            f"[{ts()}] [info] summary.json geschrieben: {written_path}\n",
-        )
+        # Log the target before writing the terminal snapshot, so a broken
+        # pretty log is reflected in that snapshot rather than losing the trace.
+        summary_obj.summary_json_path = summary_json_path
+        try:
+            append(pretty_log, f"[{ts()}] [info] summary.json: {summary_json_path}\n")
+        except (OSError, UnicodeError) as exc:
+            note_archive_failure(exc)
+        try:
+            write_summary_json(summary_obj, summary_json_path)
+        except (OSError, UnicodeError) as exc:
+            note_archive_failure(exc)
 
     return summary_obj
 

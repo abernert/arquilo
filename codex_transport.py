@@ -349,10 +349,73 @@ class RunResult:
     capture_dir: Optional[Path] = None
     capture: Dict[str, Any] = field(default_factory=dict)
     cleanup_reason: Optional[str] = None
+    stream_diagnostics: List[Dict[str, Any]] = field(default_factory=list)
+    _stdout_event_count: int = field(default=0, repr=False)
 
     @property
     def end_answer(self) -> str:
         return self.assistant_messages[-1].strip() if self.assistant_messages else ""
+
+
+_RECONNECT = re.compile(
+    r"Reconnecting\.\.\. ([1-9][0-9]*)/([1-9][0-9]*) "
+    r"\(stream disconnected before completion: "
+    r"websocket closed by server before response\.completed\)"
+)
+
+
+def is_transient_reconnect(event: Any, *, terminal_seen: bool) -> bool:
+    """Only the verified pre-terminal WebSocket notice, never a generic error."""
+    if terminal_seen or not isinstance(event, dict) or set(event) != {"type", "message"}:
+        return False
+    if event["type"] != "error" or not isinstance(event["message"], str):
+        return False
+    match = _RECONNECT.fullmatch(event["message"].strip())
+    if match is None:
+        return False
+    try:
+        attempt, limit = map(int, match.groups())
+    except ValueError:
+        return False
+    return 1 <= attempt <= limit
+
+
+def observe_stop(trace: RunResult, details: object) -> None:
+    """Stop is an independent fact. Keep the first observed reason."""
+    from runtime_failure import stop_reason
+    if not trace.process_stop_triggered:
+        trace.process_stop_details = stop_reason(details)
+    trace.process_stop_triggered = True
+    trace.process_stop_details = stop_reason(trace.process_stop_details)
+
+
+def fatal_run_error(trace: RunResult, *, phase: str = "execution") -> Optional[Dict[str, Any]]:
+    """One precedence rule for the collector and legacy/custom AutoBuild runners."""
+    if isinstance(trace.execution_error, dict):
+        return trace.execution_error
+    violations = [e for e in trace.stream_errors
+                  if isinstance(e, dict) and e.get("type") == "decision_policy_violation"]
+    if violations:
+        detail, code = violations, "codex_decision_policy_violation"
+    elif trace.turn_failed is not None:
+        detail, code = trace.turn_failed, "codex_turn_failed"
+    elif trace.stream_errors:
+        detail, code = trace.stream_errors, "codex_stream_error"
+    else:
+        return None
+    return execution_error(json.dumps(detail, ensure_ascii=False), code=code,
+                           phase=phase, process_exit_code=trace.process_exit_code)
+
+
+def expected_stdin_abort(diagnostic: Dict[str, Any], *, shutdown_started: bool) -> bool:
+    """Only an actual pipe break caused by already initiated controller cleanup."""
+    return (shutdown_started and diagnostic.get("during_shutdown") is True
+            and diagnostic.get("type") == "stdin_write_error"
+            and diagnostic.get("source") == "stdin"
+            and (diagnostic.get("exception_type") == "BrokenPipeError"
+                 or (diagnostic.get("exception_type") == "OSError"
+                     and (diagnostic.get("errno") == 32
+                          or diagnostic.get("winerror") in (109, 232)))))
 
 
 class CodexExecutionError(RuntimeError):
@@ -378,6 +441,7 @@ def handle_event(
     on_log_error: Optional[Callable[[Path, Exception], None]] = None,
 ) -> None:
     timestamp = timestamp or ts
+    acc._stdout_event_count += 1
 
     def _log(path: Path, line: str) -> None:
         try:
@@ -392,9 +456,12 @@ def handle_event(
         _log(raw_log, json.dumps(ev, ensure_ascii=False) + "\n")
         return
     t = ev.get("type")
-    # Top-level error is fatal; item.type=error is explicitly non-fatal in
-    # the Codex SDK contract. Tool failures can be repaired inside the turn.
-    if t == "error":
+    reconnect = is_transient_reconnect(
+        ev, terminal_seen=acc.turn_completed or acc.turn_failed is not None)
+    if reconnect:
+        acc.stream_diagnostics.append({"kind": "codex_reconnect",
+            "event_index": acc._stdout_event_count, "event": dict(ev)})
+    elif t == "error":
         acc.stream_errors.append(dict(ev))
 
     def _console_write(line: str) -> None:
@@ -420,6 +487,11 @@ def handle_event(
 
     # Rohlog (JSONL)
     _append_raw(json.dumps(ev, ensure_ascii=False) + "\n")
+    if reconnect:
+        line = f"[{timestamp()}] [reconnect] {ev['message'].strip()}\n"
+        _append_pretty(line)
+        _console_write(line)
+        return
 
     if not isinstance(t, str):
         # Some metadata preamble events do not expose a `type`; log them for diagnostics and continue.
@@ -734,8 +806,7 @@ def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes) -> RunR
         sys.stdout.write(_inject_console_todo_prefix(header, console_todo_id))
     cancellation = _cancellation_reason(request)
     if cancellation:
-        acc.process_stop_triggered = True
-        acc.process_stop_details = cancellation
+        observe_stop(acc, cancellation)
         append(pretty_log, f"[{ts()}] [cancelled] {cancellation}\n")
         return acc
     try:
@@ -760,8 +831,7 @@ def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes) -> RunR
         acc.capture["process_tree"] = cleanup.metadata()
         acc.process_exit_code = cleanup.parent_exit_after
         if cleanup.interrupted:
-            acc.process_stop_triggered = True
-            acc.process_stop_details = "KeyboardInterrupt"
+            observe_stop(acc, "KeyboardInterrupt")
         if cleanup.errors and acc.execution_error is None:
             acc.execution_error = execution_error(
                 "; ".join(cleanup.errors), code="codex_cleanup_failed", process_exit_code=acc.process_exit_code)
@@ -784,7 +854,10 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
     def _io_error(kind: str, source: str, exc: Exception) -> None:
         stream_queue.put(("io_error", {"type": kind, "source": source,
                                       "message": f"{type(exc).__name__}: {exc}",
-                                      "during_shutdown": shutdown_requested.is_set()}))
+                                      "during_shutdown": shutdown_requested.is_set(),
+                                      "exception_type": type(exc).__name__,
+                                      "errno": getattr(exc, "errno", None),
+                                      "winerror": getattr(exc, "winerror", None)}))
 
     def _read_stream(source: str, stream: Any) -> None:
         stats = acc.capture[source]
@@ -904,6 +977,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
                 if violation is None and terminal_event is not None and ev.get("type") != "error":
                     violation = "Decision event after terminal event: " + str(ev.get("type"))
                 if violation:
+                    acc._stdout_event_count += 1
                     acc.stream_errors.append({"type": "decision_policy_violation", "message": violation})
                     log(raw_log, json.dumps(ev, ensure_ascii=False) + "\n")
                     log(pretty_log, f"[{ts()}] [decision_policy_violation] {violation}\n")
@@ -958,6 +1032,13 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
             return safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
         return request.cancel_requested() if request.cancel_requested is not None else None
 
+    def record_io_error(payload: Dict[str, Any]) -> None:
+        # The main queue and its final drain must apply exactly the same rule.
+        acc.capture["diagnostics"].append(payload)
+        if not expected_stdin_abort(payload, shutdown_started=shutdown_requested.is_set()):
+            acc.stream_errors.append(payload)
+            terminate("stream_error")
+
     try:
         for thread in threads:
             thread.start()
@@ -973,13 +1054,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
             if channel in decoders:
                 decode(channel, payload)
             elif channel == "io_error":
-                acc.capture["diagnostics"].append(payload)
-                expected_write_abort = payload["type"] == "stdin_write_error" and (
-                    (payload["during_shutdown"] and (acc.process_stop_triggered or forced_for_timeout or forced_for_stall))
-                )
-                if not expected_write_abort:
-                    acc.stream_errors.append(payload)
-                    terminate("stream_error")
+                record_io_error(payload)
             elif channel == "stdin_done":
                 stdin_done = True
             elif channel == "stdout_eof":
@@ -994,11 +1069,13 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
                 cancellation = read_cancellation()
             except KeyboardInterrupt:
                 cancellation = "KeyboardInterrupt"
-            if cancellation and shutdown_at is None:
-                acc.process_stop_triggered = True
-                acc.process_stop_details = cancellation
-                log(pretty_log, f"[{ts()}] [cancelled] {cancellation}\n")
-                terminate("cancelled: " + cancellation)
+            if cancellation:
+                first_stop = not acc.process_stop_triggered
+                observe_stop(acc, cancellation)
+                if first_stop:
+                    log(pretty_log, f"[{ts()}] [cancelled] {acc.process_stop_details}\n")
+                if shutdown_at is None:
+                    terminate("cancelled: " + acc.process_stop_details)
             if broken_logs:
                 terminate("log_error")
             if request.decision_only and any(e.get("type") == "decision_policy_violation" for e in acc.stream_errors):
@@ -1043,8 +1120,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
                 break
 
     except KeyboardInterrupt:
-        acc.process_stop_triggered = True
-        acc.process_stop_details = "KeyboardInterrupt"
+        observe_stop(acc, "KeyboardInterrupt")
         terminate("cancelled: KeyboardInterrupt")
     except BaseException:
         terminate("collector_exception")
@@ -1077,8 +1153,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
             if stream is not None and not stream.closed:
                 finish_cleanup(stream.close, cleanup)
         if cleanup.interrupted:
-            acc.process_stop_triggered = True
-            acc.process_stop_details = "KeyboardInterrupt"
+            observe_stop(acc, "KeyboardInterrupt")
     rc = acc.process_exit_code
     if cleanup.errors:
         acc.stream_errors.append({"type": "process_tree_error", "source": cleanup.strategy,
@@ -1096,11 +1171,7 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
         elif channel in {"stdout_eof", "stderr_eof"}:
             decode(channel.removesuffix("_eof"), b"", final=True)
         elif channel == "io_error":
-            acc.capture["diagnostics"].append(payload)
-            if payload["type"] != "stdin_write_error" or not (
-                acc.process_stop_triggered or forced_for_timeout or forced_for_stall
-            ):
-                acc.stream_errors.append(payload)
+            record_io_error(payload)
 
     if not acc.process_stop_triggered and not (forced_for_timeout or forced_for_stall):
         if acc.capture["stdin"]["written_bytes"] != len(prompt_bytes) or not acc.capture["stdin"]["closed"]:
@@ -1129,49 +1200,41 @@ def _collect_process(request: CodexExecRequest, acc: RunResult, prompt_bytes: by
 
     log(pretty_log, f"[{ts()}] EXIT {rc}\n\n")
 
-    if not acc.process_stop_triggered or acc.turn_failed or acc.stream_errors:
-        error = None
-        if acc.turn_failed or acc.stream_errors:
-            error = execution_error(
-                json.dumps(acc.turn_failed or acc.stream_errors, ensure_ascii=False),
-                code=("codex_decision_policy_violation" if any(
-                    e.get("type") == "decision_policy_violation" for e in acc.stream_errors)
-                    else "codex_turn_failed" if acc.turn_failed else "codex_stream_error"),
-                process_exit_code=rc,
-            )
-        elif forced_for_timeout:
+    error = fatal_run_error(acc)
+    forced_exit = (cleanup.forced_parent_exit and cleanup.parent_exit_before is None
+                   and not cleanup.errors)
+    if error is None:
+        if forced_for_timeout:
             error = execution_error(
                 f"Codex exceeded the total timeout of {request.timeouts.total:g}s.",
-                code="codex_timeout", process_exit_code=rc,
-            )
+                code="codex_timeout", process_exit_code=rc)
         elif forced_for_stall:
             error = execution_error(
                 f"Codex stalled for {stall_timeout:g}s before successful turn completion. "
                 "Partial edits may exist; inspect them before retrying.",
-                code="codex_stalled", process_exit_code=rc,
-            )
+                code="codex_stalled", process_exit_code=rc)
+        elif acc.process_stop_triggered:
+            # A later sentinel cannot hide a naturally failed process. Only
+            # our evidenced kill (or natural exit 0) is expected on cancellation.
+            if rc != 0 and not forced_exit:
+                error = execution_error(
+                    f"Codex exited with code {rc}; not an expected controller termination.",
+                    code="codex_process_failed", process_exit_code=rc)
         elif not acc.turn_completed:
             error = execution_error(
                 f"Codex exited with code {rc} without turn.completed.",
-                code="codex_missing_completion", process_exit_code=rc,
-            )
-        elif rc != 0 and not (
-            forced_after_terminal and cleanup.forced_parent_exit and not cleanup.errors
-        ):
-            # Only a signal actually used by our post-turn cleanup is exempt;
-            # a natural non-zero exit after turn.completed remains an error.
+                code="codex_missing_completion", process_exit_code=rc)
+        elif rc != 0 and not (forced_after_terminal and forced_exit):
             error = execution_error(
                 f"Codex emitted turn.completed but exited with code {rc}.",
-                code="codex_process_failed", process_exit_code=rc,
-            )
+                code="codex_process_failed", process_exit_code=rc)
         elif not acc.end_answer:
             error = execution_error(
                 "Codex completed the turn without a final assistant message.",
-                code="codex_missing_answer", process_exit_code=rc,
-            )
-        if error is not None:
-            log(pretty_log, f"[{ts()}] [execution_error] {json.dumps(error, ensure_ascii=False)}\n")
-            raise CodexExecutionError(acc, error)
+                code="codex_missing_answer", process_exit_code=rc)
+    if error is not None:
+        log(pretty_log, f"[{ts()}] [execution_error] {json.dumps(error, ensure_ascii=False)}\n")
+        raise CodexExecutionError(acc, error)
     return acc
 
 
@@ -1191,8 +1254,7 @@ def execute(request: CodexExecRequest) -> TransportResult:
         prompt_bytes = _prepare_capture(request, trace)
         cancellation = _cancellation_reason(request)
         if cancellation:
-            trace.process_stop_triggered = True
-            trace.process_stop_details = cancellation
+            observe_stop(trace, cancellation)
         elif request.decision_only:
             compatibility = inspect_decision_cli(
                 launcher=request.launcher, cwd=request.cwd, env=request.env,
@@ -1202,8 +1264,7 @@ def execute(request: CodexExecRequest) -> TransportResult:
             trace.capture["decision_cli_compatibility"] = compatibility
             trace.capture["configuration_policy"] = "inherit-trusted-host"
             if compatibility["interrupted"]:
-                trace.process_stop_triggered = True
-                trace.process_stop_details = "Decide CLI check cancelled"
+                observe_stop(trace, _cancellation_reason(request) or "Decide CLI check cancelled")
             elif compatibility["status"] != "PASS":
                 raise CodexExecutionError(trace, execution_error(
                     compatibility["detail"] + " No model call was started.",
@@ -1227,8 +1288,7 @@ def execute(request: CodexExecRequest) -> TransportResult:
             process_exit_code=trace.process_exit_code,
         )
     except KeyboardInterrupt:
-        trace.process_stop_triggered = True
-        trace.process_stop_details = "KeyboardInterrupt"
+        observe_stop(trace, "KeyboardInterrupt")
 
     if trace.execution_error is not None:
         trace.execution_error = {**trace.execution_error, "phase": request.phase}
@@ -1263,13 +1323,15 @@ def execute(request: CodexExecRequest) -> TransportResult:
                 "process_exit_code": trace.process_exit_code, "completion_seen": trace.turn_completed,
                 "post_turn_cleanup": trace.post_turn_cleanup, "cleanup_reason": trace.cleanup_reason,
                 "cancellation_reason": trace.process_stop_details,
+                "process_stop_triggered": trace.process_stop_triggered,
+                "stream_diagnostics": trace.stream_diagnostics,
                 "status": "failed" if trace.execution_error else "cancelled" if trace.process_stop_triggered else "succeeded",
                 "error": trace.execution_error, "stream_errors": trace.stream_errors,
             })
             try:
                 atomic_write_text(trace.capture_dir / "capture.json",
                                   json.dumps(capture, ensure_ascii=True, indent=2) + "\n")
-            except OSError as exc:
+            except (OSError, UnicodeError) as exc:
                 archive_error(exc)
                 capture["status"] = "failed"
                 capture["error"] = trace.execution_error

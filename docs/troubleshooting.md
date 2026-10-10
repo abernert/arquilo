@@ -21,7 +21,7 @@ Do not use a world-writable shared directory for sensitive workloads.
 ## A diagnostic `error` item aborts Decide
 
 The runtime distinguishes a nonfatal item notification from a top-level fatal
-error. The public code includes the fix allowing diagnostic items without enabling the historical unstable host-skill-discovery setting.
+error (apart from the narrow provisional reconnect notice described below). The public code includes the fix allowing diagnostic items without enabling the historical unstable host-skill-discovery setting.
 Unknown items and tool execution events remain rejected for Decide.
 
 ## The file was created, but the review stopped
@@ -134,6 +134,53 @@ Review and redact this output before sharing. Pretty/JSONL views may redact
 prompt fragments; the captured `stdout.bin`, `stderr.bin` and `prompt.utf8` are
 sensitive raw evidence, not safe public attachments. Never upload a complete
 `.codex_runs` directory or any Codex `auth.json`.
+
+## Reconnect notices, stops and genuine failures
+
+A pre-terminal top-level event with **exactly** `type="error"` and a string
+`message` matching the following text is a provisional diagnostic, not a fatal
+result on its own:
+
+```text
+Reconnecting... <k>/<n> (stream disconnected before completion: websocket closed by server before response.completed)
+```
+
+Only positive ASCII integers with `1 <= k <= n` are recognized; outer whitespace
+is ignored for classification but retained in raw evidence. Even `5/5` describes
+an attempt, not successful reconnection or definitive failure. Additional error
+fields, another message (including `error decoding response body`), and any such
+notice after `turn.completed` or `turn.failed` remain fatal.
+
+| End of this invocation | Result |
+| --- | --- |
+| Recognized notice, final answer, `turn.completed`, natural process exit 0 | Technical success; the normal independent review/acceptance still follows |
+| Recognized notice, observed stop, evidenced controller termination | Cancelled/6; no DONE and no automatic retry |
+| Terminal failure, I/O/archive/cleanup failure, timeout, or natural nonzero process exit | Failed/7, even when a stop was also observed |
+
+An invalid review keeps its existing exit 8. A raw subprocess exit, such as
+POSIX SIGTERM/-15, stays separate from the ARQUILO exit. Stop does not forgive
+an archive failure or a process that naturally failed before the sentinel.
+Only an actual stdin pipe break during already initiated controller shutdown
+is treated as an expected abort; its diagnostic remains in the capture.
+
+Inspect `stream_diagnostics` in the capture and returned `execution_attempts`.
+These retain original notices with `event_index`, not a claim of recovery. A
+capture uses `cancellation_reason`; summaries, task logs and both run-log filenames
+use `process_stop_details` plus `process_stop_triggered`. A missing legacy reason
+is explicitly labeled unavailable, never replaced with a technical error message.
+For a pure stop, historical task/run statuses remain `incomplete`/`stopped` and
+additive `termination_status` is `cancelled`. A failure with stop retains failed
+status and both the real error and stop reason.
+
+The returned `terminal_attempt` identifies the actual terminal captured invocation
+by phase, index and capture directory. Do **not** take the last array element of
+`execution_attempts`: a stopped correction can precede an older review in that
+historically grouped array. The console prints the exact capture/stderr and
+other diagnostic paths once per attempt; a different attempt is shown again.
+Original archives are not rewritten. No task is retrospectively accepted.
+
+Write a required handoff/report before creating `process_stop`: once the marker
+is observed, the remaining commands in that process may be terminated.
 
 ## Resuming after `process_stop`
 

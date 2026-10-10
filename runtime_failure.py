@@ -47,3 +47,10 @@ def failure_exit_code(error: Any, default: int = EXIT_EXECUTION_ERROR) -> int:
         if type(value) is int and value in (int(ExitCode.INVALID_CONFIGURATION), int(ExitCode.RUNNER_ERROR), EXIT_EXECUTION_ERROR, EXIT_INVALID_REVIEW):
             return value
     return default
+
+
+def stop_reason(details: object) -> str:
+    """Normalize an observed stop without inventing a cause for legacy results."""
+    return details.strip() if isinstance(details, str) and details.strip() else (
+        "Stop details unavailable (legacy result)."
+    )

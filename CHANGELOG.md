@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- On macOS, reap a leader killed by this controller before checking an EPERM
+  from a follow-up group signal. Ignore that race only when a new whole-group
+  probe proves ESRCH; live/inaccessible groups and actual permission failures
+  remain fatal. Never send a redundant SIGKILL after confirmed group absence.
+
+- Classify only the documented pre-terminal WebSocket reconnect notice as a
+  provisional diagnostic. Preserve its original event and ordinal; keep unknown
+  errors, terminal failures, missing completion/answer and timeouts fatal.
+- Preserve an observed stop and its first reason independently of execution
+  failures, through collection/draining, AutoBuild and private Python workers.
+  A clean controller stop is cancelled/6; a genuine failure plus a stop remains
+  failed/7 with both facts retained. Natural nonzero exits are not excused by a
+  later sentinel; only evidenced controller termination is expected.
+- Add validated stop/diagnostic metadata and explicit terminal-attempt identity
+  without changing existing schemas or positional arguments. Report the actual
+  stopped fix/Decide capture rather than guessing from the grouped attempt list.
+  Print each diagnostic path only once per attempt, including clean stops.
+- Add offline synthetic subprocess, I/O-fault, controller and worker regressions.
+  No original application logs or prompts are included. Do not replay tasks,
+  reset budgets, change DONE/review rules or rewrite historical archives. This
+  repairs local classification and reporting, not the network itself; other
+  reconnect message formats still require their own compatibility evidence.
+
 ## 0.7.1 — 2026-10-07 (public preview; hardening)
 
 ### Controller and publication hardening

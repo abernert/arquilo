@@ -44,11 +44,20 @@ current runtime call sites pass `contract_text` explicitly.
 
 ## Nonfatal messages and tool policy
 
-A Codex `item.type=error` notification is distinct from a top-level `error` or
-`turn.failed` event. The Decide event policy permits the former as a diagnostic,
-while retaining its closed list against tool executions and unknown items.
-Passing a diagnostic notification is not a successful decision: normal response,
-completion and archive validation still apply.
+A Codex `item.type=error` notification is distinct from a fatal top-level
+`error` or `turn.failed` event. One narrowly recognized pre-terminal WebSocket
+reconnect notice is retained separately as `stream_diagnostics`, with its original
+event and 1-based parsed stdout event index. Other top-level errors remain fatal.
+The Decide event policy retains its closed list against tool execution and unknown
+items. Diagnostics alone never establish successful completion: normal response,
+completion, process and archive validation still apply.
+
+A stop is an independent observation, not a substitute for a genuine failure.
+The first observed reason survives through failed as well as cancelled outcomes.
+AutoBuild returns an explicit `terminal_attempt` reference because its historical
+`execution_attempts` array groups production/fix attempts before reviews and is
+not chronological. The controller uses only the validated in-process/private
+worker return for this identity, not the public workspace summary.
 
 ## Boundaries
 

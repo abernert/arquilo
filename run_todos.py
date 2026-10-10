@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from types import SimpleNamespace
+from runtime_failure import stop_reason
 from autobuild_contract import (AutoBuildOptions, AutoBuildContext, call_payload,
                                 validate_result, strict_object)
 
@@ -676,8 +677,12 @@ class TaskOutcome:
     execution_error: Optional[Dict[str, Any]] = None
     call_budget: Optional[Dict[str, Any]] = None
     budget_exhausted: Optional[Dict[str, Any]] = None
+    process_stop_details: Optional[str] = None
+    capture_directory: Optional[Path] = None
 
     def __post_init__(self) -> None:
+        if self.process_stop_triggered:
+            self.process_stop_details = stop_reason(self.process_stop_details)
         if self.abort or self.process_stop_triggered or self.execution_error or self.budget_exhausted:
             self.completed = False
 
@@ -802,6 +807,7 @@ class TodoRunner:
         self.reviewed_this_run: Set[str] = set()
         self.project_logs = None
         self.log_lock = threading.RLock()
+        self._shown_diagnostic_paths: set[tuple] = set()
         self.network_access = network_access
         self.run_started_at = datetime.now(UTC)
         self.todo_syntax = normalize_syntax(todo_syntax)
@@ -1183,6 +1189,7 @@ class TodoRunner:
             completed=False,
             message=stop_text.strip(),
             process_stop_triggered=True,
+            process_stop_details=stop_text.strip(),
             abort=True,
             review_classification=normalized,
         )
@@ -1250,6 +1257,7 @@ class TodoRunner:
                     break
                 print(f"[run] ToDo {todo.identifier} – {todo.title}")
                 outcome = self._handle_todo(todo)
+                self._observe_outcome_stop(outcome)
                 self.attempted.add(todo.identifier)
                 if outcome.completed:
                     self.completed.add(todo.identifier)
@@ -1267,17 +1275,13 @@ class TodoRunner:
                     break
                 if outcome.process_stop_triggered:
                     details = (
-                        outcome.message.strip()
-                        or self._read_process_stop_details()
-                        or "process_stop ausgelöst."
+                        stop_reason(outcome.process_stop_details)
                     )
                     process_stop_display = self._path_for_prompt(self.process_stop_path)
                     print(
                         f"[fatal] process_stop erkannt ({process_stop_display}) – Lauf endet. {details}"
                     )
-                    self.process_stop_detected = True
-                    self.process_stop_details = details
-                    self.stop_triggered = True
+                    self._observe_outcome_stop(outcome)
                     self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
                     self.failed.add(todo.identifier)
                     self.incomplete.discard(todo.identifier)
@@ -1415,6 +1419,7 @@ class TodoRunner:
         return outcome
 
     def _record_task_io(self, outcome: TaskOutcome, *, log_record: TaskLogRecord) -> None:
+        self._observe_outcome_stop(outcome)
         if self.dry_run:
             return
         paths = list(log_record.input_sources)
@@ -1435,6 +1440,13 @@ class TodoRunner:
             "status": "failed" if outcome.execution_error else "completed" if outcome.completed else "incomplete",
             "message": outcome.message, "execution_error": outcome.execution_error,
             "process_stop_triggered": outcome.process_stop_triggered,
+            "process_stop_details": outcome.process_stop_details,
+            "capture_directory": str(outcome.capture_directory) if outcome.capture_directory is not None else None,
+            "termination_status": ("failed" if outcome.execution_error else "cancelled" if outcome.process_stop_triggered
+                                   else "completed" if outcome.completed else "incomplete"),
+            "exit_code": (failure_exit_code(outcome.execution_error) if outcome.execution_error else
+                          RUN_TODOS_EXIT_PROCESS_STOP if outcome.process_stop_triggered else
+                          0 if outcome.completed else EXIT_INCOMPLETE),
             "call_budget": outcome.call_budget, "budget_exhausted": outcome.budget_exhausted,
             "inputs": log_record.inputs, "outputs": log_record.outputs,
             "summaries": [str(p) for p in outcome.summary_json_attempts],
@@ -1477,6 +1489,10 @@ class TodoRunner:
             "started_at": self.run_started_at.isoformat(),
             "finished_at": None if run_status in {"preparing", "running"} else datetime.now(UTC).isoformat(),
             "status": run_status, "exit_code": self.exit_code,
+            "termination_status": ("failed" if self.terminal_execution_error else
+                                   "cancelled" if self.process_stop_detected and run_status == "stopped" else run_status),
+            "process_stop_triggered": self.process_stop_detected,
+            "process_stop_details": self.process_stop_details,
             "completed": sorted(self.completed), "incomplete": sorted(self.incomplete),
             "failed": sorted(self.failed), "execution_error": self.terminal_execution_error,
             "tasks": [str(r.log_dir / "task_log.json") for r in self.task_log_records.values()],
@@ -1493,9 +1509,21 @@ class TodoRunner:
         with self.log_lock, safe_io.open_file(self.run_dir / "overview.log", "a") as stream:
             stream.write(f"{_format_timestamp()} {message}\n")
 
+    def _observe_outcome_stop(self, outcome: TaskOutcome) -> None:
+        """Preserve the stop fact on every return path; do not choose an exit code."""
+        if outcome.process_stop_triggered:
+            outcome.process_stop_details = stop_reason(outcome.process_stop_details)
+            outcome.completed = False
+            if not getattr(self, "process_stop_detected", False):
+                self.process_stop_details = outcome.process_stop_details
+            self.process_stop_detected = self.stop_triggered = True
+
     def _show_failure_logs(self, outcome: TaskOutcome) -> None:
         paths = {}
         error = outcome.execution_error or {}
+        if outcome.capture_directory is not None:
+            paths.update(capture_directory=str(outcome.capture_directory),
+                         stderr_file=str(outcome.capture_directory / "stderr.bin"))
         for name in ("capture_directory", "stderr_file", "decision_archive"):
             if isinstance(error.get(name), str):
                 paths[name] = error[name]
@@ -1503,10 +1531,18 @@ class TodoRunner:
             paths["pretty_log"] = str(outcome.pretty_log)
         if outcome.raw_log:
             paths["raw_log"] = str(outcome.raw_log)
-        for name, path in paths.items():
-            print(f"[diagnose] {name}: {path}")
-        if paths:
-            self._overview("Failure logs: " + json.dumps(paths, ensure_ascii=False))
+        identity = (outcome.task_log_id, str(outcome.log_dir), outcome.session_stamp,
+                    outcome.attempt, paths.get("capture_directory"))
+        with self.log_lock:
+            fresh = {}
+            for name, path in paths.items():
+                key = (*identity, name, path)
+                if key not in self._shown_diagnostic_paths:
+                    print(f"[diagnose] {name}: {path}")
+                    self._shown_diagnostic_paths.add(key)
+                    fresh[name] = path
+            if fresh:
+                self._overview(("Failure logs: " if error else "Stop logs: ") + json.dumps(fresh, ensure_ascii=False))
 
 
     def _prepare_workspace_documents(self) -> None:
@@ -2290,6 +2326,7 @@ class TodoRunner:
         stop_requested = False
         for todo in batch:
             outcome, context, primary_result_file = outcomes[todo.identifier]
+            self._observe_outcome_stop(outcome)
             if outcome.abort or outcome.process_stop_triggered or outcome.execution_error:
                 outcome.completed = False
             self._sync_context_back_to_primary_workspace(
@@ -2337,17 +2374,13 @@ class TodoRunner:
                         task_outcome=outcome,
                     )
                 details = (
-                    outcome.message.strip()
-                    or self._read_process_stop_details()
-                    or "process_stop ausgelöst."
+                    stop_reason(outcome.process_stop_details)
                 )
                 process_stop_display = self._path_for_prompt(self.process_stop_path)
                 print(
                     f"[fatal] process_stop erkannt ({process_stop_display}) – Lauf endet. {details}"
                 )
-                self.process_stop_detected = True
-                self.process_stop_details = details
-                self.stop_triggered = True
+                self._observe_outcome_stop(outcome)
                 self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
                 self.failed.add(todo.identifier)
                 self.incomplete.discard(todo.identifier)
@@ -2369,6 +2402,7 @@ class TodoRunner:
         return stop_requested
 
     def _stop_for_execution_error(self, todo_id: str, outcome: TaskOutcome) -> TaskOutcome:
+        self._observe_outcome_stop(outcome)
         error = outcome.execution_error
         if not isinstance(error, dict):
             return outcome
@@ -2991,6 +3025,7 @@ class TodoRunner:
             worker_streams[name] = raw.decode("utf-8", errors="replace")
         error_code = "invalid_autobuild_summary"
         payload = {}
+        validated_payload = None
         try:
             returned_bytes = safe_io.read_bytes(authoritative_summary)
             # Publish the byte-identical result for metarunners, but only parse
@@ -2998,14 +3033,27 @@ class TodoRunner:
             safe_io.write_bytes(summary_path, returned_bytes)
             payload = json.loads(returned_bytes.decode("utf-8"), object_pairs_hook=strict_object)
             validate_result(payload)
+            validated_payload = dict(payload)
             error_code = "autobuild_exit_mismatch"
             validate_result(payload, process_exit_code=process.returncode)
         except (OSError, ValueError) as exc:
             error = execution_error(f"AutoBuild worker: {exc}", code=error_code,
                                     phase="autobuild", process_exit_code=process.returncode)
-            payload = dict(payload) if isinstance(payload, dict) else {}
+            # Never adopt stop metadata or capture pointers from a malformed payload.
+            # Its original bytes stay in the diagnostic copy. A validated return
+            # with a mismatched process exit, however, still contains observed facts.
+            payload = validated_payload if validated_payload is not None else {}
+            observed = payload.get("process_stop_triggered", False)
+            details = payload.get("process_stop_details")
+            if not observed:
+                for candidate in (options.process_stop_path, self.process_stop_path):
+                    if candidate is not None and Path(candidate).exists():
+                        observed = True
+                        details = self._read_process_stop_details(Path(candidate))
+                        break
             payload.update(completed=False, execution_error=error, exit_code=7, status="failed",
-                           process_stop_triggered=False, review_required=True)
+                           process_stop_triggered=observed, process_stop_details=stop_reason(details) if observed else None,
+                           review_required=True)
             if not isinstance(payload.get("last_answer"), str):
                 payload["last_answer"] = worker_streams["stderr"].strip() or worker_streams["stdout"].strip()
             # Preserve the child file (including malformed/contradictory bytes).
@@ -3051,6 +3099,7 @@ class TodoRunner:
         active_file = kwargs.get("todo_file_override") or self.todo_file
         before = read_utf8(active_file)
         outcome = self._run_autobuild_impl(identifier, task_text, **kwargs)
+        self._observe_outcome_stop(outcome)
         if self.dry_run:
             return outcome
         is_breakdown = identifier == self._derive_todo_id_from_identifier(identifier) + "-breakdown"
@@ -3167,6 +3216,7 @@ class TodoRunner:
                 completed=False,
                 message=message,
                 process_stop_triggered=True,
+                process_stop_details=stop_reason(details),
             )
         todo_id, log_record, log_dir = self._prepare_task_log(
             identifier, session_stamp, active_workdir, active_todo_file,
@@ -3228,6 +3278,9 @@ class TodoRunner:
         last_attempt: Optional[int] = None
         summary_paths: List[Path] = []
         last_execution_error: Optional[Dict[str, Any]] = None
+        validated_summary = {}
+        capture_directory = None
+        summary = None
         # Historical max_retries now extends this single continuation loop;
         # it must never replay the original request after possible side effects.
         budget = self._call_budget_for(todo_id)
@@ -3259,13 +3312,15 @@ class TodoRunner:
                 else:
                     summary = autobuild_start(task=task_text, workdir=active_workdir,
                                               options=options, context=context)
-                validate_result(autobuild_summary_document(summary) if not use_cli_subprocess else vars(summary))
+                validated_summary = validate_result(
+                    autobuild_summary_document(summary) if not use_cli_subprocess else vars(summary))
             except ProcessStopActiveError as exc:
                 message = str(exc).strip() or "process_stop verhindert diesen Lauf."
                 outcome = TaskOutcome(
                     completed=False,
                     message=message,
                     process_stop_triggered=True,
+                    process_stop_details=message,
                     session_stamp=session_stamp,
                     attempt=attempt,
                     pretty_log=pretty_log,
@@ -3284,6 +3339,17 @@ class TodoRunner:
                 return outcome
             except (Exception, KeyboardInterrupt) as exc:
                 summary = autobuild_failure_summary(exc, workdir=active_workdir, options=options)
+                # An invalid return is not authority for its claimed stop. Only
+                # independently observed sentinels (or KeyboardInterrupt) count.
+                for candidate in (active_process_stop, self.process_stop_path):
+                    if candidate.exists():
+                        summary.process_stop_triggered = True
+                        summary.process_stop_details = stop_reason(self._read_process_stop_details(candidate))
+                        break
+                validated_summary = validate_result(autobuild_summary_document(summary))
+            terminal = validated_summary.get("terminal_attempt")
+            capture_directory = (Path(terminal["capture_directory"]) if terminal is not None
+                                 and terminal["capture_directory"] is not None else None)
             last_message = summary.last_answer.strip()
             last_pretty = pretty_log
             last_raw = raw_log
@@ -3303,6 +3369,9 @@ class TodoRunner:
                     completed=True,
                     message=last_message,
                     process_stop_triggered=bool(summary.process_stop_triggered),
+                    process_stop_details=(stop_reason(getattr(summary, "process_stop_details", None))
+                                          if summary.process_stop_triggered else None),
+                    capture_directory=capture_directory,
                     session_stamp=session_stamp,
                     attempt=attempt,
                     pretty_log=pretty_log,
@@ -3331,6 +3400,9 @@ class TodoRunner:
             process_stop_triggered=(
                 bool(summary.process_stop_triggered) if summary else False
             ),
+            process_stop_details=(stop_reason(getattr(summary, "process_stop_details", None))
+                                  if summary and summary.process_stop_triggered else None),
+            capture_directory=capture_directory,
             session_stamp=session_stamp,
             attempt=last_attempt,
             pretty_log=last_pretty,
@@ -4011,6 +4083,7 @@ class TodoRunner:
                     continue
 
             review = self._run_parent_review(parent, result_entry)
+            self._observe_outcome_stop(review.task_outcome)
             self.parent_review_attempts[parent] = (
                 self.parent_review_attempts.get(parent, 0) + 1
             )
@@ -4018,9 +4091,7 @@ class TodoRunner:
                 self._stop_for_execution_error(parent, review.task_outcome)
                 return
             if review.task_outcome.process_stop_triggered:
-                self.process_stop_detected = True
-                self.process_stop_details = review.task_outcome.message
-                self.stop_triggered = True
+                self._observe_outcome_stop(review.task_outcome)
                 self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
                 return
             if review.passed:
@@ -4132,8 +4203,7 @@ class TodoRunner:
                         self._stop_for_execution_error(parent, repair_outcome)
                         return
                     if repair_outcome.process_stop_triggered:
-                        self.process_stop_detected = self.stop_triggered = True
-                        self.process_stop_details = repair_outcome.message
+                        self._observe_outcome_stop(repair_outcome)
                         self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
                         return
                     self._write_final_failure_process_stop(
@@ -4188,8 +4258,7 @@ class TodoRunner:
                         self._stop_for_execution_error(parent, repair_outcome)
                         return
                     if repair_outcome.process_stop_triggered:
-                        self.process_stop_detected = self.stop_triggered = True
-                        self.process_stop_details = repair_outcome.message
+                        self._observe_outcome_stop(repair_outcome)
                         self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
                         return
                     self._write_final_failure_process_stop(
