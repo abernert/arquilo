@@ -1,0 +1,136 @@
+# Temporary release preparation. Not part of the release PR or runtime package.
+name: Prepare requested ARQUILO 0.7.2
+on:
+  push:
+    branches: [release/prepare-0.7.2]
+    paths: [.github/workflows/prepare-0.7.2.yml]
+permissions:
+  contents: read
+concurrency:
+  group: prepare-arquilo-0.7.2
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/release/prepare-0.7.2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+      SOURCE_SHA: 5abd1e9c40f68f8d84987d824d38ee4afc21bc0f
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 5abd1e9c40f68f8d84987d824d38ee4afc21bc0f
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Apply only version and release documentation edits
+        shell: python
+        run: |
+          from pathlib import Path
+          def replace_once(name, old, new):
+              path = Path(name)
+              text = path.read_text(encoding='utf-8')
+              if text.count(old) != 1:
+                  raise SystemExit(f'Expected exactly one release marker in {name}: {old!r}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8', newline='\n')
+          replace_once('VERSION', '0.7.1\n', '0.7.2\n')
+          replace_once('runtime_profile.py', 'ARQUILO_RUNTIME_VERSION = "0.7.1"', 'ARQUILO_RUNTIME_VERSION = "0.7.2"')
+          replace_once('CITATION.cff', 'version: "0.7.1"\ndate-released: 2026-10-07', 'version: "0.7.2"\ndate-released: 2026-10-10')
+          replace_once('README.md', '**Public preview: 0.7.1.**', '**Public preview: 0.7.2.**')
+          replace_once('README.de.md', '**0.7.1 ist eine öffentliche Vorschau**', '**0.7.2 ist eine öffentliche Vorschau**')
+          replace_once('docs/compatibility.md', '## Current names (ARQUILO 0.7.1)', '## Current names (ARQUILO 0.7.2)')
+          replace_once('docs/compatibility.md', 'The public package version is 0.7.1.', 'The public package version is 0.7.2.')
+          replace_once('docs/compatibility.md', '# Compatibility and naming history\n', '''# Compatibility and naming history
+
+          ## Reconnect and cancellation reporting (ARQUILO 0.7.2)
+
+          Update the controller and parallel workers together. Only the supported,
+          pre-terminal WebSocket reconnect notice is provisional; unknown error formats
+          remain failures. Diagnostic events and the first observed stop reason are
+          retained, including when a genuine failure takes precedence over cancellation.
+          A clean stop is exit 6, a technical failure plus stop is exit 7, and an invalid
+          review remains exit 8. `terminal_attempt` identifies the actual ending call;
+          the existing grouped `execution_attempts` list is not chronological.
+
+          Keep the same workdir, task-file path and state root when continuing existing
+          work. No state/budget reset or Codex reconfiguration is required. Existing
+          archives are not rewritten and a stop never becomes a reviewed DONE. Inspect
+          partial results and deliberately clear applicable stop instructions before
+          restarting. No automatic task replay or broader reconnect suppression is added.
+          See [troubleshooting](troubleshooting.md) for the supported event and log fields.
+          ''')
+          replace_once('CHANGELOG.md', '## Unreleased', '## 0.7.2 — 2026-10-10 (public preview)')
+          replace_once('CHANGELOG.md', '\n## 0.7.1 —', '''
+          ### Upgrade notes and scope
+
+          - Update the controller and workers together; retain the same workspace,
+            task-file path and controller-state root. No state/budget reset or Codex
+            reconfiguration is required. Existing logs and task states are not rewritten.
+          - Inspect partial results before explicitly restarting a stopped task. Stop
+            instructions remain effective, and no task is automatically replayed or
+            marked DONE. Mandatory reviews and all execution permissions are unchanged.
+          - Log readers may consume additive stop/diagnostic fields and `terminal_attempt`.
+            Do not infer the terminal call from the last grouped `execution_attempts` item.
+          - Recognition remains limited to the evidenced WebSocket reconnect notice.
+            Other formats, including `error decoding response body`, are not newly
+            classified as provisional by this release.
+          - The full suite contains 480 test methods, including 49 new synthetic
+            regressions. Cross-platform CI and loopback-provider checks are distinct
+            from live MDE/Databricks acceptance or native sandbox certification.
+          - Public preview; no new runtime dependencies or original application
+            handoff data, prompts, archives or project outputs are included.
+
+          ## 0.7.1 —''')
+      - name: Run offline regressions and validate release metadata
+        run: |
+          python -B -m unittest discover -s tests -v
+          python -B scripts/check_release.py
+          python -B arquilo.py --version
+          python -B scripts/build_runtime_zip.py
+      - name: Create a clean release branch without moving main or tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          repo, source = os.environ['GITHUB_REPOSITORY'], os.environ['SOURCE_SHA']
+          def api(path, body=None):
+              command = ['gh', 'api', path]
+              if body is not None:
+                  command += ['--method', 'POST', '--input', '-']
+              result = subprocess.run(command, input=None if body is None else json.dumps(body),
+                                      text=True, capture_output=True, check=True)
+              return json.loads(result.stdout)
+          if api(f'repos/{repo}/git/ref/heads/main')['object']['sha'] != source:
+              raise SystemExit('Main moved during preparation; inspect before publishing')
+          files = ['VERSION','runtime_profile.py','CITATION.cff','README.md','README.de.md','CHANGELOG.md','docs/compatibility.md']
+          changed = subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          if set(changed) != set(files):
+              raise SystemExit('Unexpected release diff: ' + repr(changed))
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          tree = api(f'repos/{repo}/git/trees', {
+              'base_tree': subprocess.check_output(['git','rev-parse','HEAD^{tree}'], text=True).strip(),
+              'tree': [{'path':name,'mode':'100644','type':'blob','content':Path(name).read_text(encoding='utf-8')} for name in files]
+          })['sha']
+          commit = api(f'repos/{repo}/git/commits', {
+              'message':'Prepare ARQUILO 0.7.2 reconnect/stop bugfix release\n\nSynchronize version, citation and current documentation after PR #23. Preserve historical release sections and runtime behavior except the version constant. No private handoff data or helper workflows are included.',
+              'tree':tree, 'parents':[source]
+          })['sha']
+          api(f'repos/{repo}/git/refs', {'ref':'refs/heads/release/0.7.2','sha':commit})
+          report = {'source':source,'commit':commit,'tree':tree,
+                    'files':{name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files},
+                    'runtime_sha256':hashlib.sha256(Path('dist/arquilo-0.7.2.zip').read_bytes()).hexdigest()}
+          Path('dist/preparation.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
+              output.write('```json\n' + json.dumps(report, indent=2) + '\n```\n')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arquilo-0.7.2-preparation
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
