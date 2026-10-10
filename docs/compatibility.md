@@ -1,5 +1,22 @@
 # Compatibility and naming history
 
+## Reconnect and cancellation reporting (ARQUILO 0.7.2)
+
+Update the controller and parallel workers together. Only the supported,
+pre-terminal WebSocket reconnect notice is provisional; unknown error formats
+remain failures. Diagnostic events and the first observed stop reason are
+retained, including when a genuine failure takes precedence over cancellation.
+A clean stop is exit 6, a technical failure plus stop is exit 7, and an invalid
+review remains exit 8. `terminal_attempt` identifies the actual ending call;
+the existing grouped `execution_attempts` list is not chronological.
+
+Keep the same workdir, task-file path and state root when continuing existing
+work. No state/budget reset or Codex reconfiguration is required. Existing
+archives are not rewritten and a stop never becomes a reviewed DONE. Inspect
+partial results and deliberately clear applicable stop instructions before
+restarting. No automatic task replay or broader reconnect suppression is added.
+See [troubleshooting](troubleshooting.md) for the supported event and log fields.
+
 ## Hardening compatibility (ARQUILO 0.7.1)
 
 Four-column/tab-indented task headers and directives are code examples,
@@ -22,11 +39,11 @@ and `package` are unchanged. `tasklist --help` shows the command group;
 No pipeline command is implemented by this migration. The
 [pipeline proposal](pipeline-mvp-concept.md) is not an executable schema.
 
-## Current names (ARQUILO 0.7.1)
+## Current names (ARQUILO 0.7.2)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.7.1. Individual schema version
+identifiers. The public package version is 0.7.2. Individual schema version
 suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean

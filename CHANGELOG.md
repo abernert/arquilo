@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.2 — 2026-10-10 (public preview)
 
 - On macOS, reap a leader killed by this controller before checking an EPERM
   from a follow-up group signal. Ignore that race only when a new whole-group
@@ -24,6 +24,25 @@
   reset budgets, change DONE/review rules or rewrite historical archives. This
   repairs local classification and reporting, not the network itself; other
   reconnect message formats still require their own compatibility evidence.
+
+### Upgrade notes and scope
+
+- Update the controller and workers together; retain the same workspace,
+  task-file path and controller-state root. No state/budget reset or Codex
+  reconfiguration is required. Existing logs and task states are not rewritten.
+- Inspect partial results before explicitly restarting a stopped task. Stop
+  instructions remain effective, and no task is automatically replayed or
+  marked DONE. Mandatory reviews and all execution permissions are unchanged.
+- Log readers may consume additive stop/diagnostic fields and `terminal_attempt`.
+  Do not infer the terminal call from the last grouped `execution_attempts` item.
+- Recognition remains limited to the evidenced WebSocket reconnect notice.
+  Other formats, including `error decoding response body`, are not newly
+  classified as provisional by this release.
+- The full suite contains 480 test methods, including 49 new synthetic
+  regressions. Cross-platform CI and loopback-provider checks are distinct
+  from live MDE/Databricks acceptance or native sandbox certification.
+- Public preview; no new runtime dependencies or original application
+  handoff data, prompts, archives or project outputs are included.
 
 ## 0.7.1 — 2026-10-07 (public preview; hardening)
 
