@@ -6,7 +6,7 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.7.1 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.7.2 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
