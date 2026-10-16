@@ -6,7 +6,7 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.7.2 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+Die Version **0.7.3 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine
@@ -103,3 +103,13 @@ der laufende Plan geschützt. Nach der menschlichen Prüfung ohne den Schalter
 fortsetzen, bei eigenen Änderungen einmal `--accept-plan-changes` verwenden.
 Ein vorhandenes `process_stop` wird nicht automatisch entfernt.
 [Anleitung und Beispiele](docs/operator-controls.md).
+
+## Taskliste aus einer Vorlage anlegen
+
+`--todo-template /pfad/zur/vorlage.md` ergänzt `--todo-file`: Nur eine fehlende
+Arbeitsdatei im Workdir wird aus der Vorlage angelegt. Vorhandene Tasklisten
+werden niemals überschrieben; die Vorlage bleibt unverändert. Die ausdrückliche
+Initialisierung erfolgt auch mit `--dry-run`; dabei gibt es keine Modellaufrufe
+oder Task-Statusänderungen. Fehlt die Arbeitsdatei bei vorhandenem Controller-Zustand,
+stoppt ARQUILO zur Wiederherstellung statt neu zu initialisieren. Details und
+Beispiele stehen im [Cookbook](docs/cookbook.md#initialize-a-working-task-list-from-a-template).

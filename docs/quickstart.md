@@ -29,6 +29,12 @@ python3 -B arquilo.py tasklist run --workdir .local-work/smoke --todo-file .loca
 Use `codex login` first if authentication is missing. No credentials belong in
 ARQUILO's repository, Markdown task lists or runtime profiles.
 
+For reusable external task-list templates, `--todo-template` can replace the
+separate copy step after creating the workdir. It initializes only a missing
+working file, including when combined with `--dry-run`; existing files and
+controller evidence are never reset. See the
+[template recipe](cookbook.md#initialize-a-working-task-list-from-a-template).
+
 ## Windows PowerShell
 
 From the cloned repository root, choose an installed Python 3.11+ interpreter.

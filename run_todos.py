@@ -69,6 +69,7 @@ from review_contract import (parse_review_classification, review_classification_
 from decision_request import read_input_text, snapshot_todo
 
 from todo_lint import lint_todo_file
+from todo_template import initialize_todo_template
 from todo_ids import extract_todo_id
 from runtime_profile import (
     ARQUILO_CODEX_MODEL_ENV,
@@ -168,6 +169,7 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         },
         "features": {
             "run_todos.operator_controls": 1,
+            "run_todos.todo_template": 1,
             "run_todos.breakdown": RUN_TODOS_BREAKDOWN_CONTRACT_VERSION,
             "run_todos.final_failure": RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION,
             "run_todos.parent_review": RUN_TODOS_PARENT_REVIEW_CONTRACT_VERSION,
@@ -4393,6 +4395,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Pfad zur ToDo-Liste.",
     )
     parser.add_argument(
+        "--todo-template",
+        type=Path,
+        default=None,
+        help=("Initialize a missing --todo-file from this local UTF-8 template; "
+              "never overwrite an existing task list. Destination must be in --workdir. "
+              "Explicit initialization also occurs with --dry-run."),
+    )
+    parser.add_argument(
         "--workdir",
         type=Path,
         default=None,
@@ -4585,6 +4595,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 file=sys.stderr,
             )
             return 2
+        if args.todo_template is not None:
+            try:
+                initialized_path, template_workdir, created = initialize_todo_template(
+                    args.todo_file, args.todo_template, workdir=args.workdir,
+                    state_root=args.state_dir, preamble_mode=args.todo_preamble,
+                    validate_directives=validate_removed_directives,
+                )
+            except (OSError, ValueError, RuntimeError) as exc:
+                print(f"Task-list initialization failed: {exc}", file=sys.stderr)
+                return 2
+            args.todo_file, args.workdir = initialized_path, template_workdir
+            if created:
+                print(f"[info] Initialized task list: {initialized_path} (template left unchanged).", file=sys.stderr)
+            else:
+                print(f"[info] Using existing task list: {initialized_path}; --todo-template ignored.", file=sys.stderr)
         todo_path = args.todo_file.expanduser().resolve()
         if not todo_path.exists():
             print(f"ToDo-Datei nicht gefunden: {todo_path}", file=sys.stderr)

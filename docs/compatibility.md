@@ -1,5 +1,18 @@
 # Compatibility and naming history
 
+## Optional task-list initialization (ARQUILO 0.7.3)
+
+`--todo-template` adds an explicit, one-time preparation step for a missing
+`--todo-file` inside the workdir. Existing files are never overwritten, and
+missing files with prior controller state require recovery rather than reset.
+Initialization also occurs with `--dry-run`, without model calls or task-status
+changes. Without the new option, existing task-file path semantics (including
+external-source compatibility), runtime profiles, call budgets, state roots,
+and command aliases are unchanged. `capabilities` advertises the additive
+`features["run_todos.todo_template"] = 1` contract. Update the whole runtime
+package, including the new `todo_template.py` module. See the
+[template recipe](cookbook.md#initialize-a-working-task-list-from-a-template).
+
 ## Reconnect and cancellation reporting (ARQUILO 0.7.2)
 
 Update the controller and parallel workers together. Only the supported,
@@ -39,11 +52,11 @@ and `package` are unchanged. `tasklist --help` shows the command group;
 No pipeline command is implemented by this migration. The
 [pipeline proposal](pipeline-mvp-concept.md) is not an executable schema.
 
-## Current names (ARQUILO 0.7.2)
+## Current names (ARQUILO 0.7.3)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.7.2. Individual schema version
+identifiers. The public package version is 0.7.3. Individual schema version
 suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean

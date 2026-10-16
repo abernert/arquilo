@@ -13,7 +13,7 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.7.2.** Suitable for supervised evaluation in disposable
+**Public preview: 0.7.3.** Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Documentation](docs/README.md) · [Installation](docs/installation.md) ·
@@ -95,6 +95,13 @@ excluded from Git. Reusing its creation command refuses to overwrite an old run.
 
 See the [PowerShell walkthrough](docs/quickstart.md#windows-powershell),
 [examples](examples/README.md) and [test guide](docs/testing.md).
+
+To initialize a missing working task list from a reusable external file, add
+`--todo-template /path/to/template.md` alongside `--todo-file`. Existing working
+files are never overwritten; the template is left unchanged. Explicit
+initialization also occurs with `--dry-run`. See the
+[template recipe](docs/cookbook.md#initialize-a-working-task-list-from-a-template)
+for path, recovery and copy boundaries.
 
 ## What it does — and does not promise
 
