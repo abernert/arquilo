@@ -1,0 +1,112 @@
+name: Publish reviewed ARQUILO 0.7.3
+on:
+  push:
+    branches: [ops/prepare-todo-template-073]
+    paths: [.github/workflows/publish-reviewed-073.yml]
+permissions:
+  contents: write
+  checks: read
+  actions: read
+  pull-requests: read
+concurrency:
+  group: publish-reviewed-arquilo-0.7.3
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/ops/prepare-todo-template-073'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+      RELEASE_SHA: 8465f7f74ca66be33599604331a5021a49505e60
+      RELEASE_TREE: 1c5584977eacbd342bffbb9b4b4e87604a33fb31
+      RUNTIME_SHA256: f24d749b8c05b198ac2780137602315534e123b7b30b8396973afc6dadba2e76
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 8465f7f74ca66be33599604331a5021a49505e60
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Verify pinned product commit and rebuild reviewed runtime
+        shell: python
+        run: |
+          import hashlib, os, pathlib, subprocess
+          assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip() == os.environ['RELEASE_SHA']
+          assert subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip() == os.environ['RELEASE_TREE']
+          assert pathlib.Path('VERSION').read_text().strip() == '0.7.3'
+          assert not pathlib.Path('.github/workflows/publish-reviewed-073.yml').exists()
+          subprocess.run(['python','-B','scripts/check_release.py'],check=True)
+          subprocess.run(['python','-B','scripts/build_runtime_zip.py'],check=True)
+          assert hashlib.sha256(pathlib.Path('dist/arquilo-0.7.3.zip').read_bytes()).hexdigest() == os.environ['RUNTIME_SHA256']
+          text = pathlib.Path('CHANGELOG.md').read_text(encoding='utf-8')
+          heading = '## 0.7.3 — 2026-10-16 (public preview)'
+          assert text.count(heading) == 1
+          notes = heading + text.split(heading,1)[1].split('\n## ',1)[0]
+          notes += '\n\nMerged via PR #25 after all 15 required CI checks passed. Main checks are verified again before publication. 43 new offline tests; 523 total tests in the configured suite (platform-dependent skips). Runtime ZIP is byte-identical to the reviewed build.\n\nPublic preview: no live model or independent Copilot review is claimed. Copilot review was unavailable due to quota.\n'
+          pathlib.Path(os.environ['RUNNER_TEMP'],'arquilo-0.7.3-notes.md').write_text(notes,encoding='utf-8')
+      - name: Require merged PR and every green main check before publication
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, pathlib, subprocess, time
+          repo = 'abernert/arquilo'
+          sha = os.environ['RELEASE_SHA']
+          def get(path):
+              return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/{path}'],text=True))
+          pr = get('pulls/25')
+          assert pr['merged'] and pr['merge_commit_sha'] == sha
+          assert pr['head']['sha'] == '5877052f016c275e4f939b7c3fb909d402900a3b'
+          required = {f'offline-tests ({host}, {version})' for host in ('ubuntu-latest','windows-latest','macos-latest') for version in ('3.11','3.12','3.13')}
+          required |= {f'metadata ({host}, {version})' for host in ('ubuntu-latest','windows-latest','macos-latest') for version in ('0.154.0','0.159.1')}
+          for attempt in range(31):
+              assert get('git/ref/heads/main')['object']['sha'] == sha, 'Main moved; refuse publication'
+              checks = get(f'commits/{sha}/check-runs?per_page=100&filter=latest')['check_runs']
+              selected = {c['name']: c for c in checks if c['name'] in required and c['app']['id'] == 15368}
+              failed = [name for name,c in selected.items() if c['status'] == 'completed' and c['conclusion'] != 'success']
+              assert not failed, f'Main checks failed: {failed}'
+              if required == set(selected) and all(c['status'] == 'completed' and c['conclusion'] == 'success' for c in selected.values()):
+                  record = {name: {'id':c['id'],'status':c['status'],'conclusion':c['conclusion']} for name,c in selected.items()}
+                  pathlib.Path(os.environ['RUNNER_TEMP'],'arquilo-0.7.3-checks.json').write_text(json.dumps(record,indent=2))
+                  print(f'All {len(required)} required checks passed on {sha}')
+                  break
+              if attempt == 30:
+                  raise SystemExit('Main checks not all complete; no tag or release created')
+              print('Main check gate not complete; no publication yet',flush=True)
+              time.sleep(20)
+      - name: Create only the exact v0.7.3 tag without moving any existing tag
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, subprocess
+          repo = 'abernert/arquilo'
+          sha = os.environ['RELEASE_SHA']
+          main = json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/git/ref/heads/main'],text=True))
+          assert main['object']['sha'] == sha, 'Main changed before tag creation'
+          result = subprocess.run(['gh','api',f'repos/{repo}/git/ref/tags/v0.7.3'],capture_output=True,text=True)
+          if result.returncode == 0:
+              obj = json.loads(result.stdout)['object']
+              assert obj['type'] == 'commit' and obj['sha'] == sha, 'Existing tag differs; refuse to move it'
+          elif 'HTTP 404' in result.stderr:
+              subprocess.run(['gh','api','--method','POST',f'repos/{repo}/git/refs','-f','ref=refs/tags/v0.7.3','-f',f'sha={sha}'],check=True)
+          else:
+              raise SystemExit(result.stderr)
+      - name: Publish normal preview assets without overwriting an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.7.3 dist/arquilo-0.7.3.zip dist/arquilo-0.7.3.zip.sha256 --verify-tag --prerelease --title 'ARQUILO 0.7.3 — public preview' --notes-file "$RUNNER_TEMP/arquilo-0.7.3-notes.md"
+      - name: Retain publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: arquilo-0.7.3-publication-evidence
+          path: |
+            dist/arquilo-0.7.3.zip
+            dist/arquilo-0.7.3.zip.sha256
+            ${{ runner.temp }}/arquilo-0.7.3-checks.json
+            ${{ runner.temp }}/arquilo-0.7.3-notes.md
+          if-no-files-found: error
+          retention-days: 14
