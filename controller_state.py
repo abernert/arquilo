@@ -41,17 +41,23 @@ def default_state_root() -> Path:
     return Path.home() / '.local' / 'state' / 'arquilo' / 'controller'
 
 
-def state_directory(workspace: Path, todo: Path, root: Path | None = None) -> Path:
+def state_directory_path(workspace: Path, todo: Path, root: Path | None = None) -> Path:
+    """Compute the plan-specific path without creating/resetting any state."""
     root = safe_io.lexical_path(root or default_state_root())
     workspace = workspace.resolve()
     if root.is_relative_to(workspace) or workspace.is_relative_to(root):
         raise PlanIntegrityError('Controller state must be outside the model workspace; choose --state-dir elsewhere.')
+    key = hashlib.sha256((str(workspace) + '\0' + str(todo)).encode()).hexdigest()
+    return root / key
+
+
+def state_directory(workspace: Path, todo: Path, root: Path | None = None) -> Path:
+    result = state_directory_path(workspace, todo, root)
+    root = result.parent
     safe_io.mkdir(root)
     info = root.stat()
     if os.name != 'nt' and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077):
         raise PlanIntegrityError(f'Controller state must be owned by this user with mode 0700: {root}')
-    key = hashlib.sha256((str(workspace) + '\0' + str(todo)).encode()).hexdigest()
-    result = root / key
     safe_io.mkdir(result)
     return result
 

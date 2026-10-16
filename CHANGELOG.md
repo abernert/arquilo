@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.3 — 2026-10-16 (public preview)
+
+- Add optional `--todo-template` to `tasklist run`, its `run` alias, and the direct
+  runner. Initialize a missing in-workdir `--todo-file` from a local UTF-8
+  template; leave existing working files and the source template unchanged.
+- Validate the exact source snapshot before copying. Preserve UTF-8 BOM and
+  line endings, reject unsafe paths, and publish without overwriting concurrent
+  destinations or exposing partially written task lists. No linked inputs,
+  neighboring results, status reset, substitutions, or synchronization.
+- Refuse initialization when the working file is missing but plan-specific
+  controller state exists. Use a shared side-effect-free state-key helper;
+  existing authority, recovery, budgets and state locations are unchanged.
+- Document explicit initialization with `--dry-run` (working file/preview may be
+  created; no model calls, task-status changes, or controller-state creation).
+  Publish an additive capability marker, an updated runtime allowlist, examples,
+  and offline regression tests for initialization, resume and failure cases.
+- Keep this release separate from unpublished pipeline/workbench development.
+  Public-preview status and existing sandbox/model-provider boundaries remain.
+
 ## 0.7.2 — 2026-10-10 (public preview)
 
 - On macOS, reap a leader killed by this controller before checking an EPERM

@@ -516,6 +516,15 @@ def lint_todo_file(
     except (OSError, UnicodeError) as exc:
         return [LintIssue(line=1, message=f"Datei kann nicht gelesen werden: {exc}")]
 
+    return lint_todo_text(text, workdir=resolved_workdir)
+
+
+def lint_todo_text(text: str, *, workdir: Path) -> List[LintIssue]:
+    """Validate an already-decoded snapshot using the destination workspace."""
+    try:
+        resolved_workdir = native_path(workdir, label="workdir")
+    except (PathValidationError, OSError) as exc:
+        return [LintIssue(line=1, message=str(exc))]
     issues: List[LintIssue] = []
     todo_ids: Dict[str, int] = {}
     todo_tuples: List[Tuple[Tuple[int, ...], int, str]] = []

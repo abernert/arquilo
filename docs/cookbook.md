@@ -24,6 +24,64 @@ python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/
 
 The producer saying it is finished is not sufficient; the separate review and controller determine completion.
 
+## Initialize a working task list from a template
+
+`--todo-file` remains the working task list. Add `--todo-template` to initialize
+it from a local UTF-8 file **only when the destination does not exist**:
+
+```sh
+python3 -B arquilo.py tasklist run \
+  --workdir /path/to/project \
+  --todo-file /path/to/project/tasks.md \
+  --todo-template /path/to/templates/migration.md
+```
+
+PowerShell uses the same flags with native paths:
+
+```powershell
+py -3.11 -B .\arquilo.py tasklist run `
+  --workdir 'C:\Projects\Migration' `
+  --todo-file 'C:\Projects\Migration\tasks.md' `
+  --todo-template 'C:\Task templates\migration.md'
+```
+
+The workdir must already exist. With this option, the destination must be inside
+that workdir; missing subdirectories are created safely. All relative CLI paths
+remain relative to the **invocation directory**, not to `--workdir`. Quote paths
+containing spaces; absolute paths are the least ambiguous choice.
+
+The controller validates the template before any model call and publishes an
+exact byte copy without overwriting a file that appears concurrently. The
+original template is never written, synchronized, or passed as the working
+plan. Existing destinations are used unchanged, with an informational message;
+an unused template is not opened and may have moved or been deleted. Reuse the
+same command to continue with the working file's existing progress.
+
+**Initialization is an explicit preparation step and also happens with
+`--dry-run`.** Such a run can create the working file and the chosen preview
+report, but calls no model, changes no task status, and creates no controller
+state. Without `--todo-template`, the existing dry-run behavior is unchanged.
+To preview without creating a task list, provide an already-existing working
+file and omit `--todo-template`. An invalid template is rejected before any
+working copy is created; a later runner/profile/preflight failure can leave the
+successfully initialized file for inspection and reuse.
+
+Only the task-list file is copied. Referenced inputs, neighboring result files,
+credentials, and other assets are not copied; paths in the template must make
+sense in the destination workspace. No variable substitution or status reset is
+performed: use a genuinely fresh template for a fresh job. Normal Git selection
+and plan-authority rules are not relaxed.
+
+A missing working file with an existing plan-specific controller directory is a
+**recovery error**, not a new initialization, even if the directory is empty or
+`--accept-plan-changes` was passed. Restore the working file against the existing
+controller evidence. Keep the same workdir, task-file path and `--state-dir` on
+continuation; selecting another state root cannot reveal state kept elsewhere.
+Unsafe linked/reparse/hardlinked paths below the workspace root are rejected.
+Publication fails closed on filesystems lacking the required no-replace operation;
+there is no unsafe overwrite/copy fallback. This is not a security boundary
+against another process with the same operating-system identity.
+
 ## Put a finite call-count guard on an experiment
 
 ```sh

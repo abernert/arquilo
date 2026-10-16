@@ -7,6 +7,7 @@ The core uses the Python standard library, CLI arguments, and optionally a JSON 
 | Purpose | Option / default |
 | --- | --- |
 | Task list and workspace | `--todo-file <file>` and `--workdir <directory>`; without a workdir, the ToDo file's directory is used. Absolute paths remove ambiguity when starting elsewhere. |
+| Initial task-list template | `--todo-template <file>`; optional one-time initialization of a missing `--todo-file` inside the workdir. Existing targets always win; also initializes with `--dry-run`. [Exact behavior](../docs/cookbook.md#initialize-a-working-task-list-from-a-template). |
 | Model | `--model <id>`; without an override, the Codex default remains effective for production/review. |
 | Reasoning | `--reasoning-effort <value>`; accepted values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Codex determines whether the selected model supports the value. |
 | Shell network | `--network-access`; off by default. Sandbox is at most `workspace-write`, review is `read-only`. No network environment alias grants this permission. |

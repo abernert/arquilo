@@ -3,7 +3,7 @@
   "python_requires": ">=3.11",
   "runtime_dependencies": [],
   "build_dependencies": [],
-  "runtime_file_count": 83,
+  "runtime_file_count": 84,
   "external_runtime": {
     "codex_cli": "Codex CLI with the required Exec contract; verify using arquilo_doctor.py --check-decide (one model call, may incur costs); no version pin",
     "git": "Only for explicitly enabled --git functions",
@@ -92,7 +92,8 @@
     "todo_context.py",
     "todo_ids.py",
     "todo_lint.py",
-    "todo_syntax.py"
+    "todo_syntax.py",
+    "todo_template.py"
   ],
   "retained_core_options": {
     "parallel": "CFG parallel with real Python workers in separate subworkspaces",

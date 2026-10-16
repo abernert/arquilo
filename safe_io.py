@@ -282,6 +282,38 @@ def atomic_write(path: Path, data: bytes) -> None:
             raise
 
 
+
+def atomic_create(path: Path, data: bytes) -> None:
+    """Publish a complete new file; an existing/racing destination always wins.
+
+    Windows rename refuses an existing target. POSIX link publishes atomically
+    without replacement, then removes the staging name. A filesystem without
+    this primitive fails closed; there is no overwrite or partial-copy fallback.
+    Like atomic_write, this is not isolation from hostile code with the same UID.
+    """
+    path = lexical_path(path)
+    with directory(path.parent, create=True) as (parent, fd):
+        pending = parent / ('.arquilo-init-' + uuid.uuid4().hex + '.pending')
+        opened = _open_leaf(pending, fd, 'xb')
+        try:
+            with os.fdopen(opened, 'wb') as stream:
+                if stream.write(data) != len(data):
+                    raise OSError('Incomplete initialization staging write')
+                stream.flush()
+                os.fsync(stream.fileno())
+            if fd is None:
+                # Unlike os.replace, os.rename on Windows never replaces a file.
+                os.rename(pending, path)
+            else:
+                os.link(pending.name, path.name, src_dir_fd=fd, dst_dir_fd=fd,
+                        follow_symlinks=False)
+        finally:
+            try:
+                os.unlink(pending if fd is None else pending.name, dir_fd=fd)
+            except FileNotFoundError:
+                pass
+
+
 def unique_directory(parent: Path, prefix: str) -> Path:
     with directory(parent, create=True) as (base, fd):
         for _ in range(10):
