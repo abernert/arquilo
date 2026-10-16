@@ -1,0 +1,86 @@
+name: Prepare checksum-verified 0.7.3 candidate
+on:
+  push:
+    branches: [ops/prepare-todo-template-073]
+    paths: [.github/workflows/prepare-template-073-retry.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/ops/prepare-todo-template-073'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: edec22ccb6700f58800f5e44fb2329f537e6a272
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Validate transported patch, apply to pinned public base, create clean object
+        shell: python
+        run: |
+          import base64, hashlib, json, os, pathlib, re, subprocess, zlib
+          workflow = pathlib.Path('.github/workflows/prepare-todo-template-073.yml').read_text()
+          encoded = re.search("encoded = '''(.*?)'''", workflow, re.S).group(1)
+          base = '7b757e88dda6bb3c46963ff738a6151eec57a929'
+          subprocess.run(['git', 'checkout', '--detach', base], check=True)
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == base
+          pathlib.Path('verification').mkdir()
+          pathlib.Path('verification/original-transport.txt').write_text(encoded)
+          encoded = encoded.replace('ChiIRulSToJpJB07', 'ChiIRulSToJpMMFJwXKzJA5DmdBUFDJhCe9SpJB07')
+          encoded = encoded.replace('neegvubKK2VG', 'neegvubK2VG')
+          pathlib.Path('verification/repaired-transport.txt').write_text(encoded)
+          patch = zlib.decompress(base64.b64decode(encoded, validate=True))
+          expected = 'e5d486bd348810e0c37b81542991fa5c936b597f7d47dbb44655869786da4ed2'
+          assert hashlib.sha256(patch).hexdigest() == expected, 'Patch checksum mismatch'
+          subprocess.run(['git', 'apply', '--check', '--whitespace=error-all', '-'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--whitespace=error-all', '-'], input=patch, check=True)
+          paths = ['CHANGELOG.md', 'CITATION.cff', 'README.de.md', 'README.md', 'VERSION', 'controller_state.py', 'docs/compatibility.md', 'docs/cookbook.md', 'docs/quickstart.md', 'documents/CONFIGURATION.md', 'documents/lean_package.json', 'run_todos.py', 'runtime_profile.py', 'safe_io.py', 'tests/test_todo_template.py', 'todo_lint.py', 'todo_template.py']
+          actual = subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          actual += [p for p in subprocess.check_output(['git', 'ls-files', '--others', '--exclude-standard'], text=True).splitlines() if not p.startswith('verification/')]
+          assert sorted(actual) == sorted(paths), actual
+          subprocess.run(['git', 'add', '--', *paths], check=True)
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          env = dict(os.environ, GIT_AUTHOR_NAME='ARQUILO release preparation', GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com', GIT_COMMITTER_NAME='ARQUILO release preparation', GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com')
+          sha = subprocess.check_output(['git', 'commit-tree', tree, '-p', base], input='Add safe task-list template initialization and prepare ARQUILO 0.7.3\n', text=True, env=env).strip()
+          pathlib.Path('verification/candidate.json').write_text(json.dumps({'base':base, 'sha':sha, 'tree':tree, 'patch_sha256':expected, 'paths':paths}, indent=2))
+          subprocess.run(['git', 'archive', '--format=zip', '-o', 'verification/candidate-source.zip', sha], check=True)
+          print(json.dumps({'candidate':sha, 'tree':tree, 'changed_files':len(paths)}))
+      - name: All existing and new offline regression tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -B -m unittest discover -s tests -v 2>&1 | tee verification/offline-tests.log
+      - name: Validate and build public runtime
+        shell: bash
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Publish only the isolated candidate after passing tests
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import base64, json, os, pathlib, subprocess
+          record = json.loads(pathlib.Path('verification/candidate.json').read_text())
+          target = 'refs/heads/release/todo-template-0.7.3'
+          actual = subprocess.check_output(['git', 'ls-remote', '--exit-code', 'origin', target], text=True).split()[0]
+          assert actual == record['base'], 'Candidate branch changed; refusing to overwrite'
+          auth = base64.b64encode(('x-access-token:' + os.environ['GH_TOKEN']).encode()).decode()
+          env = dict(os.environ, GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='http.https://github.com/.extraheader', GIT_CONFIG_VALUE_0='AUTHORIZATION: basic ' + auth)
+          subprocess.run(['git', 'push', '--no-follow-tags', 'origin', record['sha'] + ':' + target], env=env, check=True)
+      - name: Upload source and verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: todo-template-073-candidate
+          path: |
+            verification/
+            dist/arquilo-*
+          if-no-files-found: warn
+          retention-days: 7
