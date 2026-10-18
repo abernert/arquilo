@@ -39,7 +39,7 @@ class Fixture(unittest.TestCase):
         self.capture=self.work/".codex_runs/run_todos/2026-10-18T15-37-47.993Z/task-2/001-production"
         self.capture.mkdir(parents=True)
         self.dir=self.capture.parent
-        (self.dir/"prompt.md").write_text(PROMPT+"\n",encoding="utf-8")
+        (self.dir/"prompt.md").write_text(PROMPT,encoding="utf-8")
         (self.dir/"original_contract.json").write_text(json.dumps({
             "schema_version":"arquilo.review_contract.v1","original_request":PROMPT,
             "task_text":PROMPT, "source":str(self.work/"tasks.md")}),encoding="utf-8")
