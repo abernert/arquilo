@@ -358,7 +358,7 @@ class RunResult:
 
 
 _RECONNECT = re.compile(
-    r"Reconnecting\.\.\. ([1-9][0-9]*)/([1-9][0-9]*) "
+    r"Reconnecting\.\.\. ([1-9][0-9]{0,3})/([1-9][0-9]{0,3}) "
     r"\(stream disconnected before completion: ([^\r\n()]{1,240})\)"
 )
 
