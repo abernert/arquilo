@@ -1,3 +1,5 @@
+# Copyright 2026 Alexander Bernert
+# SPDX-License-Identifier: Apache-2.0
 #!/usr/bin/env python3
 """Opt-in, evidence-checked review continuation without production replay.
 
