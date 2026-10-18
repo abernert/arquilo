@@ -92,10 +92,30 @@ def load_verified_recovery(capture_dir: Path, workdir: Path, task_id: str) -> Re
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", task_id):
         raise RecoveryRefused("Invalid task ID.")
     workspace = workdir.expanduser().resolve(strict=True)
-    if any(p.is_symlink() for p in (capture_dir, *capture_dir.parents)):
-        raise RecoveryRefused("Capture location contains a symlink.")
+    # Some platforms (notably macOS) resolve the system /var mount as
+    # /private/var. Such a system-managed alias outside the chosen workspace
+    # must not invalidate an otherwise private, regular archive. Reject links
+    # in *user-selected descendants* of the workspace, not every ancestor.
+    raw_workspace = workdir.expanduser().absolute()
+    raw_capture = capture_dir.expanduser().absolute()
+    if raw_capture.is_symlink():
+        raise RecoveryRefused("Capture path is itself a symlink.")
+    try:
+        requested_rel = raw_capture.relative_to(raw_workspace)
+    except ValueError:
+        requested_rel = None
+    if requested_rel is not None:
+        if ".." in requested_rel.parts:
+            raise RecoveryRefused("Capture path traverses outside the workspace.")
+        current = raw_workspace
+        for component in requested_rel.parts:
+            current = current / component
+            if current.is_symlink():
+                raise RecoveryRefused("Capture location contains a workspace symlink.")
     capture = capture_dir.expanduser().resolve(strict=True)
     logs = workspace / ".codex_runs" / "run_todos"
+    # The canonical archive must still be under the expected workspace logs.
+
     try:
         relative = capture.relative_to(logs)
     except ValueError as exc:
