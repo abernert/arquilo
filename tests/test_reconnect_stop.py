@@ -287,9 +287,16 @@ class ClassifierTests(Fixture):
             invalid.append({**RECONNECT, "message": RECONNECT["message"].replace("2/5", fraction)})
         invalid += [{**RECONNECT, "message": x} for x in (
             "prefix " + RECONNECT["message"], RECONNECT["message"] + " trailing", "Reconnecting... 2/5 (401 unauthorized)",
-            "Reconnecting... 2/5 (stream disconnected before completion: Transport error: network error: error decoding response body)")]
+            "Reconnecting... 2/5 (stream disconnected before completion: )")]
         for event in invalid:
             self.assertFalse(transport.is_transient_reconnect(event, terminal_seen=False), str(event)[:100])
+        for reason in ("stream closed before response.completed",
+                       "Transport error: network error: error decoding response body",
+                       "websocket closed by server before response.completed"):
+            event = {"type": "error", "message":
+                f"Reconnecting... 1/12 (stream disconnected before completion: {reason})"}
+            self.assertTrue(transport.is_transient_reconnect(event, terminal_seen=False))
+            self.assertFalse(transport.is_transient_reconnect(event, terminal_seen=True))
 
     def test_diagnostic_index_raw_preservation_and_single_display(self):
         trace = transport.RunResult()

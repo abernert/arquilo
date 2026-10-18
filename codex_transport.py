@@ -359,13 +359,17 @@ class RunResult:
 
 _RECONNECT = re.compile(
     r"Reconnecting\.\.\. ([1-9][0-9]*)/([1-9][0-9]*) "
-    r"\(stream disconnected before completion: "
-    r"websocket closed by server before response\.completed\)"
+    r"\(stream disconnected before completion: ([^\r\n()]{1,240})\)"
 )
 
 
 def is_transient_reconnect(event: Any, *, terminal_seen: bool) -> bool:
-    """Only the verified pre-terminal WebSocket notice, never a generic error."""
+    """Only a well-formed nonterminal Codex retry notice, never a real failure.
+
+    Codex emits different transport reasons for HTTP/SSE and WebSocket streams.
+    This is a diagnostic notification, not a terminal result. Real turn.failed,
+    missing turn.completed, nonzero exit and unrelated errors are still fatal.
+    """
     if terminal_seen or not isinstance(event, dict) or set(event) != {"type", "message"}:
         return False
     if event["type"] != "error" or not isinstance(event["message"], str):
@@ -373,11 +377,8 @@ def is_transient_reconnect(event: Any, *, terminal_seen: bool) -> bool:
     match = _RECONNECT.fullmatch(event["message"].strip())
     if match is None:
         return False
-    try:
-        attempt, limit = map(int, match.groups())
-    except ValueError:
-        return False
-    return 1 <= attempt <= limit
+    attempt, limit = int(match.group(1)), int(match.group(2))
+    return 1 <= attempt <= limit <= 1000 and bool(match.group(3).strip())
 
 
 def observe_stop(trace: RunResult, details: object) -> None:

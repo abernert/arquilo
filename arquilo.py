@@ -19,13 +19,17 @@ def _tasklist_main(args: list[str]) -> int:
     if args and args[0] == "run":
         from run_todos import main as run_main
         return run_main(args[1:])
+    if args and args[0] == "resume-review":
+        from review_resume import main as recovery_main
+        return recovery_main(["resume-review", *args[1:]])
     parser = argparse.ArgumentParser(
         prog="arquilo tasklist",
         description="Execute Markdown task lists with mandatory review.",
-        epilog="Use 'python arquilo.py tasklist run --help' for runner options.",
+        epilog=("Use 'python arquilo.py tasklist run --help' for runner options, "
+                "or 'tasklist resume-review --help' for explicit reviewed recovery."),
         allow_abbrev=False,
     )
-    parser.add_argument("command", nargs="?", choices=("run",))
+    parser.add_argument("command", nargs="?", choices=("run", "resume-review"))
     parser.parse_args(args)
     parser.print_help()
     return 0
@@ -36,6 +40,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Dispatch first, so each existing CLI owns its flags, help and exit codes.
     if args and args[0] == "tasklist":
         return _tasklist_main(args[1:])
+    if args and args[0] == "resume-review":
+        # Compatibility with an earlier explicitly invoked recovery wrapper.
+        from review_resume import main as recovery_main
+        return recovery_main(args)
     if args and args[0] == "run":
         # Keep stdout machine-readable and never echo user arguments (secrets).
         print(RUN_MIGRATION_NOTICE, file=sys.stderr)
@@ -56,7 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         allow_abbrev=False,
     )
     parser.add_argument("--version", action="version", version=f"ARQUILO {__version__}")
-    parser.add_argument("command", nargs="?", choices=("tasklist", "run", "doctor", "capabilities", "package"))
+    parser.add_argument("command", nargs="?", choices=("tasklist", "run", "resume-review", "doctor", "capabilities", "package"))
     parser.parse_args(args)
     parser.print_help()
     return 0

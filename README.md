@@ -34,7 +34,7 @@ The **[documentation guide](docs/README.md)** is the full map. In particular:
 | Need | Document |
 | --- | --- |
 | Understand production → review → correction → completion | [Architecture](docs/architecture.md) |
-| Diagnose a problem | [Troubleshooting](docs/troubleshooting.md) |
+| Diagnose a problem | [Troubleshooting](docs/troubleshooting.md) and [reconnection / review recovery](docs/review-resume.md) |
 | Understand authoritative state, recovery and Git safeguards | [Controller safety](docs/controller-safety.md) |
 | Let a planning task extend the task list, then pause for review | [Operator controls](docs/operator-controls.md) |
 | Find and interpret run logs | [Project logs](docs/project-logs.md) |
