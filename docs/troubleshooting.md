@@ -227,3 +227,7 @@ removing it. It is never automatically ignored. Human task edits may need
 For a generator task that writes the rest of the same task file, use
 `--allow-todo-modifications --stop 2` for the planning phase. See
 [operator controls](operator-controls.md).
+
+## Interrupted streams and review-only recovery
+
+A well-formed Codex `Reconnecting... n/m (stream disconnected before completion: ...)` is an interim diagnostic, not a terminal result. It remains visible in logs. Real `turn.failed`, unknown errors, missing `turn.completed` or nonzero exits still stop the run. For a known historical case where production completed with Codex exit 0 but an older controller stopped before mandatory review, see [guarded review-only recovery](review-resume.md). Recovery is explicit, single-task, proof-checked and **does not bypass review or replay production**.

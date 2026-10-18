@@ -57,3 +57,5 @@ It is not a current runtime capability or a runnable configuration format.
 **Real project:** [Security](../SECURITY.md) → [Controller safety](controller-safety.md) → [Operator controls](operator-controls.md) → [Project logs](project-logs.md) → relevant runtime references.
 
 **Contributing:** [Architecture](architecture.md) → [Testing](testing.md) → [Compatibility](compatibility.md) → [Contributing](../CONTRIBUTING.md).
+
+**Stream reconnects and guarded review-only continuation:** [Review recovery](review-resume.md).
