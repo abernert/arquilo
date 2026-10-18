@@ -181,7 +181,7 @@ class ArchiveTests(Fixture):
             "--todo-file",str(self.work/"tasks.md"),"--start","2","--stop","2",
             "--max-steps","1","--max-retries","1","--breakdown-policy","off"]
         (self.work/"tasks.md").write_text("2. ***Task***: Something")
-        self.assertEqual(recovery._validate_recovery_argv(good,"2"),self.work)
+        self.assertEqual(recovery._validate_recovery_argv(good,"2"),self.work.resolve())
         for bad in (good[:-2],good+["--git"],good+["--accept-plan-changes"],
                     good+["--dry-run"],good+["--allow-todo-modifications"],
                     good[:good.index("--start")+1]+["1"]+good[good.index("--start")+2:]):
