@@ -20,6 +20,7 @@ from runtime_config import (
 )
 import codex_policy
 import codex_transport
+import agent_backend
 from runtime_logging import TaskLogRecord, LogWriteError, copy_log_files, write_log_json, write_log_text
 from removed_features import (reject_removed_options, add_removed_arguments,
                               check_removed_environment, reject_bridge_wait_conditions,
@@ -163,6 +164,7 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         "schema_version": ARQUILO_CAPABILITIES_SCHEMA_VERSION,
         "runtime_version": ARQUILO_RUNTIME_VERSION,
         "retained_core_options": ["CFG parallel", "runtime_profile", "--git"],
+        "backends": {"default": "codex", "available": ["codex", "claude-code"], "scope": "all-phases", "fallback": False},
         "operator_controls": {
             "default_max_calls": DEFAULT_MAX_CALLS, "unlimited_max_calls": 0,
             "default_logs_in_workdir": False, "default_allow_todo_modifications": False,
@@ -788,6 +790,7 @@ class TodoRunner:
         network_access: bool = False,
         todo_preamble: str = "auto",
         max_calls: int = DEFAULT_MAX_CALLS,
+        backend: str = "codex",
         **removed_options: Any,
     ) -> None:
         if removed_positional_options:
@@ -797,6 +800,7 @@ class TodoRunner:
                 "Nachfolgende Optionen als Schlüsselwortargumente übergeben. "
                 + IACT_MIGRATION + " " + BRIDGE_MIGRATION
             )
+        self.backend = agent_backend.validate_backend(backend)
         reject_removed_options(removed_options, source="TodoRunner")
         check_removed_environment()
         codex_policy.validate_start_policy(sandbox=sandbox, network_access=network_access)
@@ -867,16 +871,16 @@ class TodoRunner:
         )
         self.sandbox = sandbox
         self.git_enabled = git_enabled
-        self.model = _resolve_codex_model(model)
-        self.reasoning_effort = _resolve_codex_reasoning_effort(reasoning_effort)
+        self.model = agent_backend.resolve_model(model, backend=self.backend)
+        self.reasoning_effort = agent_backend.resolve_effort(reasoning_effort, backend=self.backend)
         self.git_repo_root: Optional[Path] = None
         self.run_id = self._resolve_run_id(run_id)
         # Reject stale/hostile workspace links even though control records now
         # live outside every model-writable workspace.
-        safe_io.check_path(self.workdir / ".codex_runs")
+        safe_io.check_path(self.workdir / agent_backend.logs_name(self.backend))
         self.state_dir = (state_directory(self.workdir, self.todo_workspace_file, state_dir)
                           if not self.dry_run else safe_io.lexical_path(state_dir or default_state_root()) / "dry-run")
-        self.runs_dir = (self.workdir / ".codex_runs" / "run_todos" if logs_in_workdir
+        self.runs_dir = (self.workdir / agent_backend.logs_name(self.backend) / "run_todos" if logs_in_workdir
                          else self.state_dir / "runs")
         self.git_selection = None
         if git_push and not git_enabled:
@@ -907,7 +911,7 @@ class TodoRunner:
                 self.project_id = self.project_logs.project_id
                 if self.logs_in_workdir:
                     self.project_logs = replace(self.project_logs,
-                        directory=self.workdir / ".codex_runs" / "run_todos", workspace_layout=True)
+                        directory=self.workdir / agent_backend.logs_name(self.backend) / "run_todos", workspace_layout=True)
                 self.runs_dir = self.project_logs.runs_directory
                 # Apply owner policy to existing budgets, including exhausted
                 # 0.5.x budgets, without resetting counts or moving state.
@@ -1971,7 +1975,7 @@ class TodoRunner:
                 continue
             if resolved in seen:
                 continue
-            if not resolved.is_file() or resolved.is_relative_to(self.workdir / ".codex_runs"):
+            if not resolved.is_file() or resolved.is_relative_to(self.workdir / agent_backend.logs_name(self.backend)):
                 continue
             seen.add(resolved)
             unique.append(resolved)
@@ -3189,14 +3193,14 @@ class TodoRunner:
         task_text = augment_with_preamble(
             task_text, active_todo_file, mode=self.todo_preamble
         )
-        active_model = _resolve_codex_model(
-            model_override if model_override is not None else self.model
+        active_model = agent_backend.resolve_model(
+            model_override if model_override is not None else self.model, backend=self.backend
         )
-        active_reasoning_effort = _resolve_codex_reasoning_effort(
-            reasoning_effort_override
-            if reasoning_effort_override is not None
-            else self.reasoning_effort
+        active_reasoning_effort = agent_backend.resolve_effort(
+            reasoning_effort_override if reasoning_effort_override is not None else self.reasoning_effort,
+            backend=self.backend
         )
+        agent_backend.validate_options(self.backend, config_profile=config_profile, extra_args=extra_args)
         active_extra_args = list(extra_args or [])
         active_process_stop = process_stop_override or self.process_stop_path
         session_stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -3230,7 +3234,7 @@ class TodoRunner:
             log_dir, attempt=1, ensure_directories=False)
         command_preview = (
             f"autobuild.start(task=<Referenzprompt>, workdir={str(active_workdir)!r}, "
-            f"options=AutoBuildOptions(sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
+            f"options=AutoBuildOptions(backend={self.backend!r}, sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
             f"model={active_model!r}, reasoning_effort={active_reasoning_effort!r}, "
             f"max_steps={self.max_steps * self.max_retries}, max_calls={self.max_calls}, summary_json={str(preview_summary)!r}), "
             f"context=AutoBuildContext(task_source='todo', todo_identifier={identifier!r}))"
@@ -3292,6 +3296,7 @@ class TodoRunner:
             )
             print(f"[exec] (1/1, Fortsetzungsschritte={self.max_steps * self.max_retries}) {task_text}")
             options = AutoBuildOptions(
+                backend=self.backend,
                 sandbox=active_sandbox, network_access=active_network_access,
                 config_profile=config_profile, extra_arg=active_extra_args,
                 logfile=pretty_log, rawlog=raw_log, summary_json=summary_json,
@@ -3474,6 +3479,7 @@ class TodoRunner:
                 "todo_preamble": self.todo_preamble,
             },
         }
+        payload["backend"] = self.backend
         if self.model:
             payload["model"] = self.model
         if self.reasoning_effort:
@@ -4500,6 +4506,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "Wird pro Invocation übergeben und verändert config.toml nicht."
         ),
     )
+    agent_backend.add_backend_argument(parser)
+    parser.add_argument("--skip-backend-preflight", action="store_true", help="Skip the selected runtime preflight; does not select another backend.")
     parser.add_argument(
         "--skip-codex-preflight",
         action="store_true",
@@ -4665,6 +4673,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 logs_in_workdir=args.logs_in_workdir,
                 allow_todo_modifications=args.allow_todo_modifications,
                 model=args.model,
+                backend=args.backend,
                 reasoning_effort=args.reasoning_effort,
                 breakdown_policy=args.breakdown_policy,
                 breakdown_max_children=args.breakdown_max_children,
@@ -4680,9 +4689,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             if not args.dry_run:
                 run_runtime_profile_preflight(runtime_profile, workdir=workdir, todo_file=todo_path)
-            if not args.skip_codex_preflight:
-                run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
-                    model=args.model, reasoning_effort=args.reasoning_effort)
+            if args.skip_codex_preflight and args.backend != "codex":
+                raise ValueError("--skip-codex-preflight is Codex-only; use --skip-backend-preflight.")
+            if not args.skip_backend_preflight:
+                if args.backend == "codex" and not args.skip_codex_preflight:
+                    run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
+                        model=args.model, reasoning_effort=args.reasoning_effort)
+                elif args.backend == "claude-code" and not args.dry_run:
+                    from claude_transport import probe_cli
+                    probe = probe_cli(cwd=workdir, env=dict(os.environ), require_schema=True,
+                                      require_effort=args.reasoning_effort is not None)
+                    if probe["status"] != "PASS":
+                        raise RuntimeError(probe.get("detail", "Claude Code preflight failed"))
+                    print("[preflight] Claude Code CLI verified; no Codex and no preflight model call.")
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:
             try:

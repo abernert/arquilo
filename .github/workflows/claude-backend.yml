@@ -1,0 +1,67 @@
+name: Claude backend validation
+on:
+  push:
+    branches: [feat/claude-code-backend]
+  pull_request:
+    branches: [main]
+    paths: ['agent_*.py', 'claude_*.py', 'tests/test_claude_backend.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
+permissions:
+  contents: read
+concurrency:
+  group: claude-backend-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install exact official CLI in disposable directory
+        run: npm install --prefix "$RUNNER_TEMP/native-cli" @anthropic-ai/claude-code@2.1.303
+      - name: Native Claude against synthetic loopback provider (no real model or credentials)
+        run: >-
+          python -B experiments/claude_code/feasibility.py
+          --claude "$RUNNER_TEMP/native-cli/node_modules/.bin/claude"
+          --out "$RUNNER_TEMP/claude-native-fixture"
+      - name: Retain synthetic diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: claude-native-fixture
+          path: |
+            ${{ runner.temp }}/claude-native-fixture/report.json
+            ${{ runner.temp }}/claude-native-fixture/provider-requests.json
+            ${{ runner.temp }}/claude-native-fixture/provider-responses.json
+            ${{ runner.temp }}/claude-native-fixture/logs
+          retention-days: 7
+          if-no-files-found: error
+  offline:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: All offline regressions including Codex compatibility
+        run: python -B -m unittest discover -s tests -v
+      - name: Runtime package contracts
+        run: python -B scripts/check_release.py
+      - name: Build complete runtime package
+        run: python -B scripts/build_runtime_zip.py

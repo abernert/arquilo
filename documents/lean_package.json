@@ -3,11 +3,12 @@
   "python_requires": ">=3.11",
   "runtime_dependencies": [],
   "build_dependencies": [],
-  "runtime_file_count": 86,
+  "runtime_file_count": 94,
   "external_runtime": {
     "codex_cli": "Codex CLI with the required Exec contract; verify using arquilo_doctor.py --check-decide (one model call, may incur costs); no version pin",
     "git": "Only for explicitly enabled --git functions",
-    "node": "Only when using the supported npm Codex launcher"
+    "node": "Only when using a supported npm launcher (Codex or Claude Code)",
+    "claude_code_cli": "Optional instead of Codex with --backend claude-code; native print/stream-json contract and safety options checked by doctor. No Codex installation/authentication required."
   },
   "runtime_files": [
     ".gitignore",
@@ -24,10 +25,17 @@
     "SECURITY.md",
     "THIRD_PARTY.md",
     "VERSION",
+    "agent_backend.py",
+    "agent_process.py",
+    "agent_types.py",
     "arquilo.py",
     "arquilo_doctor.py",
     "autobuild.py",
     "autobuild_contract.py",
+    "claude_decision.py",
+    "claude_doctor.py",
+    "claude_launcher.py",
+    "claude_transport.py",
     "codex_launcher.py",
     "codex_policy.py",
     "codex_transport.py",
@@ -40,6 +48,7 @@
     "decision_response.py",
     "docs/README.md",
     "docs/architecture.md",
+    "docs/claude-code-backend.md",
     "docs/compatibility.md",
     "docs/controller-safety.md",
     "docs/cookbook.md",
@@ -112,7 +121,8 @@
     "documents/history/**",
     "documents/lean_build/**",
     "documents/todos/**",
-    "tests/**"
+    "tests/**",
+    ".arquilo_runs/**"
   ],
   "project": "ARQUILO",
   "license": "Apache-2.0"

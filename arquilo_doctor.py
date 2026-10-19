@@ -20,6 +20,7 @@ from uuid import uuid4
 from codex_launcher import CodexLauncher, resolve_launcher
 from codex_transport import TransportTimeouts, metadata_probe_arguments, probe_cli_metadata
 import codex_policy
+import agent_backend
 from runtime_files import validate_path
 
 
@@ -112,7 +113,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
                    env: Mapping[str, str] | None = None, check_decide: bool = False,
                    model: str | None = None, reasoning_effort: str | None = None,
                    model_provider: str | None = None, config_profile: str | None = None,
-                   decide_timeout: float = DECIDE_TIMEOUT_SECONDS) -> dict:
+                   decide_timeout: float = DECIDE_TIMEOUT_SECONDS, backend: str = "codex") -> dict:
     """Resolve paths like run_todos; metadata by default, Decide only by opt-in.
 
     No profile command, task, authentication read, configuration write or model
@@ -130,6 +131,11 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
                              or model_provider is not None or config_profile is not None
                              or decide_timeout != DECIDE_TIMEOUT_SECONDS):
         raise ValueError("Decide-Optionen benötigen --check-decide.")
+    agent_backend.validate_options(backend, model_provider=model_provider, config_profile=config_profile)
+    if backend == "claude-code":
+        from claude_doctor import collect_report as claude_report
+        return claude_report(workdir=workdir, todo_file=todo_file, env=env, check_decide=check_decide,
+            model=model, reasoning_effort=reasoning_effort, decide_timeout=decide_timeout)
     environment = dict(os.environ if env is None else env)
     root = Path(__file__).resolve().parent
     report = {
@@ -231,6 +237,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    agent_backend.add_backend_argument(parser)
     parser.add_argument("--workdir", type=Path, help="Vorhandener Projektworkspace; Standard: ToDo-Ordner, sonst cwd.")
     parser.add_argument("--todo-file", type=Path, help="Optionaler Pfad zur bestehenden ToDo-Datei.")
     parser.add_argument("--json", action="store_true", help="Strukturierten Bericht auf stdout ausgeben, auch bei Fehlern.")
@@ -248,10 +255,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("Modell-, Provider-, Profil-, Effort- und Timeout-Overrides benötigen --check-decide.")
     if args.decide_timeout is not None and (not math.isfinite(args.decide_timeout) or args.decide_timeout <= 0):
         parser.error("--decide-timeout muss eine endliche positive Sekundenzahl sein.")
-    report = collect_report(workdir=args.workdir, todo_file=args.todo_file, check_decide=args.check_decide,
+    report = collect_report(backend=args.backend, workdir=args.workdir, todo_file=args.todo_file, check_decide=args.check_decide,
                             model=args.model, reasoning_effort=args.reasoning_effort,
                             model_provider=args.model_provider, config_profile=args.config_profile,
                             decide_timeout=DECIDE_TIMEOUT_SECONDS if args.decide_timeout is None else args.decide_timeout)
+    if args.backend == "claude-code":
+        if args.json:
+            print(json.dumps(report, ensure_ascii=True, indent=2))
+        else:
+            print(f"ARQUILO Doctor: {report['status']} | backend=claude-code | Claude {report.get('claude_code_version') or 'unavailable'}")
+            for check in report['checks']:
+                print(f"[{check['status']}] {check['name']}: {check['detail']}")
+            print("Not verified: " + "; ".join(report['not_verified']))
+            print("Codex: not used. Model calls: " + str(report['model_calls']))
+        return 0 if report['checks_status'] == 'PASS' else 1
     if args.json:
         print(json.dumps(report, ensure_ascii=True, indent=2))
     else:

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import codex_policy
+import agent_backend
 from removed_features import check_removed_fields
 from execution_budget import DEFAULT_MAX_CALLS, positive_limit
 from runtime_contracts import AutoBuildStatus, ExitCode
@@ -18,6 +19,7 @@ from legacy_naming import schema_matches
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AutoBuildOptions:
+    backend: str = "codex"
     sandbox: str = "workspace-write"
     network_access: bool = False
     config_profile: str | None = None
@@ -35,6 +37,7 @@ class AutoBuildOptions:
     verbose: bool = False
 
     def __post_init__(self):
+        agent_backend.validate_options(self.backend, config_profile=self.config_profile, extra_args=self.extra_arg)
         positive_limit(self.max_calls)
         codex_policy.validate_start_policy(sandbox=self.sandbox,
             network_access=self.network_access, allow_read_only=True)

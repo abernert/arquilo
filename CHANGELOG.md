@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — experimental Claude Code backend
+
+- Add run-wide `--backend {codex,claude-code}`; Codex remains the default.
+- Route production, fixes, review, parent review, Decide, doctor/preflight and
+  parallel worker payloads without a Codex executable/authentication dependency
+  when Claude is selected. No runtime/provider fallback; OpenCode not yet enabled.
+- Add strict native session/result validation, tool-role boundaries, owned process
+  cancellation and raw evidence. Preserve shared status, review and budget gates.
+- Include backend modules in the runtime ZIP and document native sandbox limits.
+- Keep the released version/tag unchanged; this branch needs explicit host/model
+  qualification before client use.
+
 ## 0.7.4 — 2026-10-19 (public preview)
 
 - Treat strictly recognized, pre-terminal Codex `Reconnecting... n/m`

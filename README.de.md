@@ -1,5 +1,9 @@
 # ARQUILO
 
+**Experimenteller Branch:** `--backend claude-code` verwendet Claude Code in allen
+Phasen einschließlich Review und Decide, ohne Codex-Aufruf. Standard bleibt
+`--backend codex`. [Anleitung und Grenzen](docs/claude-code-backend.md).
+
 **Markdown-Aufträge ausführen, Ergebnisse unabhängig prüfen, kontrolliert fortsetzen.**
 
 ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and

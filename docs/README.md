@@ -59,3 +59,8 @@ It is not a current runtime capability or a runnable configuration format.
 **Contributing:** [Architecture](architecture.md) → [Testing](testing.md) → [Compatibility](compatibility.md) → [Contributing](../CONTRIBUTING.md).
 
 **Stream reconnects and guarded review-only continuation:** [Review recovery](review-resume.md).
+
+## Alternative runtime (experimental)
+
+[Claude Code backend](claude-code-backend.md): run-wide `--backend` selection,
+installation, independent provider configuration, safety limits and tests.

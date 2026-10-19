@@ -26,6 +26,7 @@ from typing import Callable, Mapping
 from codex_launcher import resolve_launcher
 from codex_policy import CodexPolicyError
 import codex_transport as transport
+import agent_backend
 import decision_archive as archive
 from decision_request import DecisionRequest
 from decision_response import response_schema, validate_response
@@ -109,8 +110,9 @@ class DecisionAttempt:
 
 def execute_attempt(
     request: DecisionRequest, *, project_root: Path, trusted_codex_home: Path | None,
+    backend: str = "codex",
     env: Mapping[str, str], raw_log: Path, pretty_log: Path,
-    temp_root: Path | None = None, launcher: str = "codex",
+    temp_root: Path | None = None, launcher: str | None = None,
     output_schema: Path | None = None, output_last_message: Path | None = None,
     timeouts: transport.TransportTimeouts | None = None,
     model_provider: str | None = None, config_profile: str | None = None,
@@ -126,6 +128,13 @@ def execute_attempt(
     """
     if not isinstance(request, DecisionRequest):
         raise TypeError("request must be DecisionRequest")
+    agent_backend.validate_options(backend, config_profile=config_profile, model_provider=model_provider, trusted_codex_home=trusted_codex_home)
+    if backend == "claude-code":
+        from claude_decision import execute_attempt as claude_attempt
+        return claude_attempt(request, project_root=project_root, env=env, raw_log=raw_log, pretty_log=pretty_log,
+            temp_root=temp_root, launcher=launcher, output_schema=output_schema, output_last_message=output_last_message,
+            timeouts=timeouts, process_stop_path=process_stop_path, cancel_requested=cancel_requested)
+    launcher = "codex" if launcher is None else launcher
     prompt = request.to_prompt()  # Validate before filesystem/process work.
     project = _absolute(project_root, "project_root")
     child_env = decision_environment(env, project_root=project, trusted_codex_home=trusted_codex_home)
@@ -189,11 +198,12 @@ class DecisionExecSettings:
     """
 
     project_root: Path
+    backend: str = "codex"
     trusted_codex_home: Path | None = None
     env: Mapping[str, str]
     log_root: Path
     temp_root: Path | None = None
-    launcher: str = "codex"
+    launcher: str | None = None
     model_provider: str | None = None
     config_profile: str | None = None
     timeouts: transport.TransportTimeouts | None = None
@@ -203,6 +213,11 @@ class DecisionExecSettings:
     call_budget: CallBudget | None = None
 
     def __post_init__(self) -> None:
+        agent_backend.validate_options(self.backend, config_profile=self.config_profile, model_provider=self.model_provider, trusted_codex_home=self.trusted_codex_home)
+        if self.launcher is None:
+            object.__setattr__(self, "launcher", "codex" if self.backend == "codex" else self.env.get("ARQUILO_CLAUDE_CODE_COMMAND", "claude"))
+        if self.backend == "claude-code" and Path(self.launcher).name.lower() in {"codex", "codex.exe", "codex.cmd"}:
+            raise ValueError("Claude Code backend cannot use the Codex launcher")
         from codex_policy import validate_config_profile, validate_model_provider
         validate_model_provider(self.model_provider)
         validate_config_profile(self.config_profile)
@@ -324,6 +339,7 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
                 settings.call_budget.consume(request.task_id, f"{request.phase}:decide:{number}")
             attempt = execute_attempt(request,
                 project_root=settings.project_root, trusted_codex_home=settings.trusted_codex_home,
+                **({"backend": settings.backend} if settings.backend != "codex" else {}),
                 env=settings.env, raw_log=directory / "events.jsonl", pretty_log=directory / "pretty.log",
                 temp_root=settings.temp_root, launcher=settings.launcher, timeouts=settings.timeouts,
                 model_provider=settings.model_provider, config_profile=settings.config_profile,

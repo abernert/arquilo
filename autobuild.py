@@ -32,6 +32,8 @@ from review_contract import (
     review_requires_runner_handling, build_review_context_reference,
 )
 import codex_transport
+import agent_backend
+from claude_transport import run_claude_exec_json
 from runtime_config import environment_value, transport_timeout_values
 import codex_policy
 from codex_transport import (
@@ -254,6 +256,7 @@ class AutoBuildSummary:
     budget_exhausted: Optional[Dict[str, Any]] = None
     terminal_attempt: Optional[Dict[str, Any]] = None
     decision_history: List[RunResult] = field(default_factory=list)
+    backend: str = "codex"
 
 
 def run_result_error(result: RunResult, phase: str) -> Optional[Dict[str, Any]]:
@@ -602,6 +605,7 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
     payload["parent_review_contract_version"] = AUTOBUILD_PARENT_REVIEW_CONTRACT_VERSION
     if isinstance(summary.review_classification, dict):
         payload["review_classification"] = dict(summary.review_classification)
+    payload["backend"] = getattr(summary, "backend", "codex")
     if summary.model:
         payload["model"] = summary.model
     if summary.reasoning_effort:
@@ -859,7 +863,7 @@ def evaluate_completion_decision(
         latest_answer=latest_answer, review_findings=review_findings,
         run_id=run_id if run_id is not None else f"standalone-{uuid4().hex}",
         task_id=task_id, phase=phase, attempt_id=attempt_id,
-        model=model if model is not None else _decision_model(),
+        model=model if model is not None else (None if settings is not None and settings.backend == "claude-code" else _decision_model()),
         reasoning_effort=reasoning_effort, system_prompt=_decision_system_prompt())
     if pretty_log is not None:
         append(pretty_log, f"[{ts()}] [decision_input] {json.dumps(request.to_dict(), ensure_ascii=False)}\n")
@@ -892,7 +896,7 @@ def evaluate_completion_decision(
         is_finished=selected_option == "COMPLETE",
         selected_option=selected_option,
         explanation=call.result.explanation,
-        source="codex_exec",
+        source="claude_code" if settings is not None and settings.backend == "claude-code" else "codex_exec",
         fallback_used=False,
         archive=_decision_archive_payload(call),
     )
@@ -926,6 +930,9 @@ def start(
     # Revalidate at the execution boundary, including objects changed after
     # construction; reject before reading task files or setting up a workspace.
     options.__post_init__()
+    backend = options.backend
+    if decision_settings is not None and decision_settings.backend != backend:
+        raise ValueError("Decision backend must match the run-wide backend; no implicit fallback.")
     sandbox, network_access = options.sandbox, options.network_access
     config_profile = options.config_profile
     base_extra_args = list(options.extra_arg)
@@ -945,8 +952,8 @@ def start(
         raise ValueError(
             "Entweder 'workdir' oder 'file' angeben (genau eines erforderlich)."
         )
-    model = _resolve_codex_model(model)
-    reasoning_effort = _resolve_codex_reasoning_effort(reasoning_effort)
+    model = agent_backend.resolve_model(model, backend=backend)
+    reasoning_effort = agent_backend.resolve_effort(reasoning_effort, backend=backend)
     if task is None:
         task_path = native_path(task_file, label="task_file")  # type: ignore[arg-type]
         task_text = read_utf8(task_path).strip()
@@ -970,7 +977,7 @@ def start(
             )
         process_stop_full = candidate
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_logs = (unique_directory(workspace / ".codex_runs", prefix=f"run_{stamp}")
+    default_logs = (unique_directory(workspace / agent_backend.logs_name(backend), prefix=f"run_{stamp}")
                     if logfile is None or rawlog is None else None)
     pretty_log = (
         safe_io.lexical_path(logfile)
@@ -1017,7 +1024,8 @@ def start(
         try:
             claim = call_budget.consume(todo_identifier or "standalone", budget_phase(stage))
             append(pretty_log, f"[{ts()}] [call_budget] {json.dumps(claim, ensure_ascii=False)}\n")
-            return run_codex_exec_json(
+            execute_agent = run_codex_exec_json if backend == "codex" else run_claude_exec_json
+            return execute_agent(
                 prompt=prompt,
                 cwd=workspace,
                 sandbox=effective_sandbox,
@@ -1043,7 +1051,7 @@ def start(
             return exc.result
         except OSError as exc:
             return RunResult(execution_error=execution_error(
-                f"Cannot execute Codex: {exc}", code="codex_launch_failed", phase=stage,
+                f"Cannot execute {backend}: {exc}", code=f"{backend}_launch_failed", phase=stage,
             ))
 
     readonly_mode = sandbox == "read-only"
@@ -1247,7 +1255,7 @@ def start(
             if latest_review_classification.get("source_format") == "text_legacy":
                 if settings is None:
                     settings = DecisionExecSettings(
-                        project_root=workspace, config_profile=config_profile,
+                        project_root=workspace, backend=backend, config_profile=config_profile,
                         env=dict(os.environ), log_root=pretty_log.parent,
                         process_stop_path=process_stop_full,
                     )
@@ -1263,7 +1271,7 @@ def start(
                 task_snapshot=decision_snapshot, run_id=active_decision_run_id,
                 task_id=extract_todo_id(todo_identifier or "") or "standalone",
                 phase=decision_phase, attempt_id=f"{decision_attempt_id}.{attempt_runs}",
-                model=_decision_model() or model, reasoning_effort=reasoning_effort,
+                model=(model if backend == "claude-code" else _decision_model() or model), reasoning_effort=reasoning_effort,
                 settings=settings, pretty_log=pretty_log,
             )
         except DecisionInputError as exc:
@@ -1398,6 +1406,7 @@ def start(
     summary_obj.review_required = True
     summary_obj.process_stop_triggered = process_stop_triggered
     summary_obj.process_stop_details = process_stop_details
+    summary_obj.backend = backend
     summary_obj.model = model
     summary_obj.reasoning_effort = reasoning_effort
     summary_obj.decision = decision_payload
@@ -1447,6 +1456,7 @@ class RemovedAutoBuildArgument(argparse.Action):
 
 
 def add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    agent_backend.add_backend_argument(parser)
     task = parser.add_mutually_exclusive_group(required=True)
     task.add_argument("--task", help="Auftragstext direkt.")
     task.add_argument("--task-file", help="UTF-8-Datei mit Auftrag.")
@@ -1466,7 +1476,7 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--decision-phase", default="completion", help=argparse.SUPPRESS)
     parser.add_argument("--max-steps", type=int, default=3)
     parser.add_argument("--max-calls", type=int, default=DEFAULT_MAX_CALLS,
-                        help="Codex-Ausführungsversuche inklusive Review/Decide; 0 = unbegrenzt (Standard).")
+                        help="Agenten-Ausführungsversuche inklusive Review/Decide; 0 = unbegrenzt (Standard).")
     for name in ("auto-continue", "print-end-answer", "verbose"):
         parser.add_argument("--" + name, action="store_true")
     from removed_features import add_removed_arguments
@@ -1499,10 +1509,10 @@ def failure_summary(exc: BaseException, *, workdir, options: AutoBuildOptions) -
         error["exit_code"] = code
     workspace = Path(workdir or ".").resolve()
     summary = AutoBuildSummary(last_answer="", completed=False, auftrag_runs=0, review_runs=0,
-        workspace=workspace, pretty_log=Path(options.logfile or workspace / ".codex_runs/run.log"),
-        raw_log=Path(options.rawlog or workspace / ".codex_runs/run.jsonl"), readonly_result_path=None,
+        workspace=workspace, pretty_log=Path(options.logfile or workspace / agent_backend.logs_name(options.backend) / "run.log"),
+        raw_log=Path(options.rawlog or workspace / agent_backend.logs_name(options.backend) / "run.jsonl"), readonly_result_path=None,
         execution_error=error, process_stop_triggered=code == 6, process_stop_details=message if code == 6 else None,
-        summary_json_path=Path(options.summary_json) if options.summary_json else None)
+        summary_json_path=Path(options.summary_json) if options.summary_json else None, backend=options.backend)
     if summary.summary_json_path is not None:
         write_summary_json(summary, summary.summary_json_path)
     return summary
@@ -1528,7 +1538,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args_list and args_list[0] == "queue":
             sys.stderr.write(f"Fehler: {SERVICE_MIGRATION}\n")
             return 2
-        parser = argparse.ArgumentParser(description="AutoBuild: ein Auftrag mit Pflichtreview über Codex Exec.")
+        parser = argparse.ArgumentParser(description="AutoBuild: ein Auftrag mit Pflichtreview über das ausgewählte Backend.")
         if args_list[:1] == ["--request-json"]:
             from removed_features import add_removed_arguments
             add_removed_arguments(parser)
