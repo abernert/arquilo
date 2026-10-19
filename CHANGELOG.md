@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.7.4 — 2026-10-19 (public preview)
+
+- Treat strictly recognized, pre-terminal Codex `Reconnecting... n/m`
+  notices as diagnostics rather than fatal stream errors, including observed
+  WebSocket and HTTP/SSE variants. Preserve the original event, ordinal and
+  capture diagnostics; real/unknown/post-terminal errors, missing completion,
+  failed turns, unsuccessful exits, stops and I/O failures remain fatal.
+- Add explicit one-task `arquilo tasklist resume-review` (also
+  `arquilo resume-review`) for the narrow case where a production turn
+  completed successfully but the previous run stopped before review because
+  recovered reconnect notices were misclassified. Validate the complete
+  original archived capture, exact original task prompt, execution result,
+  contract, workspace and task identity before reuse.
+- Reuse only the validated completed production result: no production replay.
+  Launch a fresh mandatory, independent read-only review with the existing
+  controller, plan and DONE gates intact. Refuse unsafe or ambiguous recovery,
+  keep task bounds strict, and do not silently mark a task complete.
+- Document prerequisites, exact command, evidence checks and limitations in
+  [review-only recovery guidance](docs/review-resume.md). Add offline
+  regressions for stream diagnostics and recovery. Public-preview status,
+  model-provider policies and runtime sandbox boundaries are unchanged.
+
 ## 0.7.3 — 2026-10-16 (public preview)
 
 - Add optional `--todo-template` to `tasklist run`, its `run` alias, and the direct
