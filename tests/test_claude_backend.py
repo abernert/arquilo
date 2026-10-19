@@ -128,7 +128,8 @@ class SelectionTests(Fixture):
         for executable in ('codex','codex.exe','/example/codex','C:\\tools\\codex.exe'):
             with self.subTest(executable=executable),self.assertRaises(claude_launcher.ClaudeCodeLauncherError):
                 claude_launcher.resolve_launcher(executable,cwd=self.work,env=self.env)
-        with patch.object(subprocess,'Popen',side_effect=AssertionError('No process allowed')):
+        with patch.object(ct, 'resolve_launcher', claude_launcher.resolve_launcher), \
+                patch.object(subprocess,'Popen',side_effect=AssertionError('No process allowed')):
             report=ct.probe_cli(cwd=self.work,env={**self.env,'ARQUILO_CLAUDE_CODE_COMMAND':'codex'})
         self.assertEqual(report['status'],'FAIL')
 

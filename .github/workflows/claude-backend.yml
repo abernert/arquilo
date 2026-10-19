@@ -4,7 +4,7 @@ on:
     branches: [feat/claude-code-backend]
   pull_request:
     branches: [main]
-    paths: ['agent_*.py', 'claude_*.py', 'tests/test_claude_backend.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
+    paths: ['agent_*.py', 'claude_*.py', 'tests/test_claude*.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
 permissions:
   contents: read
 concurrency:
@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install Linux sandbox prerequisites (no policy relaxation)
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
       - name: Install exact official CLI in disposable directory
         run: npm install --prefix "$RUNNER_TEMP/native-cli" @anthropic-ai/claude-code@2.1.303
       - name: Native Claude against synthetic loopback provider (no real model or credentials)

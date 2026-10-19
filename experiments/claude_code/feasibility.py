@@ -119,10 +119,18 @@ def main():
                 timeouts=TransportTimeouts(total=35,stall=20,kill_grace=1,post_turn_grace=5))
             result=execute(request)
             ok=(not result.execution.succeeded) if case in {'provider_error','forbidden_write'} else result.execution.succeeded
-            if case=='write':ok=ok and (work/'hello.txt').read_text()=='native fixture\n'
+            if case=='write':ok=ok and (work/'hello.txt').is_file() and (work/'hello.txt').read_text()=='native fixture\n'
             if case=='structured':ok=ok and json.loads(result.execution.answer).get('option')=='FOUR'
             if case=='read':ok=ok and any('native fixture' in json.dumps(row['request'].get('messages')) for row in server.calls[before:])
-            if case=='forbidden_write':ok=ok and not (work/'forbidden.txt').exists()
+            if case in {'provider_error','forbidden_write'}:
+                # The intended native fault must be reached. A startup/parser
+                # failure unrelated to this case is not a successful negative test.
+                ok=ok and result.trace.capture.get('verified_init') is True and len(server.calls)>before
+            if case=='provider_error':
+                ok=ok and 'synthetic provider error' in (result.trace.capture_dir/'stdout.bin').read_text()
+            if case=='forbidden_write':
+                ok=ok and not (work/'forbidden.txt').exists()
+                ok=ok and 'forbidden tool' in str(result.execution.failure)
             report['tests'].append({'name':case,'status':'PASS' if ok else 'FAIL','provider_requests':len(server.calls)-before,
                                     'execution':asdict(result.execution),'capture':str(result.trace.capture_dir)})
             save('report.json',report)

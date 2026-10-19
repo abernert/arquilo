@@ -121,7 +121,8 @@ def selected_tools(request):
 
 def policy_settings(request):
     # User/provider configuration stays native; repository settings/extensions
-    # cannot select additional tools, alter runtime control, or start hooks.
+    # cannot select additional task tools or installed hooks. Bundled runtime
+    # components still execute as part of the trusted native CLI.
     settings = {"disableAllHooks": True, "autoMemoryEnabled": False,
                 "permissions": {"defaultMode": "dontAsk"}}
     if request.sandbox != "read-only":
@@ -221,6 +222,21 @@ class ClaudeProtocol:
             raise ValueError("Claude emitted data after its terminal result")
         if event.get("session_id") != self.request.session_id:
             raise ValueError("Claude event has missing or foreign session identity")
+        if kind == "system" and event.get("subtype") == "ui_invalidate":
+            # Measured native 2.1.303 pre-init UI notification, not a tool or
+            # completion signal. Do not generalize this to arbitrary system data.
+            if (set(event) != {"type", "subtype", "event", "uuid", "session_id"}
+                    or event.get("event") != "ui.render"
+                    or not isinstance(event.get("uuid"), str)):
+                raise ValueError("Malformed Claude UI diagnostic")
+            return False
+        if kind == "result" and event.get("is_error") is True:
+            # Startup failures (e.g. unavailable required sandbox) may precede
+            # init. Retain their cause, but never establish completion or init.
+            trace.capture["native_error"] = event
+            raise ValueError("Claude native failure: " + json.dumps({
+                "subtype": event.get("subtype"), "errors": event.get("errors"),
+                "result": event.get("result")}, ensure_ascii=True)[:4096])
         if kind == "system" and event.get("subtype") == "init":
             if self.initialized:
                 raise ValueError("Duplicate Claude init")
@@ -232,10 +248,27 @@ class ClaudeProtocol:
             actual = event.get("tools")
             if not isinstance(actual, list) or any(not isinstance(x,str) for x in actual) or set(actual)-permitted:
                 raise ValueError("Unexpected native Claude tools in init")
-            for field in ("mcp_servers", "plugins", "plugin_errors", "mcp_server_errors"):
+            for field in ("mcp_servers", "plugin_errors", "mcp_server_errors", "skills", "slash_commands"):
                 if event.get(field):
                     raise ValueError("Claude unexpectedly loaded or attempted an integration")
+            # --safe-mode disables installed mods, not the CLI's own bundled
+            # components. These two exact native 2.1.303 identities were measured
+            # in a fresh home. Metadata validation is NOT pre-execution isolation.
+            plugins = event.get("plugins", [])
+            known = {"cc-plugin-agents-md", "cc-plugin-plugin-authoring"}
+            if not isinstance(plugins, list):
+                raise ValueError("Malformed Claude component metadata")
+            seen = set()
+            for plugin in plugins:
+                if (not isinstance(plugin, dict) or set(plugin) != {"name", "path", "source"}
+                        or plugin.get("name") not in known or plugin["name"] in seen
+                        or plugin.get("path") != "builtin"
+                        or plugin.get("source") != plugin["name"] + "@builtin"):
+                    raise ValueError("Unqualified Claude runtime component")
+                seen.add(plugin["name"])
             self.initialized = True
+            trace.capture["verified_init"] = True
+            trace.capture["runtime_components"] = plugins
             trace.capture["effective_model"] = event.get("model")
             trace.capture["effective_tools"] = actual
         elif not self.initialized:
@@ -243,6 +276,8 @@ class ClaudeProtocol:
         elif kind == "result":
             if (event.get("subtype") != "success" or event.get("is_error") is not False
                     or event.get("permission_denials") or event.get("errors")
+                    or event.get("safety_stops") or event.get("api_error_status")
+                    or event.get("terminal_reason") not in (None, "completed")
                     or event.get("stop_reason") in {"max_tokens", "max_turns", "refusal", "length"}):
                 raise ValueError("Claude result failed, was truncated, or contains permission denials")
             if self.request.output_schema is not None:
@@ -307,7 +342,7 @@ def execute(request: ClaudeRequest) -> TransportResult:
             "raw_files":{"stdin":"prompt.utf8","stdout":"stdout.bin","stderr":"stderr.bin"},
             "answer_file":"response.txt", "answer_source":"correlated Claude native terminal result",
             "cli_answer_file":str(request.output_last_message) if request.output_last_message else None,
-            "policy":"safe-mode, trusted user settings, no hooks/MCP/skills; tools restricted by role"}
+            "policy":"safe-mode, trusted user settings/bundled runtime; installed hooks/MCP/skills disabled; role-scoped tools"}
         safe_io.write_bytes(trace.capture_dir/"prompt.utf8",payload,exclusive=True)
         for name in ("stdout.bin","stderr.bin","response.txt"):
             safe_io.write_bytes(trace.capture_dir/name,b"",exclusive=True)

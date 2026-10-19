@@ -61,7 +61,7 @@ environment values are retained, but not dumped to the logs.
 Every invocation uses a fresh UUID session and UTF-8 stdin. The adapter requests
 native stream-json output, no session persistence, `dontAsk` permission handling,
 explicit built-in tools, no arbitrary MCP servers, and safe mode. Project/local
-settings, CLAUDE.md, skills, custom agents and plugins are not used by this
+settings, CLAUDE.md, skills, custom agents and installed plugins are not used by this
 initial integration. Relevant project instructions must be in the captured task
 or additive ARQUILO runtime profile. Trusted user authentication/model/provider
 settings are retained. Mandatory corporate policy can still apply; a company
@@ -73,6 +73,18 @@ invocation, but post-event validation cannot undo a tool already executed.
 | Production and fix | Read, Glob, Grep, Edit, Write, Bash |
 | Review and parent review | Read, Glob, Grep; **no Bash or write tools** |
 | Decide | No task tools; only the native structured-output mechanism when needed |
+
+Claude 2.1.303 emits a `ui_invalidate`/`ui.render` diagnostic before init.
+It is retained but never treated as success. Its two measured built-in components
+(`cc-plugin-agents-md`, `cc-plugin-plugin-authoring`) remain part of the trusted
+native CLI even in safe mode; unknown or installed plugin identities fail the
+acceptance check. This check is not a pre-execution interceptor. `disableAllHooks`
+does not disable bundled runtime components. A fresh user profile does not prove
+that every mandatory managed integration is absent.
+
+On Linux, production requires the native sandbox prerequisites `bubblewrap` and
+`socat` and OS permission to use them. Have IT install/approve these as required;
+do not disable `failIfUnavailable` or operating-system protections to run a task.
 
 File-edit auto-approval is scoped to working-directory paths. Production Bash
 requires Claude's native sandbox with `failIfUnavailable` and no unsandboxed
@@ -162,7 +174,8 @@ messages**, not a native Claude model session. Tests poison Codex process and
 configuration entry points and install a sentinel executable for child-process
 regressions. They check production/review/fix/Decide, worker serialization,
 full task-list status, cancellation, timeouts, malformed output, archive failure,
-unsupported CLI contracts and independent model configuration. Native CLI tests
+unsupported CLI contracts and independent model configuration. The maintained native fixture pins Claude Code 2.1.303 and uses a synthetic
+loopback provider, never a real model. Native CLI tests
 and real-model/client-host tests are distinct levels; passing an offline suite
 does not establish native tool isolation or model quality.
 
@@ -172,3 +185,4 @@ Official references checked 2026-10-19:
 - https://code.claude.com/docs/en/settings
 - https://code.claude.com/docs/en/permissions
 - https://code.claude.com/docs/en/sandboxing
+- https://code.claude.com/docs/en/plugins/mods/admin
