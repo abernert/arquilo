@@ -36,6 +36,29 @@ jobs:
           names = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
           assert len(names) == 20 and not any(name.startswith('.resources-080') or 'prepare-resources' in name for name in names)
           assert pathlib.Path('VERSION').read_text().strip() == '0.8.0'
+      - name: Correct native configuration key compatibility
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          p = Path('mcp_selection.py')
+          s = p.read_text()
+          s = s.replace('    names = selection(tuple(inventory))\n    values', '    names = selection(tuple(inventory))\n    # Codex CLI keys use a literal dot-separated path, not TOML key quoting.\n    # A dot inside a server ID cannot be addressed without replacing transport\n    # configuration; refuse instead of creating a different accidental server.\n    if any("." in name for name in (*selected, *(names or ()))):\n        raise ResourceError("Explicit MCP selection requires server IDs without dots; rename the local config alias. No model call started.")\n    values')
+          s = s.replace('prefix = "mcp_servers." + json.dumps(name, ensure_ascii=True)', 'prefix = "mcp_servers." + name')
+          p.write_text(s)
+          p = Path('tests/test_task_resources_v080.py')
+          s = p.read_text().replace('test_config_only_booleans_and_quoted_names', 'test_config_only_booleans_and_portable_names').replace('a.b', 'a-b')
+          s = re.sub(r'mcp_servers\."([\w-]+)"\.', r'mcp_servers.\1.', s)
+          idx = s.index('    def test_none_disables_all_known')
+          s = s[:idx] + '    def test_dotted_mcp_alias_refused_without_config_injection(self):\n        with self.assertRaises(ResourceError):\n            config_values((\'a.b\',), (\'a.b\', \'other\'))\n        with self.assertRaises(ResourceError):\n            config_values((), (\'a.b\',))\n\n' + s[idx:]
+          p.write_text(s)
+          p = Path('scripts/check_resource_configuration.py')
+          s = p.read_text().replace('raise RuntimeError("Native synthetic MCP inventory failed (output withheld).")', 'raise RuntimeError("Native synthetic MCP inventory failed: " +\n                                   result.stderr.decode("utf-8", errors="replace")[-3000:])')
+          p.write_text(s)
+          p = Path('documents/todo_directives.md')
+          p.write_text(p.read_text() + '\nThe first explicit MCP adapter supports configured STDIO and Streamable HTTP\nservers with portable IDs (letters, digits, underscores and hyphens). Dots in\nserver IDs are rejected: the tested native CLI override parser does not use\nTOML key quoting for path components. Rename such a local alias before using\nexplicit selection; no transport or credentials are copied to command arguments.\n')
+          subprocess.run(['git', 'add', 'mcp_selection.py', 'tests/test_task_resources_v080.py', 'scripts/check_resource_configuration.py', 'documents/todo_directives.md'], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
       - name: Full offline regression suite
         shell: bash
         run: |
@@ -52,9 +75,11 @@ jobs:
           python scripts/install_test_codex.py 0.154.0 "$RUNNER_TEMP/codex-154"
           python scripts/install_test_codex.py 0.159.1 "$RUNNER_TEMP/codex-159"
       - name: Native MCP configuration compatibility; no model credentials
+        shell: bash
         run: |
-          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-154/codex"
-          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-159/codex"
+          set -o pipefail
+          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-154/codex" 2>&1 | tee "$RUNNER_TEMP/resources-080-native-154.log"
+          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-159/codex" 2>&1 | tee "$RUNNER_TEMP/resources-080-native-159.log"
       - name: Publish only clean feature commit, never main
         env:
           GH_TOKEN: ${{ github.token }}
