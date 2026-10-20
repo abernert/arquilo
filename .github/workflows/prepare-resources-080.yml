@@ -26,7 +26,8 @@ jobs:
         run: |
           import base64, gzip, hashlib, os, pathlib, subprocess
           patches = []
-          for prefix, count, digest in [('part', 5, 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'), ('fix', 2, '85e185895202beff9c321749080a48d87f8fb3e9cd91ba2cf984051c61e66fb8')]:
+          definitions = [('part', 5, 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'), ('fix', 2, '85e185895202beff9c321749080a48d87f8fb3e9cd91ba2cf984051c61e66fb8'), ('last', 1, '2b98d218e04f096fa90c24d11277d02482da2ab08f376892e4ec2b4c979f23ae')]
+          for prefix, count, digest in definitions:
               raw = gzip.decompress(base64.b64decode(''.join(pathlib.Path('.resources-080', prefix+str(i)).read_text() for i in range(count)), validate=True))
               assert hashlib.sha256(raw).hexdigest() == digest
               path = pathlib.Path(os.environ['RUNNER_TEMP']) / ('resources-080-'+prefix+'.patch')
@@ -55,7 +56,7 @@ jobs:
         run: |
           python scripts/install_test_codex.py 0.154.0 "$RUNNER_TEMP/codex-154"
           python scripts/install_test_codex.py 0.159.1 "$RUNNER_TEMP/codex-159"
-      - name: Native metadata and real MCP process filtering; loopback-only model
+      - name: Native metadata and actual MCP process filtering; loopback-only model
         shell: bash
         run: |
           set -o pipefail
