@@ -1,0 +1,54 @@
+name: Diagnose isolated native resource fixture
+on:
+  push:
+    branches: ['prepare/resource-native-diagnostics-080']
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Apply reviewed test fixture; expose only synthetic config differences
+        shell: python
+        run: |
+          import base64, gzip, hashlib, os, pathlib, subprocess
+          patches = []
+          for prefix, count, digest in [('part', 5, 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'), ('fix', 2, '85e185895202beff9c321749080a48d87f8fb3e9cd91ba2cf984051c61e66fb8')]:
+              raw = gzip.decompress(base64.b64decode(''.join(pathlib.Path('.resources-080', prefix+str(i)).read_text() for i in range(count)), validate=True))
+              assert hashlib.sha256(raw).hexdigest() == digest
+              path = pathlib.Path(os.environ['RUNNER_TEMP']) / (prefix+'.patch')
+              path.write_bytes(raw)
+              patches.append(path)
+          subprocess.run(['git', 'checkout', '--detach', 'a5249ebca4691d1cea0406431dbc487f94669560'], check=True)
+          for path in patches:
+              subprocess.run(['git', 'apply', '--index', str(path)], check=True)
+          p = pathlib.Path('scripts/check_resource_configuration.py')
+          s = p.read_text().replace("                    raise AssertionError('Global or profile configuration changed')", "                    import difflib\n                    for old, current in zip(original, (config.read_bytes(), profile.read_bytes())):\n                        print(''.join(difflib.unified_diff(old.decode().splitlines(True), current.decode().splitlines(True))))\n                    raise AssertionError('Global or profile configuration changed')")
+          p.write_text(s)
+      - name: Install digest-verified test binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/install_test_codex.py 0.154.0 "$RUNNER_TEMP/codex-154"
+      - name: Run native execution with a loopback fake model provider
+        shell: bash
+        run: |
+          set -o pipefail
+          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-154/codex" 2>&1 | tee "$RUNNER_TEMP/native-resource-fixture.log"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: isolated-native-resource-fixture
+          path: |
+            ${{ runner.temp }}/codex-154/
+            ${{ runner.temp }}/native-resource-fixture.log
+          retention-days: 2
+          if-no-files-found: error
