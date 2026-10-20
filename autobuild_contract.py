@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import codex_policy
+from task_resources import TaskResources
 from removed_features import check_removed_fields
 from execution_budget import DEFAULT_MAX_CALLS, positive_limit
 from runtime_contracts import AutoBuildStatus, ExitCode
@@ -33,9 +34,21 @@ class AutoBuildOptions:
     auto_continue: bool = False
     print_end_answer: bool = False
     verbose: bool = False
+    mcp: tuple[str, ...] | None = None
+    review_mcp: tuple[str, ...] | None = None
+    skills: tuple[str, ...] | None = None
+    skill_dirs: tuple[str, ...] = ()
 
     def __post_init__(self):
         positive_limit(self.max_calls)
+        resources = TaskResources(mcp=self.mcp, review_mcp=self.review_mcp, skills=self.skills)
+        for key in ("mcp", "review_mcp", "skills"):
+            object.__setattr__(self, key, getattr(resources, key))
+        if isinstance(self.skill_dirs, str) or not isinstance(self.skill_dirs, (list, tuple)):
+            raise ValueError("skill_dirs must be a sequence of operator-selected paths")
+        if any(not isinstance(p, (str, Path)) or not str(p) or "\0" in str(p) for p in self.skill_dirs):
+            raise ValueError("Invalid skill directory")
+        object.__setattr__(self, "skill_dirs", tuple(str(p) for p in self.skill_dirs))
         codex_policy.validate_start_policy(sandbox=self.sandbox,
             network_access=self.network_access, allow_read_only=True)
         codex_policy.validate_config_profile(self.config_profile)

@@ -116,6 +116,7 @@ def execute_attempt(
     model_provider: str | None = None, config_profile: str | None = None,
     process_stop_path: Path | None = None,
     cancel_requested: Callable[[], str | None] | None = None,
+    mcp_disabled: bool = False,
 ) -> DecisionAttempt:
     """Run a fresh non-repo attempt using the single shared Codex transport.
 
@@ -126,6 +127,8 @@ def execute_attempt(
     """
     if not isinstance(request, DecisionRequest):
         raise TypeError("request must be DecisionRequest")
+    if type(mcp_disabled) is not bool:
+        raise ValueError("mcp_disabled must be bool")
     prompt = request.to_prompt()  # Validate before filesystem/process work.
     project = _absolute(project_root, "project_root")
     child_env = decision_environment(env, project_root=project, trusted_codex_home=trusted_codex_home)
@@ -171,6 +174,7 @@ def execute_attempt(
             model=request.model, reasoning_effort=request.reasoning_effort,
             model_provider=model_provider, config_profile=config_profile,
             network_access=False, sandbox="read-only", decision_only=True,
+            mcp_servers=() if mcp_disabled else None,
             phase="decide", timeouts=timeouts or transport.TransportTimeouts(total=120),
             process_stop_path=process_stop_path, cancel_requested=cancel_requested, **outputs,
         )
@@ -201,9 +205,12 @@ class DecisionExecSettings:
     cancel_requested: Callable[[], str | None] | None = None
     max_attempts: int = 1
     call_budget: CallBudget | None = None
+    mcp_disabled: bool = False
 
     def __post_init__(self) -> None:
         from codex_policy import validate_config_profile, validate_model_provider
+        if type(self.mcp_disabled) is not bool:
+            raise ValueError("mcp_disabled must be bool")
         validate_model_provider(self.model_provider)
         validate_config_profile(self.config_profile)
         if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 2:
@@ -328,7 +335,8 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
                 temp_root=settings.temp_root, launcher=settings.launcher, timeouts=settings.timeouts,
                 model_provider=settings.model_provider, config_profile=settings.config_profile,
                 output_schema=schema_path, output_last_message=response_path,
-                process_stop_path=settings.process_stop_path, cancel_requested=settings.cancel_requested)
+                process_stop_path=settings.process_stop_path, cancel_requested=settings.cancel_requested,
+                **({"mcp_disabled": True} if settings.mcp_disabled else {}))
             result = validate_response(request, attempt.result.execution, response_path)
         except BudgetExhausted as exc:
             result = _failure(request, "call_budget_exhausted", str(exc))

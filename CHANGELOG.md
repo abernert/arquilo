@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.0 — 2026-10-20 (public preview)
+
+- Add explicit `--mcp`, `--review-mcp` and `--skills` selections to task-list
+  runs and direct AutoBuild calls, plus operator-selected `--skill-dir` roots.
+  Task `CFG` accepts `mcp`, `review_mcp` and `skills`; one `DEFAULTS` directive
+  before the first task supplies list-wide resource defaults. CLI selections
+  are ceilings. Tasks and descendants may narrow, never silently broaden them.
+- Add a run-level `--agent` default for the existing per-task Codex profile hint.
+  Preserve provider, authentication, proxy, sandbox and network settings.
+- Enforce explicit MCP selection using temporary, verified native Codex config
+  overrides; leave persistent configuration untouched. Discover configured
+  direct servers with native `mcp list --json`, disable unselected servers and
+  plugin/app integrations, and verify the effective set before model startup.
+  Disabled, missing, policy-denied or incompatible selections fail closed.
+  Inventory can access native authentication metadata; it never initializes
+  STDIO tools and no raw configuration or credentials enter ARQUILO archives.
+- Explicit production MCP selection defaults review to no MCP. `review_mcp`
+  can select a subset; remote read-only permissions remain an operator concern.
+  Preflight in resource-controlled mode, and Decide when MCP selection is
+  explicit, do not inherit production MCPs.
+- Bind selected local `SKILL.md` instructions and their content hashes into one
+  captured original request shared by production, review and correction. Keep
+  the existing task-list preamble semantics. Do not install skills, execute
+  their scripts at binding time, or pretend that helper files are snapshotted.
+  `skills=none` adds no explicit skills; it is not a native skill-catalog sandbox.
+- Extend syntax validation, capability metadata, worker serialization, dry-run
+  visibility and offline/native compatibility tests. No full user handbook is
+  added in this release; its proposed text remains a separate owner-review draft.
+
 ## 0.7.4 — 2026-10-19 (public preview)
 
 - Treat strictly recognized, pre-terminal Codex `Reconnecting... n/m`
