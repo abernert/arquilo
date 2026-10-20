@@ -1,0 +1,59 @@
+name: Export validated ARQUILO 0.8.0 source
+on:
+  push:
+    branches: ['prepare/export-resources-080']
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Reconstruct checksum-validated source; do not write workflows with the Actions token
+        shell: python
+        run: |
+          import base64, gzip, hashlib, os, pathlib, subprocess
+          patches = []
+          for prefix, count, digest in [('part', 5, 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'), ('fix', 2, '85e185895202beff9c321749080a48d87f8fb3e9cd91ba2cf984051c61e66fb8'), ('last', 1, '2b98d218e04f096fa90c24d11277d02482da2ab08f376892e4ec2b4c979f23ae')]:
+              raw = gzip.decompress(base64.b64decode(''.join(pathlib.Path('.resources-080', prefix+str(i)).read_text() for i in range(count)), validate=True))
+              assert hashlib.sha256(raw).hexdigest() == digest
+              path = pathlib.Path(os.environ['RUNNER_TEMP']) / (prefix+'.patch')
+              path.write_bytes(raw)
+              patches.append(path)
+          base = 'a5249ebca4691d1cea0406431dbc487f94669560'
+          subprocess.run(['git', 'checkout', '--detach', base], check=True)
+          for path in patches:
+              subprocess.run(['git', 'apply', '--index', str(path)], check=True)
+          subprocess.run(['git', 'restore', '--source='+base, '--staged', '--worktree', '--', '.github/workflows/codex-compatibility.yml'], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          names = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
+          assert len(names) == 19 and not any(name.startswith('.github/') or name.startswith('.resources-080/') for name in names)
+      - name: Confirm exact already tested runtime bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+          echo '3c72d8fa9a5a4fa52184d894b28a6729c1c0a9c29f986b4fef48869244403afd  dist/arquilo-0.8.0.zip' | sha256sum -c -
+      - name: Publish code-only feature branch, not main or workflow files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/abernert/arquilo/git/ref/heads/main --jq .object.sha)" = a5249ebca4691d1cea0406431dbc487f94669560
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Add explicit task MCP selection and skill bindings for ARQUILO 0.8.0'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/feature/task-resources-0.8.0
+          git log -1 --format='%H %T'
