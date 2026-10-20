@@ -1,0 +1,96 @@
+name: Prepare owner-requested ARQUILO 0.8.0
+on:
+  push:
+    branches: ['prepare/task-resources-080-20261020']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Materialize exact reviewed patch on clean upstream base
+        shell: python
+        run: |
+          import base64, gzip, hashlib, os, pathlib, subprocess
+          raw = gzip.decompress(base64.b64decode(''.join(pathlib.Path('.resources-080', 'part'+str(i)).read_text() for i in range(5)), validate=True))
+          assert hashlib.sha256(raw).hexdigest() == 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'
+          patch = pathlib.Path(os.environ['RUNNER_TEMP']) / 'resources-080.patch'
+          patch.write_bytes(raw)
+          subprocess.run(['git', 'checkout', '--detach', 'a5249ebca4691d1cea0406431dbc487f94669560'], check=True)
+          subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
+          subprocess.run(['git', 'apply', '--index', str(patch)], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          names = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
+          assert len(names) == 20 and not any(name.startswith('.resources-080') or 'prepare-resources' in name for name in names)
+          assert pathlib.Path('VERSION').read_text().strip() == '0.8.0'
+      - name: Full offline regression suite
+        shell: bash
+        run: |
+          set -o pipefail
+          python -B -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/resources-080-tests.log"
+      - name: Distribution contract and runtime build
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Download pinned native Codex binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/install_test_codex.py 0.154.0 "$RUNNER_TEMP/codex-154"
+          python scripts/install_test_codex.py 0.159.1 "$RUNNER_TEMP/codex-159"
+      - name: Native MCP configuration compatibility; no model credentials
+        run: |
+          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-154/codex"
+          python -B scripts/check_resource_configuration.py --codex "$RUNNER_TEMP/codex-159/codex"
+      - name: Publish only clean feature commit, never main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/abernert/arquilo/git/ref/heads/main --jq .object.sha)" = a5249ebca4691d1cea0406431dbc487f94669560
+          test "$(git rev-parse HEAD)" = a5249ebca4691d1cea0406431dbc487f94669560
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Add explicit task MCP selection and skill bindings for ARQUILO 0.8.0'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/feature/task-resources-0.8.0
+          git rev-parse HEAD > "$RUNNER_TEMP/resources-080-commit.txt"
+      - name: Collect source and test evidence even on failure
+        if: always()
+        shell: python
+        run: |
+          import os, pathlib, shutil, subprocess, zipfile
+          root = pathlib.Path.cwd()
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'resources-080-evidence'
+          out.mkdir(exist_ok=True)
+          names = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+          with zipfile.ZipFile(out / 'source-080.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for name in names:
+                  p = root / name
+                  if name and p.is_file() and not p.is_symlink() and not name.startswith('.resources-080/') and 'prepare-resources' not in name:
+                      archive.write(p, name)
+          for p in pathlib.Path(os.environ['RUNNER_TEMP']).glob('resources-080-*'):
+              if p.is_file():
+                  shutil.copy2(p, out / p.name)
+          for p in (root / 'dist').glob('arquilo-0.8.0*'):
+              shutil.copy2(p, out / p.name)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: resources-080-evidence
+          path: ${{ runner.temp }}/resources-080-evidence
+          retention-days: 7
+          if-no-files-found: error
