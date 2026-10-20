@@ -22,6 +22,7 @@ The validation ranges mirror run_todos.py:
 from __future__ import annotations
 
 import argparse
+from task_resources import RESOURCE_KEYS, plan_resources, selection
 from removed_features import reject_bridge_wait_conditions
 from todo_syntax import TASK_PATTERN, SYNTAX_PATTERN, canonical_status, task_headers, visible_lines, directive_tokens
 from runtime_files import PathValidationError, native_path, read_utf8
@@ -51,6 +52,7 @@ CFG_ALLOWED_KEYS = {
     "breakdown",
     "breakdown_max_children",
     "breakdown_max_rounds",
+    "mcp", "review_mcp", "skills",
 }
 WAIT_ALLOWED_KEYS = {"on", "mode", "timeout", "on_timeout"}
 WAIT_CONDITION_TODO_PATTERN = re.compile(r"^\d+(?:\.\d+)*$")
@@ -526,6 +528,10 @@ def lint_todo_text(text: str, *, workdir: Path) -> List[LintIssue]:
     except (PathValidationError, OSError) as exc:
         return [LintIssue(line=1, message=str(exc))]
     issues: List[LintIssue] = []
+    try:
+        plan_resources(text)
+    except ValueError as exc:
+        issues.append(LintIssue(1, str(exc), "resource_selection"))
     todo_ids: Dict[str, int] = {}
     todo_tuples: List[Tuple[Tuple[int, ...], int, str]] = []
     directive_lines: Set[int] = set()
@@ -538,6 +544,8 @@ def lint_todo_text(text: str, *, workdir: Path) -> List[LintIssue]:
     for zero_index, raw_line in visible.items():
         index = zero_index + 1
         stripped = raw_line.strip()
+        if stripped.upper().startswith("***DEFAULTS"):
+            continue  # independently validated above; not a per-task CFG
         if stripped.upper().startswith("***SYNTAX"):
             if not SYNTAX_PATTERN.fullmatch(stripped):
                 issues.append(LintIssue(index, "Ungueltige SYNTAX: erwartet ***SYNTAX auto|legacy|marked-en***."))
@@ -604,7 +612,7 @@ def lint_todo_text(text: str, *, workdir: Path) -> List[LintIssue]:
         directive_block: List[Tuple[int, str]] = []
         while cursor >= 1:
             stripped = visible.get(cursor - 1, "").strip()
-            if SYNTAX_PATTERN.fullmatch(stripped):
+            if SYNTAX_PATTERN.fullmatch(stripped) or stripped.upper().startswith("***DEFAULTS"):
                 cursor -= 1
                 continue
             if (cursor - 1) not in visible or not stripped:

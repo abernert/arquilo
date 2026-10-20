@@ -19,6 +19,8 @@ from runtime_config import (
     resolve_reasoning_effort as _resolve_codex_reasoning_effort,
 )
 import codex_policy
+from task_resources import (RESOURCE_KEYS, TaskResources, SkillCatalog, selection, narrower,
+    plan_resources, resolve_task_resources, bind_resources, add_resource_arguments)
 import codex_transport
 from runtime_logging import TaskLogRecord, LogWriteError, copy_log_files, write_log_json, write_log_text
 from removed_features import (reject_removed_options, add_removed_arguments,
@@ -138,6 +140,7 @@ _DEFAULT_PARENT_REVIEW_TERMINAL_RULE = (
 
 def validate_removed_directives(text: str) -> None:
     """Reject retired CFG and Bridge WAIT inputs before preflight, also in edited plans."""
+    plan_resources(text)
     for _number, line in visible_lines(text):
         match = re.fullmatch(r"\*\*\*\s*(WAIT|CFG)\s+(.+?)\*\*\*", line.strip(), re.IGNORECASE)
         if match:
@@ -170,6 +173,10 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         "features": {
             "run_todos.operator_controls": 1,
             "run_todos.todo_template": 1,
+            "run_todos.resources": 1,
+            "run_todos.resource_defaults": 1,
+            "codex.mcp_selection": 1,
+            "run_todos.skill_bindings": 1,
             "run_todos.breakdown": RUN_TODOS_BREAKDOWN_CONTRACT_VERSION,
             "run_todos.final_failure": RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION,
             "run_todos.parent_review": RUN_TODOS_PARENT_REVIEW_CONTRACT_VERSION,
@@ -530,6 +537,7 @@ def run_codex_workspace_write_preflight(
     timeout_seconds: int = _CODEX_WORKSPACE_WRITE_PREFLIGHT_TIMEOUT_SECONDS,
     model: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    mcp_disabled: bool = False,
 ) -> None:
     version_command = ["codex", "--version"]
     resolved_model = _resolve_codex_model(model)
@@ -539,6 +547,7 @@ def run_codex_workspace_write_preflight(
         raw_log=Path("preflight.jsonl"), pretty_log=Path("preflight.log"),
         model=resolved_model, reasoning_effort=resolved_reasoning_effort,
         extra_args=("--skip-git-repo-check",), phase="preflight",
+        mcp_servers=() if mcp_disabled else None,
     ))
     if dry_run:
         command_preview = "\n".join(
@@ -591,7 +600,7 @@ def run_codex_workspace_write_preflight(
                 pretty_log=temp_workspace / "preflight.log",
                 model=resolved_model, reasoning_effort=resolved_reasoning_effort,
                 network_access=False, extra_args=("--skip-git-repo-check",),
-                phase="preflight",
+                phase="preflight", mcp_servers=() if mcp_disabled else None,
                 timeouts=codex_transport.TransportTimeouts(total=timeout_seconds),
             )
             result = codex_transport.execute(request)
@@ -751,6 +760,7 @@ class TodoRunner:
         "breakdown",
         "breakdown_max_children",
         "breakdown_max_rounds",
+        "mcp", "review_mcp", "skills",
     }
     WAIT_ALLOWED_KEYS = {"on", "mode", "timeout", "on_timeout"}
 
@@ -788,6 +798,11 @@ class TodoRunner:
         network_access: bool = False,
         todo_preamble: str = "auto",
         max_calls: int = DEFAULT_MAX_CALLS,
+        mcp: Optional[Sequence[str]] = None,
+        review_mcp: Optional[Sequence[str]] = None,
+        skills: Optional[Sequence[str]] = None,
+        skill_dirs: Sequence[Path] = (),
+        agent: Optional[str] = None,
         **removed_options: Any,
     ) -> None:
         if removed_positional_options:
@@ -817,6 +832,16 @@ class TodoRunner:
         self.todo_source_file = native_path(todo_file, label="todo_file")
         self.todo_file = self.todo_source_file
         self.workdir = native_path(workdir, label="workdir")
+        self.resource_caps = {"mcp": selection(mcp), "review_mcp": selection(review_mcp), "skills": selection(skills)}
+        codex_policy.validate_config_profile(agent)
+        self.agent = agent
+        self.skill_catalog = SkillCatalog(workdir=self.workdir, roots=skill_dirs)
+        self.initial_resource_plan = read_utf8(self.todo_file) if self.todo_file.is_file() else ""
+        self.resource_mode = False
+        for resource_id in plan_resources(self.initial_resource_plan)[1]:
+            resource = resolve_task_resources(self.initial_resource_plan, resource_id, **self.resource_caps)
+            self.skill_catalog.get(resource.skills)
+            self.resource_mode = self.resource_mode or resource.explicit
         if self.todo_file.is_file():
             validate_removed_directives(read_utf8(self.todo_file))
         self.repo_root = Path(__file__).resolve().parent
@@ -3172,6 +3197,7 @@ class TodoRunner:
                     self.network_access, policy_todo.config.get("network_access"))
                 if config_profile is None:
                     config_profile = policy_todo.config.get("agent")
+        config_profile = config_profile or getattr(self, "agent", None)
         codex_policy.validate_config_profile(config_profile)
         codex_policy.validate_extra_args(extra_args)
         active_sandbox = codex_policy.validate_sandbox(
@@ -3189,6 +3215,16 @@ class TodoRunner:
         task_text = augment_with_preamble(
             task_text, active_todo_file, mode=self.todo_preamble
         )
+        resource_id = self._derive_todo_id_from_identifier(identifier)
+        resource_caps = getattr(self, "resource_caps", {})
+        live_resources = resolve_task_resources(read_utf8(active_todo_file), resource_id, **resource_caps)
+        original_resources = resolve_task_resources(getattr(self, "initial_resource_plan", read_utf8(active_todo_file)),
+                                                    resource_id, **resource_caps)
+        resources = TaskResources(**{key: narrower(getattr(live_resources, key), getattr(original_resources, key),
+                                      label=f"Task {resource_id}: {key}") for key in RESOURCE_KEYS})
+        if resources.explicit:
+            catalog = getattr(self, "skill_catalog", None) or SkillCatalog(workdir=self.workdir)
+            task_text = bind_resources(task_text, resources, catalog)
         active_model = _resolve_codex_model(
             model_override if model_override is not None else self.model
         )
@@ -3232,6 +3268,7 @@ class TodoRunner:
             f"autobuild.start(task=<Referenzprompt>, workdir={str(active_workdir)!r}, "
             f"options=AutoBuildOptions(sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
             f"model={active_model!r}, reasoning_effort={active_reasoning_effort!r}, "
+            f"mcp={resources.mcp!r}, review_mcp={resources.review_mcp!r}, skills={resources.skills!r}, "
             f"max_steps={self.max_steps * self.max_retries}, max_calls={self.max_calls}, summary_json={str(preview_summary)!r}), "
             f"context=AutoBuildContext(task_source='todo', todo_identifier={identifier!r}))"
         )
@@ -3294,6 +3331,7 @@ class TodoRunner:
             options = AutoBuildOptions(
                 sandbox=active_sandbox, network_access=active_network_access,
                 config_profile=config_profile, extra_arg=active_extra_args,
+                mcp=resources.mcp, review_mcp=resources.review_mcp,
                 logfile=pretty_log, rawlog=raw_log, summary_json=summary_json,
                 max_steps=self.max_steps * self.max_retries, max_calls=budget.limit,
                 model=active_model, reasoning_effort=active_reasoning_effort,
@@ -3594,7 +3632,7 @@ class TodoRunner:
         cfg: Dict[str, str] = {}
         waits: List[Dict[str, Any]] = []
         for directive in directives:
-            if directive.strip().upper().startswith("***SYNTAX "):
+            if directive.strip().upper().startswith(("***SYNTAX ", "***DEFAULTS ")):
                 continue
             match = self.DIRECTIVE_PATTERN.match(directive.strip())
             if not match:
@@ -3812,7 +3850,7 @@ class TodoRunner:
         if isinstance(model, str):
             model = model.strip() or None
         reasoning_effort = self.reasoning_effort
-        agent = cfg.get("agent")
+        agent = cfg.get("agent") or getattr(self, "agent", None)
         if isinstance(agent, str):
             agent = agent.strip() or None
         parallel_group = cfg.get("parallel")
@@ -4558,6 +4596,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="ARQUILO-Kernverträge und erhaltene Kernoptionen als JSON anzeigen; keine Modellaufrufe.",
     )
+    add_resource_arguments(parser)
+    parser.add_argument("--agent", help="Default Codex profile/agent hint; a task CFG agent may override it.")
     return parser.parse_args(argv)
 
 
@@ -4673,6 +4713,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 runtime_profile=runtime_profile,
                 todo_syntax=args.todo_syntax,
                 todo_preamble=args.todo_preamble,
+                mcp=args.mcp, review_mcp=args.review_mcp, skills=args.skills,
+                skill_dirs=args.skill_dirs, agent=args.agent,
             )
         except (GitIntegrationError, ReviewedGitError, PlanIntegrityError, OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
@@ -4682,7 +4724,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 run_runtime_profile_preflight(runtime_profile, workdir=workdir, todo_file=todo_path)
             if not args.skip_codex_preflight:
                 run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
-                    model=args.model, reasoning_effort=args.reasoning_effort)
+                    model=args.model, reasoning_effort=args.reasoning_effort,
+                    **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:
             try:

@@ -34,6 +34,7 @@ from review_contract import (
 import codex_transport
 from runtime_config import environment_value, transport_timeout_values
 import codex_policy
+from task_resources import TaskResources, SkillCatalog, bind_resources, add_resource_arguments
 from codex_transport import (
     ts,
     _normalize_console_todo_id,
@@ -694,6 +695,7 @@ def run_codex_exec_json(
     cancel_requested: Optional[Callable[[], Optional[str]]] = None,
     phase: str = "execution",
     config_profile: Optional[str] = None,
+    mcp_servers: Optional[Sequence[str]] = None,
 ) -> RunResult:
     """Compatibility adapter; process state belongs to codex_transport.execute."""
     request = codex_transport.CodexExecRequest(
@@ -702,7 +704,7 @@ def run_codex_exec_json(
         raw_log=raw_log, pretty_log=pretty_log, extra_args=tuple(extra_args),
         verbose=verbose, model=model, reasoning_effort=reasoning_effort,
         network_access=network_access, env=dict(os.environ) if env is None else env,
-        config_profile=config_profile,
+        config_profile=config_profile, mcp_servers=mcp_servers,
         process_stop_path=process_stop_path, cancel_requested=cancel_requested,
         console_todo_id=console_todo_id, phase=phase,
         timeouts=timeouts if timeouts is not None else codex_transport.TransportTimeouts(
@@ -961,6 +963,9 @@ def start(
     single_file = native_path(file, label="file") if file else None
 
     workspace, _ = setup_workspace(workdir_path, single_file)
+    if options.skills is not None:
+        task_text = bind_resources(task_text, TaskResources(skills=options.skills),
+            SkillCatalog(workdir=workspace, roots=options.skill_dirs))
     process_stop_full: Optional[Path] = None
     if process_stop_path is not None:
         candidate = safe_io.check_path(workspace / Path(process_stop_path))
@@ -1033,6 +1038,8 @@ def start(
                 phase=stage,
                 network_access=network_access,
                 config_profile=config_profile,
+                **({"mcp_servers": (options.review_mcp if effective_sandbox == "read-only" else options.mcp)}
+                   if options.mcp is not None or options.review_mcp is not None else {}),
             )
         except CodexExecutionError as exc:
             error = {**exc.error, "phase": stage}
@@ -1258,6 +1265,8 @@ def start(
                     settings = replace(settings, process_stop_path=process_stop_full)
                 settings = replace(settings, call_budget=call_budget,
                                    config_profile=settings.config_profile or config_profile)
+                if options.mcp is not None or options.review_mcp is not None:
+                    settings = replace(settings, mcp_disabled=True)
             decision = evaluate_completion_decision(
                 original_task=original_task, latest_answer=last_answer, review_findings=review_findings,
                 task_snapshot=decision_snapshot, run_id=active_decision_run_id,
@@ -1456,6 +1465,7 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sandbox", choices=["workspace-write", "read-only"], default="workspace-write")
     parser.add_argument("--network-access", action="store_true")
     parser.add_argument("--codex-profile", dest="config_profile")
+    add_resource_arguments(parser)
     parser.add_argument("--model")
     parser.add_argument("--reasoning-effort", choices=CODEX_REASONING_EFFORT_CHOICES)
     parser.add_argument("--extra-arg", action="append", default=[])
