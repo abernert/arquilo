@@ -1,0 +1,103 @@
+name: Publish reviewed ARQUILO 0.8.0
+on:
+  push:
+    branches: ['prepare/publish-resources-080']
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '027206436b9c6ba4474af19476bd12e86c0f7840'
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Verify merged commit, unchanged tested tree and successful required runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import json, pathlib, subprocess
+          repo = 'repos/abernert/arquilo/'
+          commit = '027206436b9c6ba4474af19476bd12e86c0f7840'
+          tested = 'fcccae0689cc73335c2e9b8eb2eddb1b9b649a21'
+          tree = 'e3f698c174bc485576e1d72bf2ce6501dbf72b62'
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', repo + path], text=True))
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == commit
+          assert pathlib.Path('VERSION').read_text().strip() == '0.8.0'
+          assert api('git/ref/heads/main')['object']['sha'] == commit
+          pr = api('pulls/28')
+          assert pr['merged'] and pr['merge_commit_sha'] == commit and pr['head']['sha'] == tested
+          assert api('git/commits/' + commit)['tree']['sha'] == tree
+          assert api('git/commits/' + tested)['tree']['sha'] == tree
+          for run_id, job_count in [(39468908185, 9), (39468908146, 6)]:
+              run = api('actions/runs/' + str(run_id))
+              assert run['head_sha'] == tested and run['status'] == 'completed' and run['conclusion'] == 'success'
+              jobs = api('actions/runs/' + str(run_id) + '/jobs?per_page=100')['jobs']
+              assert len(jobs) == job_count and all(job['conclusion'] == 'success' for job in jobs)
+          print('Verified merged release commit, identical tested tree and all 15 required checks.')
+      - name: Rebuild exact reviewed runtime and verify digest
+        run: |
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+          echo '3c72d8fa9a5a4fa52184d894b28a6729c1c0a9c29f986b4fef48869244403afd  dist/arquilo-0.8.0.zip' | sha256sum -c -
+      - name: Publish immutable release tag and preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import hashlib, json, pathlib, subprocess
+          repo = 'repos/abernert/arquilo/'
+          commit = '027206436b9c6ba4474af19476bd12e86c0f7840'
+          tag = 'v0.8.0'
+          expected = '3c72d8fa9a5a4fa52184d894b28a6729c1c0a9c29f986b4fef48869244403afd'
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', repo + path], text=True))
+          def optional(path):
+              result = subprocess.run(['gh', 'api', repo + path], capture_output=True, text=True)
+              if result.returncode == 0:
+                  return json.loads(result.stdout)
+              if 'HTTP 404' not in result.stderr:
+                  raise RuntimeError('GitHub resource lookup failed; no write attempted.')
+              return None
+          assert api('git/ref/heads/main')['object']['sha'] == commit
+          package = pathlib.Path('dist/arquilo-0.8.0.zip')
+          checksum = pathlib.Path(str(package) + '.sha256')
+          assert hashlib.sha256(package.read_bytes()).hexdigest() == expected
+          assert checksum.read_text().split()[0] == expected
+          from scripts.stage_lean import package_files
+          import zipfile
+          with zipfile.ZipFile(package) as archive:
+              assert sorted(archive.namelist()) == sorted(package_files(pathlib.Path.cwd()))
+          existing = optional('git/ref/tags/' + tag)
+          if existing is None:
+              subprocess.run(['gh', 'api', '-X', 'POST', repo + 'git/refs', '-f', 'ref=refs/tags/' + tag, '-f', 'sha=' + commit], check=True)
+          else:
+              assert existing['object']['type'] == 'commit' and existing['object']['sha'] == commit
+          release = optional('releases/tags/' + tag)
+          if release is None:
+              changelog = pathlib.Path('CHANGELOG.md').read_text()
+              section = changelog.split('## 0.8.0', 1)[1].split('\n## ', 1)[0]
+              notes = pathlib.Path('dist/release-notes-0.8.0.md')
+              notes.write_text('## ARQUILO 0.8.0' + section + '\n\nValidation: all 15 required cross-platform checks passed; 574-test offline suite and native Codex 0.154.0/0.159.1 MCP configuration/process-start tests. No real model API or client services were used.\n\nRuntime ZIP SHA-256: `' + expected + '`.\n\nThe full user handbook remains a review draft outside this repository. Existing preview limitations and operator-owned authentication/tool permissions remain in effect.\n')
+              subprocess.run(['gh', 'release', 'create', tag, str(package), str(checksum), '--repo', 'abernert/arquilo', '--verify-tag', '--prerelease', '--title', 'ARQUILO 0.8.0 — public preview', '--notes-file', str(notes)], check=True)
+          release = api('releases/tags/' + tag)
+          assert release['tag_name'] == tag and release['prerelease'] and not release['draft']
+          assets = {asset['name']: asset for asset in release['assets']}
+          assert set(assets) == {package.name, checksum.name}
+          assert assets[package.name]['size'] == package.stat().st_size
+          assert assets[package.name]['digest'] == 'sha256:' + expected
+          print('Verified published release:', release['html_url'])
