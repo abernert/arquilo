@@ -21,44 +21,25 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
-      - name: Materialize exact reviewed patch on clean upstream base
+      - name: Apply checksum-pinned product patches on unchanged upstream
         shell: python
         run: |
           import base64, gzip, hashlib, os, pathlib, subprocess
-          raw = gzip.decompress(base64.b64decode(''.join(pathlib.Path('.resources-080', 'part'+str(i)).read_text() for i in range(5)), validate=True))
-          assert hashlib.sha256(raw).hexdigest() == 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'
-          patch = pathlib.Path(os.environ['RUNNER_TEMP']) / 'resources-080.patch'
-          patch.write_bytes(raw)
+          patches = []
+          for prefix, count, digest in [('part', 5, 'cd9928c8ba65682af99a7635c6a832ede34dfee2170bddab814a38c2863072d3'), ('fix', 2, '85e185895202beff9c321749080a48d87f8fb3e9cd91ba2cf984051c61e66fb8')]:
+              raw = gzip.decompress(base64.b64decode(''.join(pathlib.Path('.resources-080', prefix+str(i)).read_text() for i in range(count)), validate=True))
+              assert hashlib.sha256(raw).hexdigest() == digest
+              path = pathlib.Path(os.environ['RUNNER_TEMP']) / ('resources-080-'+prefix+'.patch')
+              path.write_bytes(raw)
+              patches.append(path)
           subprocess.run(['git', 'checkout', '--detach', 'a5249ebca4691d1cea0406431dbc487f94669560'], check=True)
-          subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
-          subprocess.run(['git', 'apply', '--index', str(patch)], check=True)
+          for path in patches:
+              subprocess.run(['git', 'apply', '--check', str(path)], check=True)
+              subprocess.run(['git', 'apply', '--index', str(path)], check=True)
           subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
           names = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
           assert len(names) == 20 and not any(name.startswith('.resources-080') or 'prepare-resources' in name for name in names)
           assert pathlib.Path('VERSION').read_text().strip() == '0.8.0'
-      - name: Correct native configuration key compatibility
-        shell: python
-        run: |
-          from pathlib import Path
-          import re, subprocess
-          p = Path('mcp_selection.py')
-          s = p.read_text()
-          s = s.replace('    names = selection(tuple(inventory))\n    values', '    names = selection(tuple(inventory))\n    # Codex CLI keys use a literal dot-separated path, not TOML key quoting.\n    # A dot inside a server ID cannot be addressed without replacing transport\n    # configuration; refuse instead of creating a different accidental server.\n    if any("." in name for name in (*selected, *(names or ()))):\n        raise ResourceError("Explicit MCP selection requires server IDs without dots; rename the local config alias. No model call started.")\n    values')
-          s = s.replace('prefix = "mcp_servers." + json.dumps(name, ensure_ascii=True)', 'prefix = "mcp_servers." + name')
-          p.write_text(s)
-          p = Path('tests/test_task_resources_v080.py')
-          s = p.read_text().replace('test_config_only_booleans_and_quoted_names', 'test_config_only_booleans_and_portable_names').replace('a.b', 'a-b')
-          s = re.sub(r'mcp_servers\."([\w-]+)"\.', r'mcp_servers.\1.', s)
-          idx = s.index('    def test_none_disables_all_known')
-          s = s[:idx] + '    def test_dotted_mcp_alias_refused_without_config_injection(self):\n        with self.assertRaises(ResourceError):\n            config_values((\'a.b\',), (\'a.b\', \'other\'))\n        with self.assertRaises(ResourceError):\n            config_values((), (\'a.b\',))\n\n' + s[idx:]
-          p.write_text(s)
-          p = Path('scripts/check_resource_configuration.py')
-          s = p.read_text().replace('raise RuntimeError("Native synthetic MCP inventory failed (output withheld).")', 'raise RuntimeError("Native synthetic MCP inventory failed: " +\n                                   result.stderr.decode("utf-8", errors="replace")[-3000:])')
-          p.write_text(s)
-          p = Path('documents/todo_directives.md')
-          p.write_text(p.read_text() + '\nThe first explicit MCP adapter supports configured STDIO and Streamable HTTP\nservers with portable IDs (letters, digits, underscores and hyphens). Dots in\nserver IDs are rejected: the tested native CLI override parser does not use\nTOML key quoting for path components. Rename such a local alias before using\nexplicit selection; no transport or credentials are copied to command arguments.\n')
-          subprocess.run(['git', 'add', 'mcp_selection.py', 'tests/test_task_resources_v080.py', 'scripts/check_resource_configuration.py', 'documents/todo_directives.md'], check=True)
-          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
       - name: Full offline regression suite
         shell: bash
         run: |
@@ -74,7 +55,7 @@ jobs:
         run: |
           python scripts/install_test_codex.py 0.154.0 "$RUNNER_TEMP/codex-154"
           python scripts/install_test_codex.py 0.159.1 "$RUNNER_TEMP/codex-159"
-      - name: Native MCP configuration compatibility; no model credentials
+      - name: Native metadata and real MCP process filtering; loopback-only model
         shell: bash
         run: |
           set -o pipefail
