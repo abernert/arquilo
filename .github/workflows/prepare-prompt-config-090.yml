@@ -1,0 +1,92 @@
+name: Prepare isolated prompt configuration development branch
+on:
+  push:
+    branches: ['prepare/prompt-config-090-20261021']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Apply checksum-pinned product patch to exact main base
+        shell: python
+        run: |
+          import base64, hashlib, lzma, os, pathlib, subprocess
+          encoded = ''.join(pathlib.Path('.prompt-config-090', 'part'+str(i)).read_text(encoding='ascii') for i in range(4))
+          raw = lzma.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(raw).hexdigest() == 'bdc36908b36b813c5344062f48009c6a5b2b4291f7678b74e2e0d7acffeb032b'
+          patch = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prompt-config-090.patch'
+          patch.write_bytes(raw)
+          subprocess.run(['git', 'checkout', '--detach', '027206436b9c6ba4474af19476bd12e86c0f7840'], check=True)
+          subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
+          subprocess.run(['git', 'apply', '--index', str(patch)], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          names = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
+          expected = ['CHANGELOG.md', 'CITATION.cff', 'README.de.md', 'README.md', 'RUNTIME_PROFILE_API.md', 'VERSION', 'arquilo_doctor.py', 'autobuild.py', 'autobuild_contract.py', 'decide.py', 'decision_exec.py', 'decision_request.py', 'docs/README.md', 'docs/compatibility.md', 'docs/prompt-configuration.md', 'documents/lean_package.json', 'prompt_config.py', 'prompts/de.toml', 'prompts/default.toml', 'prompts/en.toml', 'review_confidence.py', 'review_contract.py', 'run_todos.py', 'runtime_profile.py', 'scripts/check_release.py', 'task_resources.py', 'tests/fixtures/prompt_default_v080.json', 'tests/test_prompt_configuration.py', 'todo_context.py']
+          assert sorted(names) == sorted(expected)
+          assert pathlib.Path('VERSION').read_text().strip() == '0.9.0'
+      - name: Full offline regression suite without model credentials
+        shell: bash
+        run: |
+          set -o pipefail
+          python -B -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/prompt-config-090-tests.log"
+      - name: Validate catalog and distribution contracts and exact package
+        shell: bash
+        run: |
+          set -o pipefail
+          python -B scripts/check_release.py | tee "$RUNNER_TEMP/prompt-config-090-release-check.json"
+          python -B scripts/build_runtime_zip.py
+          echo 'e27a23708d35980935a80fb04855454ac98b586026eb3fe5c126c448aefacef3  dist/arquilo-0.9.0.zip' | sha256sum -c -
+      - name: Publish clean development branch only; no main, tag or release write
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/abernert/arquilo/git/ref/heads/main --jq .object.sha)" = 027206436b9c6ba4474af19476bd12e86c0f7840
+          test "$(git rev-parse HEAD)" = 027206436b9c6ba4474af19476bd12e86c0f7840
+          test -z "$(git ls-remote origin refs/heads/development/prompt-config-0.9.0)"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Develop ARQUILO 0.9.0: editable default, German and English prompt catalogs' -m 'Externalize 53 built-in prompt elements into complete TOML catalogs. Preserve default output bytes, parser/controller contracts and task context. Freeze and archive validated catalog snapshots across task, review, correction, decision and worker boundaries. Development only; no main merge or release.'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/development/prompt-config-0.9.0
+          git rev-parse HEAD > "$RUNNER_TEMP/prompt-config-090-commit.txt"
+      - name: Collect source and evidence even on failure
+        if: always()
+        shell: python
+        run: |
+          import os, pathlib, shutil, subprocess, zipfile
+          root = pathlib.Path.cwd()
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'prompt-config-090-evidence'
+          out.mkdir(exist_ok=True)
+          names = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+          with zipfile.ZipFile(out / 'source-090.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for name in names:
+                  path = root / name
+                  if name and path.is_file() and not path.is_symlink() and not name.startswith('.prompt-config-090/') and 'prepare-prompt-config' not in name:
+                      archive.write(path, name)
+          for path in pathlib.Path(os.environ['RUNNER_TEMP']).glob('prompt-config-090-*'):
+              if path.is_file():
+                  shutil.copy2(path, out / path.name)
+          for path in (root / 'dist').glob('arquilo-0.9.0*'):
+              shutil.copy2(path, out / path.name)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: prompt-config-090-evidence
+          path: ${{ runner.temp }}/prompt-config-090-evidence
+          retention-days: 7
+          if-no-files-found: error
