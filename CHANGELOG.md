@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.9.0 — development (not released)
+
+- Externalize 53 built-in model-facing prompt elements into human-readable TOML
+  files: `prompts/default.toml` preserves 0.8.0 wording, while `de.toml` and
+  `en.toml` provide German and English instructions. Keep protocol keys/enums,
+  user content and technical diagnostics outside automatic translation.
+- Add `--prompt-config default|de|en|FILE` to task-list runs, direct AutoBuild
+  and doctor, plus explicit Python API selection. A complete custom file may
+  change wording without editing Python; strict key/placeholder validation
+  rejects broken or incomplete catalogs instead of mixing fallback texts.
+- Pass one immutable catalog snapshot through task execution, corrections,
+  review, parent review, decisions and parallel worker serialization. Archive
+  its complete text, identity and source/content hashes for reproducibility.
+  Never reread a worker's former source path or execute template expressions.
+- Preserve existing runtime-profile additions, mandatory review parsers,
+  permission checks, controller authority, budgets and recovery gates. Prompt
+  edits can still change substantive model behavior and require operator review.
+- Add default-byte regression fixtures and isolated offline tests for selection,
+  mutation, cross-process snapshots, language isolation and controller flows.
+  Include all catalogs and their editing guide in the runtime distribution.
+- This version is confined to a development branch: no main merge, release tag
+  or public release is created by this change.
+
 ## 0.8.0 — 2026-10-20 (public preview)
 
 - Add explicit `--mcp`, `--review-mcp` and `--skills` selections to task-list

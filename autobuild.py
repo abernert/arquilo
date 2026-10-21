@@ -15,6 +15,8 @@ Erfordert: Codex CLI im PATH, Login bereits erfolgt.
 """
 
 from __future__ import annotations
+
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
 import safe_io
 from controller_state import state_directory
 
@@ -27,7 +29,7 @@ from runtime_config import (
     resolve_reasoning_effort as _resolve_codex_reasoning_effort,
 )
 from review_contract import (
-    DEFAULT_CONTRACT_REVIEW_POLICY_RULES, build_review_prompt, build_fix_prompt,
+    build_review_prompt, build_fix_prompt,
     parse_review_classification, review_classification_passes,
     review_requires_runner_handling, build_review_context_reference,
 )
@@ -194,8 +196,8 @@ def _decision_model() -> Optional[str]:
     return environment_value("ARQUILO_DECISION_MODEL")
 
 
-def _decision_system_prompt() -> str:
-    return environment_value("ARQUILO_DECISION_SYSTEM_PROMPT") or _DEFAULT_DECISION_SYSTEM_PROMPT
+def _decision_system_prompt(prompt_config: PromptConfig | None = None) -> str:
+    return environment_value("ARQUILO_DECISION_SYSTEM_PROMPT") or load_prompt_config(prompt_config).render("decision_system")
 
 
 # ------------------ Utility / Logging ------------------
@@ -771,23 +773,19 @@ def _build_global_review_prompt(
     review_policy_rules: Optional[Sequence[str]] = None,
     contract_path: Optional[Path] = None,
     contract_text: Optional[str] = None,
+    prompt_config: PromptConfig | None = None,
 ) -> str:
+    prompts = load_prompt_config(prompt_config)
     return build_review_prompt(
         original_task,
         latest_answer,
-        review_policy_rules=review_policy_rules,
+        review_policy_rules=review_policy_rules, prompt_config=prompts,
     ) + (
-        build_review_context_reference(str(contract_path), contract_text=contract_text)
+        build_review_context_reference(str(contract_path), contract_text=contract_text, prompt_config=prompts)
         if contract_path is not None else ""
     )
 
 
-_DEFAULT_DECISION_SYSTEM_PROMPT = (
-    "You are a contract-bound evaluator. Select INCOMPLETE only when the reviewer "
-    "identifies at least one unresolved blocking issue against an explicit requirement "
-    "or acceptance criterion. Non-blocking observations, optional improvements, risks, "
-    "and theoretical refinements do not prevent COMPLETE."
-)
 
 
 def _decision_archive_payload(call: DecisionCall) -> Dict[str, Any]:
@@ -822,6 +820,7 @@ def evaluate_completion_decision(
     reasoning_effort: Optional[str] = None,
     settings: Optional[DecisionExecSettings] = None,
     pretty_log: Optional[Path] = None,
+    prompt_config: PromptConfig | None = None,
 ) -> DecisionResult:
     """Deterministic structured reviews; explicit evidence for semantic choices.
 
@@ -829,6 +828,7 @@ def evaluate_completion_decision(
     inline task text. Runner calls must supply their captured ToDo snapshot.
     Input and execution errors propagate; they never become semantic choices.
     """
+    prompts = load_prompt_config(prompt_config)
 
     classification = parse_review_classification(review_findings)
     if classification.get("valid") is False:
@@ -848,9 +848,9 @@ def evaluate_completion_decision(
             is_finished=blocking_count == 0,
             selected_option="COMPLETE" if blocking_count == 0 else "INCOMPLETE",
             explanation=(
-                "Deterministic review-contract decision: no blocking issues remain."
+                prompts.render("decision_result_complete")
                 if blocking_count == 0
-                else f"Deterministic review-contract decision: {blocking_count} blocking issue(s) remain."
+                else prompts.render("decision_result_incomplete", count=blocking_count)
             ),
             source="review_contract",
             fallback_used=False,
@@ -862,7 +862,7 @@ def evaluate_completion_decision(
         run_id=run_id if run_id is not None else f"standalone-{uuid4().hex}",
         task_id=task_id, phase=phase, attempt_id=attempt_id,
         model=model if model is not None else _decision_model(),
-        reasoning_effort=reasoning_effort, system_prompt=_decision_system_prompt())
+        reasoning_effort=reasoning_effort, system_prompt=_decision_system_prompt(prompts), prompt_config=prompts)
     if pretty_log is not None:
         append(pretty_log, f"[{ts()}] [decision_input] {json.dumps(request.to_dict(), ensure_ascii=False)}\n")
     if run_semantic_decision is None:
@@ -928,6 +928,7 @@ def start(
     # Revalidate at the execution boundary, including objects changed after
     # construction; reject before reading task files or setting up a workspace.
     options.__post_init__()
+    prompts = options.prompt_config
     sandbox, network_access = options.sandbox, options.network_access
     config_profile = options.config_profile
     base_extra_args = list(options.extra_arg)
@@ -965,7 +966,7 @@ def start(
     workspace, _ = setup_workspace(workdir_path, single_file)
     if options.skills is not None:
         task_text = bind_resources(task_text, TaskResources(skills=options.skills),
-            SkillCatalog(workdir=workspace, roots=options.skill_dirs))
+            SkillCatalog(workdir=workspace, roots=options.skill_dirs), prompt_config=prompts)
     process_stop_full: Optional[Path] = None
     if process_stop_path is not None:
         candidate = safe_io.check_path(workspace / Path(process_stop_path))
@@ -1089,6 +1090,17 @@ def start(
                 process_stop_details = stop_reason(run.process_stop_details)
             process_stop_triggered = True
     review_contract_path = pretty_log.parent / f"review_contract_{uuid4().hex}.json"
+    prompt_snapshot_path = review_contract_path.with_name(
+        "prompt_config_" + review_contract_path.stem.removeprefix("review_contract_") + ".json"
+    )
+    try:
+        write_text(prompt_snapshot_path, json.dumps(prompts.snapshot(), ensure_ascii=False, indent=2) + "\n")
+    except (OSError, ValueError) as exc:
+        runtime_error = execution_error(
+            f"Cannot archive prompt configuration: {exc}",
+            code="prompt_config_archive_failed", phase="prepare",
+        )
+        max_iterations = 0  # No model may run without its selected catalog record.
 
     def _record_decision_payload(decision: DecisionResult) -> None:
         nonlocal decision_payload
@@ -1207,7 +1219,7 @@ def start(
             latest_answer=last_answer,
             review_policy_rules=review_policy_rules,
             contract_path=review_contract_path,
-            contract_text=review_contract_text,
+            contract_text=review_contract_text, prompt_config=prompts,
         )
         print("Last answer:", last_answer)
         try:
@@ -1273,7 +1285,7 @@ def start(
                 task_id=extract_todo_id(todo_identifier or "") or "standalone",
                 phase=decision_phase, attempt_id=f"{decision_attempt_id}.{attempt_runs}",
                 model=_decision_model() or model, reasoning_effort=reasoning_effort,
-                settings=settings, pretty_log=pretty_log,
+                settings=settings, pretty_log=pretty_log, prompt_config=prompts,
             )
         except DecisionInputError as exc:
             runtime_error = execution_error(str(exc), code=exc.code, phase="decide_input")
@@ -1335,9 +1347,9 @@ def start(
             break
 
         current_prompt = build_fix_prompt(
-            original_task, review_findings, decision.decision_text
+            original_task, review_findings, decision.decision_text, prompt_config=prompts
         ) + build_review_context_reference(
-            str(review_contract_path), contract_text=review_contract_text
+            str(review_contract_path), contract_text=review_contract_text, prompt_config=prompts
         )
 
         if auto_continue:
@@ -1466,6 +1478,8 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--network-access", action="store_true")
     parser.add_argument("--codex-profile", dest="config_profile")
     add_resource_arguments(parser)
+    parser.add_argument("--prompt-config", default="default", metavar="default|de|en|FILE",
+                        help="Human-readable TOML prompt catalog; frozen for this invocation.")
     parser.add_argument("--model")
     parser.add_argument("--reasoning-effort", choices=CODEX_REASONING_EFFORT_CHOICES)
     parser.add_argument("--extra-arg", action="append", default=[])
@@ -1519,7 +1533,11 @@ def failure_summary(exc: BaseException, *, workdir, options: AutoBuildOptions) -
 
 
 def __getattr__(name: str):
-    # Diagnostics only: no dynamic exports or lazy service imports remain.
+    if name == "DEFAULT_CONTRACT_REVIEW_POLICY_RULES":
+        return tuple(load_prompt_config().render("review_policy_rules").splitlines())
+    if name == "_DEFAULT_DECISION_SYSTEM_PROMPT":
+        return load_prompt_config().render("decision_system")
+    # Historical service names remain diagnostics; prompt constants are lazy compatibility views.
     # ImportError preserves the explanation for `from autobuild import ...` too.
     if name in {"queue_main", "QueuedJob", "QueueState", "QueueWorker", "TelemetryMetrics"}:
         raise ImportError(f"autobuild.{name} ist entfernt. {SERVICE_MIGRATION}")

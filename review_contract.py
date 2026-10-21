@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Pure contract-bound review rules, parsing and correction prompts.
 
-Standard library only. No provider, filesystem, environment or orchestration.
+Standard library only. No provider, environment or orchestration. Prompt builders
+use a supplied immutable catalog (or load the shipped default for direct callers).
 JSON is authoritative only after validation; legacy prose still needs Decide.
 """
 from __future__ import annotations
+
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
 
 import json
 import re
@@ -16,21 +19,15 @@ from review_confidence import (
     confidence_protocol_error, normalize_review_confidence,
 )
 
-DEFAULT_CONTRACT_REVIEW_POLICY_RULES: Tuple[str, ...] = (
-    "A correctly documented caveat, open question, qualified statement, or declared hold status is not a blocking issue when the original contract permits that treatment.",
-    "Tasks with explicit direct-repair authority are judged on the final corrected artifacts and any required repair log, not merely on the existence of an error described earlier in the review.",
-    "An error or contradiction in an input or source document is a valid analytical finding. Do not require the reviewer to alter the original or choose an unsupported preferred reading.",
-    "Multiple defensible interpretations or assessments are a valid plural result when the original contract permits them, not a missing human decision unless the request explicitly demands one selected recommendation.",
-    "Missing evidence, an unavailable source, or an unresolved reference is non-blocking when the contract permits a precise caveat, qualified result, open question, or declared hold status and the final artifacts implement that safe boundary.",
-    "Do not request a separate repair task when the current task has explicit direct-repair authority and has already corrected the final state.",
-)
 
 
 def render_review_policy_rules(
     review_policy_rules: Optional[Sequence[str]],
+    *, prompt_config: PromptConfig | None = None,
 ) -> str:
     # Profiles add domain rules; they cannot erase the generic audit/scope rules.
-    rules = (*DEFAULT_CONTRACT_REVIEW_POLICY_RULES, *(review_policy_rules or ()))
+    prompts = load_prompt_config(prompt_config)
+    rules = (*prompts.render("review_policy_rules").splitlines(), *(review_policy_rules or ()))
     rendered: List[str] = []
     for raw in rules:
         text = str(raw or "").strip()
@@ -48,139 +45,48 @@ def build_review_prompt(
     latest_answer: str,
     *,
     review_policy_rules: Optional[Sequence[str]] = None,
+    prompt_config: PromptConfig | None = None,
 ) -> str:
+    prompts = load_prompt_config(prompt_config)
     return (
-        "You act as a meticulous but contract-bound reviewer.\n"
-        "Review the latest response and all relevant workspace files strictly against the "
-        "original request, its explicit acceptance criteria, and any explicit scope limits.\n"
-        "Do not turn optional improvements, theoretical refinements, stylistic preferences, "
-        "or work assigned to a later stage into blocking defects.\n\n"
-        "Original request:\n"
-        f"{original_task}\n\n"
-        "Latest assistant response:\n"
-        f"{latest_answer}\n\n"
-    ) + review_instructions(review_policy_rules)
+        prompts.render('reviewer_role', original_task=original_task, latest_answer=latest_answer)
+    ) + review_instructions(review_policy_rules, prompt_config=prompts)
 
 
-def review_instructions(review_policy_rules: Optional[Sequence[str]] = None) -> str:
+def review_instructions(review_policy_rules: Optional[Sequence[str]] = None, *, prompt_config: PromptConfig | None = None) -> str:
     """One response grammar and scope policy for task and parent reviewers."""
+    prompts = load_prompt_config(prompt_config)
     return (
-        "Return JSON only, using exactly this structure:\n"
-        "{\n"
-        '  "verdict": "PASS" | "FAIL",\n'
-        '  "short_summary": "...",\n'
-        '  "blocking_issues": [\n'
-        "    {\n"
-        '      "id": "ISSUE-1",\n'
-        '      "type": "local_fix" | "decomposition_needed" | "missing_input" | "scope_conflict" | "technical_failure" | "blocked_external",\n'
-        '      "summary": "...",\n'
-        '      "requirement": "the explicit requirement or acceptance criterion that is violated",\n'
-        '      "acceptance_criterion": "the smallest verifiable condition that resolves the issue",\n'
-        '      "references": ["file:line", "ID"],\n'
-        '      "fix_suggestion": "..."\n'
-        "    }\n"
-        "  ],\n"
-        '  "non_blocking_observations": [\n'
-        "    {\n"
-        '      "summary": "...",\n'
-        '      "references": ["file:line", "ID"],\n'
-        '      "suggestion": "..."\n'
-        "    }\n"
-        "  ],\n"
-        '  "breakdown_recommended": true | false,\n'
-        '  "breakdown_reason": "..." | null,\n'
-        f"{confidence_prompt_fields()}"
-        "}\n\n"
-        "Rules:\n"
-        f"{confidence_prompt_rules()}"
-        "- verdict is FAIL if and only if blocking_issues is non-empty.\n"
-        "- If verdict is PASS, set breakdown_recommended=false and breakdown_reason=null.\n"
-        "- If breakdown_recommended=false, set breakdown_reason=null, including for a FAIL verdict.\n"
-        "- A non-empty breakdown_reason is allowed only when verdict is FAIL and breakdown_recommended=true.\n"
-        '  Use JSON null, never an empty string, whitespace-only string, or the string "null".\n'
-        "- Explain why no breakdown is needed in short_summary or non_blocking_observations, not in breakdown_reason.\n"
-        "- Do not change the verdict, discard blockers, or recommend unnecessary breakdown just to satisfy these field constraints.\n"
-        "- A blocking issue must identify a concrete violated requirement and a verifiable acceptance criterion.\n"
-        "- Inspect the actual result files and prior results in the shared workspace; the latest answer alone is not evidence of completion.\n"
-        "- For creative writing, assess the requested narrative constraints and internal consistency, not your preferred style or an unrequested proof format.\n"
-        "- For political document analysis, distinguish source claims, contradictions and defensible interpretations from defects of the analysis. Do not require a preferred political conclusion.\n"
-        "- Put risks, optional improvements, possible finer decompositions, and style preferences in non_blocking_observations.\n"
-        "- A reviewer request that exceeds an explicit scope limit is non-blocking; do not label it scope_conflict. "
-        "Use scope_conflict only when the original task itself contains irreconcilable explicit requirements and no compliant result is possible.\n"
-        f"{render_review_policy_rules(review_policy_rules)}"
-        "- Set breakdown_recommended=true only when at least two genuinely independent remaining workstreams exist, "
-        "or when one remaining workstream demonstrably cannot be completed as one coherent correction.\n"
-        "- A single local correction, a missing field, one wrong number, one broken reference, or one coherent group of related fixes "
-        "does not justify a breakdown.\n"
-        "- Do not recommend breakdown merely because the task has many headings, outputs, bullets, sources, or review comments.\n"
-        "- If no blocking issue remains, return PASS even if non-blocking observations exist.\n"
-        "- If the original request is itself a read-only review, audit, or diagnostic task, the latest answer may correctly report blocking defects in the artifact being reviewed. "
-        "Do not treat the mere existence of those reported defects as a defect of the review task. Judge whether the review accurately applied its requested contract and returned the requested structure.\n"
-        "\nExample of a valid PASS response (illustrative only; verify the actual task before choosing a verdict):\n"
-        '{"verdict": "PASS", "short_summary": "The requested results were verified.", '
-        '"blocking_issues": [], "non_blocking_observations": [], '
-        '"breakdown_recommended": false, "breakdown_reason": null, '
-        '"confidence": null, "confidence_reason": "This format example is not an actual review.", '
-        '"confidence_breakdown": {"requirements_coverage": null, "implementation_correctness": null, '
-        '"test_evidence": null, "regression_safety": null}, '
-        '"evidence": [], "uncertainties": [], "suggested_checks": []}\n'
+        prompts.render('review_instructions', confidence_fields=confidence_prompt_fields(prompt_config=prompts), confidence_rules=confidence_prompt_rules(prompt_config=prompts), policy_rules=render_review_policy_rules(review_policy_rules, prompt_config=prompts))
     )
 
 
-def build_fix_prompt(original_task: str, findings: str, decision_text: str) -> str:
-    findings_block = _format_blocking_review_issues(findings)
+def build_fix_prompt(original_task: str, findings: str, decision_text: str, *, prompt_config: PromptConfig | None = None) -> str:
+    prompts = load_prompt_config(prompt_config)
+    findings_block = _format_blocking_review_issues(findings, prompt_config=prompts)
     if not findings_block:
-        findings_block = "No unresolved blocking reviewer issue was identified."
+        findings_block = prompts.render('fix_no_blockers')
     return (
-        f"{original_task}\n\n"
-        "The reviewer reported alleged blocking issues that must be resolved or rebutted against the original contract:\n"
-        f"{findings_block}\n\n"
-        "Before changing any artifact, verify each alleged blocker against the original request, "
-        "its scope limits and the actual files. Reviewer suggestions are claims to check, not new requirements. "
-        "For false criticism or demands beyond scope, leave correct artifacts unchanged and document a concrete "
-        "rebuttal with the relevant requirement and file references in the result report. "
-        "An independent review must validate the corrected result or rebuttal before completion.\n\n"
-        "Non-blocking observations are not requirements for this correction pass. "
-        "Do not expand scope, detail, outputs, or acceptance criteria merely to address them.\n\n"
-        "Additional guidance:\n"
-        f"{decision_text}\n\n"
-        "Resolve confirmed blocking issues with the smallest coherent change that fulfils the original request."
+        prompts.render('fix_assignment', original_task=original_task, blocking_issues=findings_block, decision_text=decision_text)
     )
 
 
-def build_review_context_reference(path: str, *, contract_text: str | None = None) -> str:
+def build_review_context_reference(path: str, *, contract_text: str | None = None, prompt_config: PromptConfig | None = None) -> str:
     """Attach a controller-captured contract without requiring a sandboxed file read.
 
     The path-only form remains for compatibility. Runtime reviewers should pass
     the controller snapshot inline so review correctness does not depend on
     platform-specific sandbox access to ARQUILO's archived run logs.
     """
+    prompts = load_prompt_config(prompt_config)
     if contract_text is None:
         return (
-            "\n\nCaptured original contract (read this UTF-8 JSON file):\n"
-            f"{path}\n"
-            "Use its task_text and original_request as the recorded requirements, including the effective "
-            "preamble. Later edits of the task file do not retroactively change this review's criteria. "
-            "Inspect current artifacts and prior result reports in the shared workspace. "
-            "For a delegated planning, breakdown or read-only audit call, judge that call's explicit limited "
-            "deliverable; do not demand the entire parent output during an intermediate stage. "
-            "If this contract file cannot be read, report the missing review evidence; do not guess PASS."
+            prompts.render('review_contract_file', path=path)
         )
 
     inline = contract_text.rstrip("\n")
     return (
-        "\n\nCaptured original contract (authoritative controller snapshot):\n"
-        "Use the inline UTF-8 JSON below directly. ARQUILO archives an identical copy separately for audit; "
-        "do not use shell or filesystem access to locate or read that archive for this review.\n"
-        "----- BEGIN ARQUILO REVIEW CONTRACT -----\n"
-        f"{inline}\n"
-        "----- END ARQUILO REVIEW CONTRACT -----\n"
-        "Use its task_text and original_request as the recorded requirements, including the effective "
-        "preamble. Later edits of the task file do not retroactively change this review's criteria. "
-        "Inspect current artifacts and prior result reports in the shared workspace. "
-        "For a delegated planning, breakdown or read-only audit call, judge that call's explicit limited "
-        "deliverable; do not demand the entire parent output during an intermediate stage. "
-        "If the inline contract is missing or malformed, report the missing review evidence; do not guess PASS."
+        prompts.render('review_contract_inline', contract=inline)
     )
 
 
@@ -697,7 +603,8 @@ def review_requires_runner_handling(classification: Any) -> bool:
     )
 
 
-def _format_blocking_review_issues(review_findings: str) -> Optional[str]:
+def _format_blocking_review_issues(review_findings: str, *, prompt_config: PromptConfig | None = None) -> Optional[str]:
+    prompts = load_prompt_config(prompt_config)
     classification = parse_review_classification(review_findings)
     issues = classification.get("blocking_issues")
     if not isinstance(issues, list) or not issues:
@@ -708,18 +615,24 @@ def _format_blocking_review_issues(review_findings: str) -> Optional[str]:
             continue
         issue_id = str(issue.get("id") or f"ISSUE-{index}").strip()
         issue_type = str(issue.get("type") or "local_fix").strip()
-        summary = str(issue.get("summary") or "Blocking issue.").strip()
+        summary = str(issue.get("summary") or prompts.render("issue_missing_summary")).strip()
         requirement = str(issue.get("requirement") or "").strip()
         criterion = str(issue.get("acceptance_criterion") or "").strip()
         refs = _normalize_review_references(issue.get("references"))
         suggestion = str(issue.get("fix_suggestion") or "").strip()
         lines.append(f"{index}. [{issue_id}] ({issue_type}) {summary}")
         if requirement:
-            lines.append(f"   Violated requirement: {requirement}")
+            lines.append(prompts.render("fix_issue_requirement", value=requirement))
         if criterion:
-            lines.append(f"   Acceptance criterion: {criterion}")
+            lines.append(prompts.render("fix_issue_criterion", value=criterion))
         if refs:
-            lines.append("   References: " + ", ".join(refs))
+            lines.append(prompts.render("fix_issue_references", value=", ".join(refs)))
         if suggestion:
-            lines.append(f"   Suggested fix: {suggestion}")
+            lines.append(prompts.render("fix_issue_suggestion", value=suggestion))
     return "\n".join(lines) if lines else None
+
+
+def __getattr__(name: str):
+    if name == "DEFAULT_CONTRACT_REVIEW_POLICY_RULES":
+        return tuple(load_prompt_config().render("review_policy_rules").splitlines())
+    raise AttributeError(name)

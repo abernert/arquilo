@@ -52,11 +52,11 @@ and `package` are unchanged. `tasklist --help` shows the command group;
 No pipeline command is implemented by this migration. The
 [pipeline proposal](pipeline-mvp-concept.md) is not an executable schema.
 
-## Current names (ARQUILO 0.8.0)
+## Current names (ARQUILO 0.9.0)
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. The public package version is 0.8.0. Individual schema version
+identifiers. This development branch uses package version 0.9.0; it is not a published release. Individual schema version
 suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean

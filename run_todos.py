@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
+
 RUN_TODOS_INPUT_READY_CONTRACT_VERSION = 1
 ARQUILO_DIRECT_REPAIR_RUNNER_CONTRACT_VERSION = 1
 ARQUILO_CAPABILITIES_SCHEMA_VERSION = "arquilo.capabilities.v1"
@@ -111,31 +113,8 @@ BREAKDOWN_BLOCKING_TYPES: Set[str] = {
     "blocked_external",
 }
 
-_DEFAULT_CONTROLLER_ONLY_INSTRUCTION = (
-    "Wenn Du Entscheidungen vom Nutzer brauchst oder Fragen hast, "
-    "dokumentiere sie in `{question_path}` inklusive Datum/Zeit. "
-    "Schreibe in diesem Auftrag niemals selbst eine `process_stop`-Datei. "
-    "Erzeuge auch bei einem qualifizierten oder fehleranzeigenden Status alle "
-    "verlangten strukturierten Outputs und schließe den Auftrag regulär ab. "
-    "Ausschließlich der aufrufende Controller entscheidet nach Validierung über "
-    "Korrektur, qualifizierte Fortsetzung oder einen technischen "
-    "`{process_stop_path}`."
-)
 
-_DEFAULT_TASK_CONTRACT_INSTRUCTION = (
-    "Wenn der Auftrag eine Prüf- und Reparaturbefugnis enthält, dokumentiere "
-    "festgestellte Fehler getrennt und korrigiere sie im selben Auftrag innerhalb "
-    "des freigegebenen Reparaturscopes. Fehler oder Widersprüche in bereitgestellten "
-    "Eingaben sowie mehrere nach dem Auftrag vertretbare Interpretationen sind "
-    "Analyseergebnisse, keine automatisch zu erzwingenden Nutzerentscheidungen. "
-    "Ein separates Reparatur-ToDo ist nur für neue Recherche, Spezialzuständigkeit "
-    "oder nicht lokal begrenzbare Großreparaturen vorgesehen."
-)
 
-_DEFAULT_PARENT_REVIEW_TERMINAL_RULE = (
-    "Eine im ursprünglichen Auftrag ausdrücklich zulässige offene Frage, "
-    "qualifizierte Aussage oder Halt-Markierung ist kein Mangel."
-)
 
 
 def validate_removed_directives(text: str) -> None:
@@ -187,6 +166,7 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
             "runtime_profile.preflight": ARQUILO_RUNTIME_PROFILE_PREFLIGHT_CONTRACT_VERSION,
             "runtime_profile.protected_blocks": ARQUILO_RUNTIME_PROFILE_PROTECTED_BLOCKS_CONTRACT_VERSION,
             "runtime_profile.prompt_policy": ARQUILO_RUNTIME_PROFILE_PROMPT_POLICY_CONTRACT_VERSION,
+            "prompt_config": 1,
             "autobuild.final_failure": AUTOBUILD_FINAL_FAILURE_CONTRACT_VERSION,
             "autobuild.review_policy": AUTOBUILD_REVIEW_POLICY_CONTRACT_VERSION,
         },
@@ -299,14 +279,15 @@ def _breakdown_action(classification: Mapping[str, Any]) -> str:
     return "single_repair"
 
 
-def _format_blocking_issues_for_breakdown(classification: Mapping[str, Any]) -> str:
+def _format_blocking_issues_for_breakdown(classification: Mapping[str, Any], *, prompt_config: PromptConfig | None = None) -> str:
+    prompts = load_prompt_config(prompt_config)
     issues_raw = classification.get("blocking_issues")
     issues = [item for item in issues_raw if isinstance(item, Mapping)] if isinstance(issues_raw, list) else []
     lines: List[str] = []
     for index, issue in enumerate(issues, start=1):
         issue_id = str(issue.get("id") or f"ISSUE-{index}").strip()
         issue_type = str(issue.get("type") or "local_fix").strip()
-        summary = str(issue.get("summary") or "Blocking issue.").strip()
+        summary = str(issue.get("summary") or prompts.render("issue_missing_summary")).strip()
         requirement = str(issue.get("requirement") or "").strip()
         criterion = str(issue.get("acceptance_criterion") or "").strip()
         suggestion = str(issue.get("fix_suggestion") or "").strip()
@@ -314,14 +295,14 @@ def _format_blocking_issues_for_breakdown(classification: Mapping[str, Any]) -> 
         refs = [str(item).strip() for item in refs_raw if str(item).strip()] if isinstance(refs_raw, list) else []
         lines.append(f"{index}. [{issue_id}] ({issue_type}) {summary}")
         if requirement:
-            lines.append(f"   Verletzte Anforderung: {requirement}")
+            lines.append(prompts.render("breakdown_issue_requirement", value=requirement))
         if criterion:
-            lines.append(f"   Abnahmekriterium: {criterion}")
+            lines.append(prompts.render("breakdown_issue_criterion", value=criterion))
         if refs:
-            lines.append("   Referenzen: " + ", ".join(refs))
+            lines.append(prompts.render("breakdown_issue_references", value=", ".join(refs)))
         if suggestion:
-            lines.append(f"   Korrekturhinweis: {suggestion}")
-    return "\n".join(lines) if lines else "Keine blockierenden Issues angegeben."
+            lines.append(prompts.render("breakdown_issue_suggestion", value=suggestion))
+    return "\n".join(lines) if lines else prompts.render("breakdown_no_issues")
 
 
 def _codex_reasoning_config_value(reasoning_effort: str) -> str:
@@ -337,13 +318,12 @@ class CodexPreflightError(RuntimeError):
 
 
 _CODEX_WORKSPACE_WRITE_PREFLIGHT_TIMEOUT_SECONDS = 60
-_CODEX_WORKSPACE_WRITE_PREFLIGHT_PROMPT = (
-    "Preflight only. Do not modify files. Reply exactly: ok"
-)
 
 
 def _redacted_codex_preflight_command(command: Sequence[str]) -> str:
-    if command and command[-1] == _CODEX_WORKSPACE_WRITE_PREFLIGHT_PROMPT:
+    # This helper receives a complete Exec command whose final argument is the prompt.
+    # Redact by position, including user-edited/localized preflight text.
+    if command and "exec" in command:
         command = [*command[:-1], "<preflight prompt>"]
     return shlex.join(command)
 
@@ -538,12 +518,14 @@ def run_codex_workspace_write_preflight(
     model: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     mcp_disabled: bool = False,
+    prompt_config: PromptConfig | None = None,
 ) -> None:
+    prompts = load_prompt_config(prompt_config)
     version_command = ["codex", "--version"]
     resolved_model = _resolve_codex_model(model)
     resolved_reasoning_effort = _resolve_codex_reasoning_effort(reasoning_effort)
     exec_command = codex_transport.build_command(codex_transport.CodexExecRequest(
-        prompt=_CODEX_WORKSPACE_WRITE_PREFLIGHT_PROMPT, cwd=Path.cwd(), env=dict(os.environ),
+        prompt=prompts.render("preflight"), cwd=Path.cwd(), env=dict(os.environ),
         raw_log=Path("preflight.jsonl"), pretty_log=Path("preflight.log"),
         model=resolved_model, reasoning_effort=resolved_reasoning_effort,
         extra_args=("--skip-git-repo-check",), phase="preflight",
@@ -594,7 +576,7 @@ def run_codex_workspace_write_preflight(
         temp_workspace = Path(tmpdir).resolve()
         try:
             request = codex_transport.CodexExecRequest(
-                prompt=_CODEX_WORKSPACE_WRITE_PREFLIGHT_PROMPT,
+                prompt=prompts.render("preflight"),
                 cwd=temp_workspace, env=dict(os.environ),
                 raw_log=temp_workspace / "preflight.jsonl",
                 pretty_log=temp_workspace / "preflight.log",
@@ -803,6 +785,7 @@ class TodoRunner:
         skills: Optional[Sequence[str]] = None,
         skill_dirs: Sequence[Path] = (),
         agent: Optional[str] = None,
+        prompt_config: PromptConfig | str | Path | None = None,
         **removed_options: Any,
     ) -> None:
         if removed_positional_options:
@@ -813,6 +796,7 @@ class TodoRunner:
                 + IACT_MIGRATION + " " + BRIDGE_MIGRATION
             )
         reject_removed_options(removed_options, source="TodoRunner")
+        self._prompts = load_prompt_config(prompt_config)
         check_removed_environment()
         codex_policy.validate_start_policy(sandbox=sandbox, network_access=network_access)
         self.project_id = validate_project_id(project_id)
@@ -1612,9 +1596,7 @@ class TodoRunner:
         if target.exists():
             return
         template = (
-            "# ToDo Fragen & Antworten\n\n"
-            "Nutze dieses Dokument als Logbuch für Rückfragen an den Auftraggeber "
-            "und dokumentiere Antworten direkt unterhalb der jeweiligen Frage.\n"
+            self.prompts.render('questions_document')
         )
         try:
             safe_io.write_text(target, template, exclusive=True)
@@ -1676,6 +1658,13 @@ class TodoRunner:
         except (OSError, UnicodeError) as exc:
             raise RuntimeError(f"Cannot read required policy {target}: {exc}") from exc
 
+    @property
+    def prompts(self) -> PromptConfig:
+        # Backward-compatible for legacy integrations constructing runner test doubles.
+        if not hasattr(self, "_prompts"):
+            self._prompts = load_prompt_config()
+        return self._prompts
+
     def _augment_task_prompt(
         self,
         base_prompt: str,
@@ -1697,26 +1686,17 @@ class TodoRunner:
             process_stop_target, workspace=prompt_workspace
         )
         if self.process_stop_policy == "controller-only":
-            controller_template = (
-                self.runtime_profile.controller_only_instruction
-                if self.runtime_profile_active
-                and self.runtime_profile.controller_only_instruction
-                else _DEFAULT_CONTROLLER_ONLY_INSTRUCTION
-            )
-            stop_instruction = self.runtime_profile.format_prompt(
-                controller_template,
-                question_path=question_path,
-                process_stop_path=process_stop_display,
-            ) or ""
+            if self.runtime_profile_active and self.runtime_profile.controller_only_instruction:
+                stop_instruction = self.runtime_profile.format_prompt(
+                    self.runtime_profile.controller_only_instruction,
+                    question_path=question_path, process_stop_path=process_stop_display,
+                ) or ""
+            else:
+                stop_instruction = self.prompts.render("task_controller_only",
+                    question_path=question_path, process_stop_path=process_stop_display)
         else:
             stop_instruction = (
-                "Wenn Du Entscheidungen vom Nutzer brauchst oder Fragen hast, "
-                f"dokumentiere sie in `{question_path}` inklusive Datum/Zeit. "
-                "Antworten werden dort ebenfalls eingetragen. "
-                "Falls Du ohne bestimmte Antworten nicht weitermachen kannst, "
-                f"notiere bei den entsprechenden Fragen, dass Antworten benötigt werden, "
-                f"und schreibe anschließend `{process_stop_display}` in den Workspace. "
-                "Diese Datei muss erklären, welche Fragen eine Fortsetzung blockieren."
+                self.prompts.render('task_agent_stop', question_path=question_path, process_stop_path=process_stop_display)
             )
         instructions = [
             base_prompt.strip(),
@@ -1725,35 +1705,23 @@ class TodoRunner:
                 self.runtime_profile.task_contract_instruction
                 if self.runtime_profile_active
                 and self.runtime_profile.task_contract_instruction
-                else _DEFAULT_TASK_CONTRACT_INSTRUCTION
+                else self.prompts.render("task_contract")
             ),
             (
-                "Der Betreiber erlaubt Änderungen an derselben ToDo-Datei: ergänze oder überarbeite "
-                "Aufgaben, soweit der Auftrag dies verlangt. Neue Aufgaben müssen eindeutige IDs "
-                "haben und offen (TASK/Auftrag) sein. Lass den aktuell bearbeiteten Auftrag offen; "
-                "seine Abnahme erfolgt separat gegen die ursprünglichen Anforderungen. "
-                "Führe neu erzeugte Aufgaben nicht selbst aus, sofern du nur den Plan erstellen sollst. "
+                self.prompts.render('task_mutable_plan')
                 if self.allow_todo_modifications else
-                'Ändere den Status eines ToDos nie von "Auftrag" auf "DONE". '
-                "Das ist ausschließlich einer separaten Kontrollinstanz vorbehalten. "
-                'Ebenfalls ändere nie einen Status von "DONE" zurück auf "Auftrag". '
-                'Falls Du feststellst, dass es eine solche Statusänderung gegeben hat, '
-                'gehe davon aus, dass das die Kontrollinstanz gewesen ist.'
+                self.prompts.render('task_guarded_plan')
             ),
         ]
         if self.stop_id:
-            instructions.append(f"Der Betreiber hat --stop {self.stop_id} gewählt: Nach dieser Aufgabe "
-                                "darf keine nachfolgende oder neu erzeugte Aufgabe ausgeführt werden. "
-                                "Plane sie nur; der nächste Lauf wird vom Betreiber gestartet.")
+            instructions.append(self.prompts.render('task_stop_boundary', stop_id=self.stop_id))
         if self._task_command() == "***Task***":
             instructions.append(
-                "Neue ToDo-Überschriften verwenden '<id>. ***Task***: <Text>'. "
-                "Erledigte Einträge heißen ***DONE***, entfallene ***OBSOLETE***. "
-                "OBSOLETE bedeutet nicht erfolgreich erledigt. Bestehende Auftragsinhalte bleiben editierbar."
+                self.prompts.render('task_marked_syntax')
             )
         if agent:
             instructions.append(
-                f"Nutze für diesen Auftrag den Agenten `{agent}` und orientiere Dich an dessen Spezialisierung."
+                self.prompts.render('task_agent_hint', agent=agent)
             )
         task_text = "\n\n".join(entry for entry in instructions if entry.strip())
         policy_text = self._read_policy_text(policy_target)
@@ -1763,18 +1731,14 @@ class TodoRunner:
             )
             if self.process_stop_policy == "controller-only":
                 policy_tail = (
-                    "Wenn ein Auftrag selbst oder aufgrund weiterer Informationen diese Policy verletzt, "
-                    "dokumentiere die Verletzung vollständig in den verlangten strukturierten Outputs; "
-                    "schreibe keine process_stop-Datei. Der Controller behandelt den Status."
+                    self.prompts.render('task_policy_controller')
                 )
             else:
                 policy_tail = (
-                    "Wenn ein Auftrag selbst oder aufgrund weiterer Informationen diese Policy verletzt, "
-                    f"schreibe `{process_stop_display}` mit einer Erläuterung der Policy-Verletzung "
-                    "und verweise auf den entsprechenden Abschnitt."
+                    self.prompts.render('task_policy_agent', process_stop_path=process_stop_display)
                 )
             policy_block = (
-                f"Folgende Policy aus `{policy_path}` gilt verbindlich:\n{policy_text}\n\n"
+                self.prompts.render('task_policy_intro', policy_path=policy_path, policy_text=policy_text)
                 + policy_tail
             )
             task_text = "\n\n".join([task_text, policy_block]).rstrip()
@@ -2193,15 +2157,12 @@ class TodoRunner:
             context.result_file, workspace=context.workdir
         )
         base_task = (
-            f"Erfülle aus `{todo_prompt_path}` das ToDo Nummer {todo.identifier}. "
-            f"Berücksichtige dabei bisherige Ergebnisse in den todo_result-Dateien innerhalb des Workspaces (z. B. `{result_prompt_path}`). "
-            f"Dokumentiere das Ergebnis in `{result_prompt_path}`."
+            self.prompts.render('task_assignment', todo_path=todo_prompt_path, task_id=todo.identifier, result_path=result_prompt_path)
         )
         if context.workdir != self.workdir:
             workspace_hint = self._path_for_prompt(context.workdir)
             base_task += (
-                f" Nutze für diesen Auftrag den Unterworkspace `{workspace_hint}` "
-                "und arbeite nur innerhalb dieses Bereichs."
+                self.prompts.render('task_subworkspace', workspace=workspace_hint)
             )
         return self._augment_task_prompt(
             base_task,
@@ -2480,7 +2441,7 @@ class TodoRunner:
             if not self.dry_run:
                 task_text = augment_with_preamble(
                     self._todo_task_prompt(todo, resume_context),
-                    resume_context.todo_file, mode=self.todo_preamble,
+                    resume_context.todo_file, mode=self.todo_preamble, prompt_config=self.prompts,
                 )
                 self._capture_original_contract(
                     todo.identifier, task_text, resume_context.todo_file,
@@ -2740,16 +2701,10 @@ class TodoRunner:
             self.runtime_profile.legacy_review_boundary
             if self.runtime_profile_scope_active
             and self.runtime_profile.legacy_review_boundary
-            else "einschließlich des dort stehenden letzten Review-Berichts."
+            else self.prompts.render('breakdown_legacy_boundary')
         )
         breakdown_base = (
-            f"Brich das ToDo #{todo.identifier} aus `{todo_prompt_path}` in einzelne ToDos herunter "
-            f"und ergänze diese Unter-ToDos in `{todo_prompt_path}`. "
-            f"Jede neue ToDo-Ueberschrift muss exakt mit '<unternummer> {self._task_command()}: ' beginnen, "
-            f"zum Beispiel '3.1 {self._task_command()}: API erweitern'. "
-            f"{scope_guard}"
-            f"Berücksichtige dabei die bisherigen Ergebnisse in `{result_prompt_path}` "
-            f"{review_boundary}"
+            self.prompts.render('breakdown_legacy', task_id=todo.identifier, todo_path=todo_prompt_path, task_command=self._task_command(), scope_guard=scope_guard, result_path=result_prompt_path, review_boundary=review_boundary)
         )
         breakdown_text = self._augment_task_prompt(breakdown_base)
         print(f"[info] Unter-ToDos für {todo.identifier} werden im Legacy-Modus angefordert.")
@@ -2808,36 +2763,21 @@ class TodoRunner:
         before_ids = set(before_lines)
         todo_prompt_path = self._path_for_prompt(self.todo_file)
         result_prompt_path = self._path_for_prompt(result_file)
-        issue_block = _format_blocking_issues_for_breakdown(classification)
+        issue_block = _format_blocking_issues_for_breakdown(classification, prompt_config=self.prompts)
         scope_guard = (
             self.runtime_profile.breakdown_scope_guard
             if self.runtime_profile_scope_active
             else ""
         )
         mode_instruction = (
-            "Erzeuge genau einen fokussierten Unterauftrag, der die zusammenhängende blockierende Restarbeit korrigiert."
+            self.prompts.render('breakdown_single')
             if max_children == 1
             else (
-                f"Erzeuge die kleinste ausreichende Zahl direkt untergeordneter Unteraufträge, höchstens {max_children}. "
-                "Zwei oder mehr Unteraufträge sind nur zulässig, wenn die Restarbeiten wirklich unabhängig prüfbar sind."
+                self.prompts.render('breakdown_multiple', max_children=max_children)
             )
         )
         breakdown_base = (
-            f"Bearbeite ausschließlich die noch offene Restarbeit von ToDo #{todo.identifier} "
-            f"in Breakdown-Runde {round_number}. "
-            f"aus `{todo_prompt_path}`. Ergänze die erforderlichen direkten Unter-ToDos in dieselbe Datei. "
-            f"{mode_instruction} "
-            f"Jede neue Überschrift muss exakt mit '<parent>.<nummer> {self._task_command()}: ' beginnen. "
-            "Erzeuge keine verschachtelten Enkel-ToDos in diesem Lauf. "
-            "Wiederhole keine bereits gültig erledigte Arbeit. Zerlege nicht je Aufzählungspunkt, "
-            "Outputdatei, Tabellenabschnitt oder Reviewerbullet. Jeder Unterauftrag muss ein klares Ziel, "
-            "ein konkretes Ergebnis und ein überprüfbares Abnahmekriterium enthalten. "
-            "Die Summe der Unteraufträge darf Scope, Detailtiefe, Outputs, Rechte oder Abnahmestandard "
-            "des Elternauftrags nicht erweitern. "
-            f"{scope_guard}"
-            f"Maßgeblich sind ausschließlich diese blockierenden Issues:\n{issue_block}\n\n"
-            f"Die bisherige Ergebnisdatei `{result_prompt_path}` dient nur als Laufhistorie. "
-            "Nicht blockierende Beobachtungen und theoretische Verbesserungen sind nicht in Unteraufträge umzusetzen."
+            self.prompts.render('breakdown_minimal', task_id=todo.identifier, round_number=round_number, todo_path=todo_prompt_path, mode_instruction=mode_instruction, task_command=self._task_command(), scope_guard=scope_guard, issues=issue_block, result_path=result_prompt_path)
         )
         breakdown_text = self._augment_task_prompt(breakdown_base)
         print(
@@ -3213,7 +3153,7 @@ class TodoRunner:
         # Keep the reference request intact. This one boundary covers tasks,
         # breakdown, parent review and the optional Python worker alike.
         task_text = augment_with_preamble(
-            task_text, active_todo_file, mode=self.todo_preamble
+            task_text, active_todo_file, mode=self.todo_preamble, prompt_config=self.prompts
         )
         resource_id = self._derive_todo_id_from_identifier(identifier)
         resource_caps = getattr(self, "resource_caps", {})
@@ -3224,7 +3164,7 @@ class TodoRunner:
                                       label=f"Task {resource_id}: {key}") for key in RESOURCE_KEYS})
         if resources.explicit:
             catalog = getattr(self, "skill_catalog", None) or SkillCatalog(workdir=self.workdir)
-            task_text = bind_resources(task_text, resources, catalog)
+            task_text = bind_resources(task_text, resources, catalog, prompt_config=self.prompts)
         active_model = _resolve_codex_model(
             model_override if model_override is not None else self.model
         )
@@ -3331,6 +3271,7 @@ class TodoRunner:
             options = AutoBuildOptions(
                 sandbox=active_sandbox, network_access=active_network_access,
                 config_profile=config_profile, extra_arg=active_extra_args,
+                prompt_config=self.prompts,
                 mcp=resources.mcp, review_mcp=resources.review_mcp,
                 logfile=pretty_log, rawlog=raw_log, summary_json=summary_json,
                 max_steps=self.max_steps * self.max_retries, max_calls=budget.limit,
@@ -3512,6 +3453,7 @@ class TodoRunner:
                 "todo_preamble": self.todo_preamble,
             },
         }
+        payload["prompt_config"] = self.prompts.metadata()
         if self.model:
             payload["model"] = self.model
         if self.reasoning_effort:
@@ -3526,6 +3468,7 @@ class TodoRunner:
     def _write_run_config(self) -> None:
         if self.run_config_payload is None:
             raise RuntimeError("run_config payload not initialized")
+        write_log_json(self.run_config_path.with_name("prompt_config_snapshot.json"), self.prompts.snapshot())
         write_log_json(self.run_config_path, self.run_config_payload)
 
     def _format_timestamp(self, value: datetime) -> str:
@@ -4338,27 +4281,21 @@ class TodoRunner:
             self.runtime_profile.parent_review_terminal_rule
             if self.runtime_profile_active
             and self.runtime_profile.parent_review_terminal_rule
-            else _DEFAULT_PARENT_REVIEW_TERMINAL_RULE
+            else self.prompts.render("parent_terminal")
         )
         base_task = (
-            f"Prüfe read-only, ob das ToDo #{parent_id} aus `{todo_prompt_path}` "
-            "mit seinen direkten und gegebenenfalls verschachtelten Unter-ToDos gegen "
-            "die ursprünglichen Akzeptanzkriterien vollständig erledigt wurde. "
-            f"{scope_guard}"
-            "Verändere keine Fachoutputs, erweitere den Scope nicht und schließe "
-            "Lücken in diesem Reviewlauf nicht selbst. Nicht blockierende "
-            "Beobachtungen verhindern den Abschluss nicht. "
-            f"Lies den gemeinsamen Ergebnisbericht `{prompt_path}` und die tatsächlichen Artefakte. "
+            self.prompts.render('parent_assignment', parent_id=parent_id, todo_path=todo_prompt_path, scope_guard=scope_guard, result_path=prompt_path)
         )
         base_task += "\n" + review_instructions(
-            self.runtime_profile.autobuild_review_rules if self.runtime_profile_active else None
+            self.runtime_profile.autobuild_review_rules if self.runtime_profile_active else None,
+            prompt_config=self.prompts,
         ) + terminal_rule
         contract = getattr(self, "review_contracts", {}).get(parent_id)
         if contract is not None:
             contract_path, contract_text = contract
             write_log_text(contract_path, contract_text)
             base_task += build_review_context_reference(
-                str(contract_path), contract_text=contract_text
+                str(contract_path), contract_text=contract_text, prompt_config=self.prompts
             )
         task_text = self._augment_task_prompt(base_task)
         print(f"[info] Abschlussprüfung für {parent_id}.")
@@ -4596,6 +4533,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="ARQUILO-Kernverträge und erhaltene Kernoptionen als JSON anzeigen; keine Modellaufrufe.",
     )
+    parser.add_argument("--prompt-config", default="default", metavar="default|de|en|FILE",
+                        help="TOML prompt catalog: built-in default, de, en or an explicit file.")
     add_resource_arguments(parser)
     parser.add_argument("--agent", help="Default Codex profile/agent hint; a task CFG agent may override it.")
     return parser.parse_args(argv)
@@ -4627,6 +4566,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             codex_policy.validate_start_policy(sandbox=sandbox_level, network_access=args.network_access)
             normalize_mode(args.todo_preamble)
         except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        try:
+            prompts = load_prompt_config(args.prompt_config)
+        except PromptConfigError as exc:
             print(str(exc), file=sys.stderr)
             return 2
         if args.todo_file is None:
@@ -4661,7 +4605,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # capability preflight. Dispatch still captures the live file afresh.
         try:
             validate_removed_directives(read_utf8(todo_path))
-            augment_with_preamble("", todo_path, mode=args.todo_preamble)
+            augment_with_preamble("", todo_path, mode=args.todo_preamble, prompt_config=prompts)
         except (RuntimeError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return 3
@@ -4714,7 +4658,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 todo_syntax=args.todo_syntax,
                 todo_preamble=args.todo_preamble,
                 mcp=args.mcp, review_mcp=args.review_mcp, skills=args.skills,
-                skill_dirs=args.skill_dirs, agent=args.agent,
+                skill_dirs=args.skill_dirs, agent=args.agent, prompt_config=prompts,
             )
         except (GitIntegrationError, ReviewedGitError, PlanIntegrityError, OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
@@ -4724,7 +4668,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 run_runtime_profile_preflight(runtime_profile, workdir=workdir, todo_file=todo_path)
             if not args.skip_codex_preflight:
                 run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
-                    model=args.model, reasoning_effort=args.reasoning_effort,
+                    model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts,
                     **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:
