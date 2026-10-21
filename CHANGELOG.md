@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 — development (not released)
+## 0.9.0 — 2026-10-21 (public preview)
 
 - Externalize 53 built-in model-facing prompt elements into human-readable TOML
   files: `prompts/default.toml` preserves 0.8.0 wording, while `de.toml` and
@@ -20,8 +20,9 @@
 - Add default-byte regression fixtures and isolated offline tests for selection,
   mutation, cross-process snapshots, language isolation and controller flows.
   Include all catalogs and their editing guide in the runtime distribution.
-- This version is confined to a development branch: no main merge, release tag
-  or public release is created by this change.
+- Publish the owner-approved prompt configuration feature as a public preview.
+  Default selection preserves the original 0.8.0 prompt wording; custom prompts
+  and translations remain subject to operator validation.
 
 ## 0.8.0 — 2026-10-20 (public preview)
 

@@ -1,6 +1,6 @@
-# Prompt configuration — 0.9.0 development
+# Prompt configuration — 0.9.0
 
-**Development branch, not a published release.** This feature moves ARQUILO's
+**Public preview.** This feature moves ARQUILO's
 built-in model-facing instruction texts into complete, editable TOML catalogs.
 The Python core, parser contracts and authorization checks remain separate.
 Python 3.11's standard `tomllib` is sufficient; no new package is required.
@@ -187,7 +187,7 @@ accept the selector or loaded catalog. Existing calls that omit it use `default`
 A snapshot includes its original source metadata but is validated without
 requiring that source path to exist on a worker.
 
-## Validation in this branch
+## Validation
 
 Offline tests cover exact default text, all catalog keys, translation selection,
 custom edits, placeholder failures, literal user inputs, parallel language
