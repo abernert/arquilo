@@ -314,6 +314,8 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
             directory = _attempt_directory(parent, number)
             archive.write_json(directory / "call.json", manifest)
             archive.write_json(directory / "input.json", request.to_dict())
+            atomic_write_text(directory / "prompt_config_snapshot.json",
+                              json.dumps(request.prompt_config.snapshot(), ensure_ascii=False, indent=2) + "\n")
             atomic_write_text(directory / "prompt.md", prompt)
             schema_path, response_path = directory / "schema.json", directory / "response.json"
             atomic_write_text(schema_path, json.dumps(response_schema(request), ensure_ascii=False, indent=2) + "\n")

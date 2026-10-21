@@ -1,7 +1,9 @@
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
-"""Small AutoBuild call boundary; no processes, configuration reads or scheduler."""
+"""Small AutoBuild call boundary; immutable validated options, no scheduler or processes."""
 from __future__ import annotations
+
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
 
 from dataclasses import asdict, dataclass
 import json
@@ -38,9 +40,11 @@ class AutoBuildOptions:
     review_mcp: tuple[str, ...] | None = None
     skills: tuple[str, ...] | None = None
     skill_dirs: tuple[str, ...] = ()
+    prompt_config: PromptConfig | str | Path | dict | None = None
 
     def __post_init__(self):
         positive_limit(self.max_calls)
+        object.__setattr__(self, "prompt_config", load_prompt_config(self.prompt_config))
         resources = TaskResources(mcp=self.mcp, review_mcp=self.review_mcp, skills=self.skills)
         for key in ("mcp", "review_mcp", "skills"):
             object.__setattr__(self, key, getattr(resources, key))

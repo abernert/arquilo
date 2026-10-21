@@ -3,6 +3,8 @@
 """Decide APIs backed by archived, strictly validated Codex Exec."""
 from __future__ import annotations
 
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
+
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -87,6 +89,7 @@ def _request(
     phase: str, attempt_id: str, max_input_bytes: int,
     request: Optional[DecisionRequest] = None,
     boolean_mapping: Optional[BooleanMapping] = None,
+    prompt_config: PromptConfig | str | Path | None = None,
 ) -> DecisionRequest:
     if request is not None:
         if not isinstance(request, DecisionRequest):
@@ -100,13 +103,15 @@ def _request(
             raise DecisionInputError("decision_invalid_input", "request", "Pass identity/context inside the request only")
         if max_input_bytes != DEFAULT_MAX_INPUT_BYTES and max_input_bytes != request.max_input_bytes:
             raise DecisionInputError("decision_invalid_input", "max_input_bytes", "Pass the limit inside the request only")
+        if prompt_config is not None and load_prompt_config(prompt_config).content_sha256 != request.prompt_config.content_sha256:
+            raise DecisionInputError("decision_invalid_input", "prompt_config", "Override disagrees with request")
         return request
     return DecisionRequest(question=question, options=options, context=context,
         run_id=run_id if run_id is not None else f"standalone-{uuid4().hex}", task_id=task_id,
         phase=phase, attempt_id=attempt_id, model=model,
         reasoning_effort=reasoning_effort, system_prompt=system_prompt,
         kind=DecisionKind.BOOLEAN if boolean_mapping else DecisionKind.CHOICE,
-        boolean_mapping=boolean_mapping, max_input_bytes=max_input_bytes)
+        boolean_mapping=boolean_mapping, max_input_bytes=max_input_bytes, prompt_config=prompt_config)
 
 
 def decide(
@@ -120,6 +125,7 @@ def decide(
     run_id: Optional[str] = None, task_id: str = "question", phase: str = "decide",
     attempt_id: str = "1", max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     request: Optional[DecisionRequest] = None,
+    prompt_config: PromptConfig | str | Path | None = None,
 ) -> Tuple[str, str]:
     """Choose an exact option. The question/context must be self-contained.
 
@@ -128,7 +134,7 @@ def decide(
     """
     prepared = _request(question, options, model=model, system_prompt=system_prompt,
         reasoning_effort=reasoning_effort, context=context, run_id=run_id, task_id=task_id,
-        phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes, request=request)
+        phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes, prompt_config=prompt_config, request=request)
     if any(value is not None for value in (client, api_key, base_url)):
         configure(api_key=api_key, base_url=base_url, client=client)
     return _decide_with_options(prepared, max_retries=max_retries, settings=settings,
@@ -144,13 +150,14 @@ def decide_bool(
     boolean_mapping: BooleanMapping = BooleanMapping(),
     settings: DecisionExecSettings | None = None,
     model_provider: str | None = None, config_profile: str | None = None,
+    prompt_config: PromptConfig | str | Path | None = None,
 ) -> Tuple[bool, str]:
     """true/false by default; YES/NO requires its explicit BooleanMapping."""
     if not isinstance(boolean_mapping, BooleanMapping):
         raise DecisionInputError("decision_invalid_input", "boolean_mapping", "Expected BooleanMapping")
     prepared = _request(question, boolean_mapping.options, model=model, system_prompt=system_prompt,
         reasoning_effort=reasoning_effort, context=context, run_id=run_id, task_id=task_id,
-        phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes,
+        phase=phase, attempt_id=attempt_id, max_input_bytes=max_input_bytes, prompt_config=prompt_config,
         boolean_mapping=boolean_mapping)
     option, explanation = _decide_with_options(prepared, max_retries=max_retries, settings=settings,
                                                 model_provider=model_provider, config_profile=config_profile)
@@ -165,6 +172,7 @@ def evaluate(
     task_id: str = "plan", attempt_id: str = "1",
     max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     settings: DecisionExecSettings | None = None,
+    prompt_config: PromptConfig | str | Path | None = None,
     model_provider: str | None = None, config_profile: str | None = None,
 ) -> Dict[str, Any]:
     """Evaluate a full, explicit planning context; invalid/missing input raises.
@@ -178,7 +186,7 @@ def evaluate(
         context, stage=stage, plan_id=plan_id, step_id=step_id,
         run_id=run_id if run_id is not None else f"standalone-{uuid4().hex}",
         task_id=task_id, attempt_id=attempt_id, model=model, reasoning_effort=reasoning_effort,
-        system_prompt=system_prompt, max_input_bytes=max_input_bytes)
+        system_prompt=system_prompt, max_input_bytes=max_input_bytes, prompt_config=prompt_config)
     status, explanation = decide(request.question, request.options, request=request,
                                  max_retries=max_retries, settings=settings,
                                  model_provider=model_provider, config_profile=config_profile)

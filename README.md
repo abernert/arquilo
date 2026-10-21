@@ -13,7 +13,9 @@ corrections are bounded; unresolved blockers stop the workflow rather than
 silently becoming `DONE`. Requests, reviews and captured process output remain
 available for inspection.
 
-**Public preview: 0.8.0.** Suitable for supervised evaluation in disposable
+**Public preview: 0.9.0.** Includes editable
+[default, German and English prompt catalogs](docs/prompt-configuration.md).
+Suitable for supervised evaluation in disposable
 workspaces, not a claim of production readiness or infallible verification.
 
 [Documentation](docs/README.md) · [Installation](docs/installation.md) ·

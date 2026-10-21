@@ -3,6 +3,8 @@
 """Explicit, bounded task resources. No model calls, permissions or shell syntax."""
 from __future__ import annotations
 
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
+
 from dataclasses import dataclass
 import hashlib
 import json
@@ -251,18 +253,17 @@ class SkillCatalog:
         return tuple(selected)
 
 
-def bind_resources(prompt: str, resources: TaskResources, catalog: SkillCatalog) -> str:
+def bind_resources(prompt: str, resources: TaskResources, catalog: SkillCatalog, *,
+                   prompt_config: PromptConfig | None = None) -> str:
+    prompts = load_prompt_config(prompt_config)
     if not resources.explicit:
         return prompt
     selected = catalog.get(resources.skills)
     manifest = {"schema_version": "arquilo.task_resources.v1", **resources.manifest(),
                 "skill_instructions": [{"name": s.name, "path": s.path, "sha256": s.sha256} for s in selected]}
-    blocks = ["ARQUILO RESOURCE BINDING (instructions, not a permission grant)",
+    blocks = [prompts.render('resource_header'),
               json.dumps(manifest, ensure_ascii=True, sort_keys=True),
-              "Selected skill instructions follow. Use them only within the current task's scope. "
-              "Review evaluates the original task; it does not repeat production or publish results. "
-              "Resolve relative skill references from the recorded skill directory. "
-              "Helper/reference files remain external; their contents are not frozen by this snapshot."]
+              prompts.render('resource_instructions')]
     for skill in selected:
         blocks.extend([f"BEGIN SKILL {skill.name} ({skill.path})", skill.text, f"END SKILL {skill.name}"])
     blocks.extend(["END ARQUILO RESOURCE BINDING", prompt])

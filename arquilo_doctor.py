@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Lokale Diagnose; --check-decide prüft Decide und kann Modellkosten verursachen."""
 from __future__ import annotations
+
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
 from controller_state import default_state_root
 
 import argparse
@@ -30,12 +32,14 @@ DECIDE_TIMEOUT_SECONDS = 120
 
 def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[str, str],
                     model: str | None, reasoning_effort: str | None, timeout: float,
-                    model_provider: str | None = None, config_profile: str | None = None) -> dict:
+                    model_provider: str | None = None, config_profile: str | None = None,
+                    prompt_config: PromptConfig | None = None) -> dict:
     """One public Decide call with normal isolation, validation and full logs.
 
     A valid but wrong choice is a failed smoke test. Never retry, weaken the
     policy, or echo arbitrary model/provider diagnostics into the report.
     """
+    prompts = load_prompt_config(prompt_config)
     import decide
     from decision_request import DecisionRequest
 
@@ -44,7 +48,7 @@ def _decision_probe(*, workspace: Path, launcher: CodexLauncher, env: Mapping[st
              "detail": "Decide-Funktionsprobe fehlgeschlagen; Archiv und lokale Einrichtung prüfen."}
     try:
         request = DecisionRequest(
-            question="What is 2 + 2? Choose FOUR for 4 or FIVE for 5 and explain briefly. Do not use tools.",
+            question=prompts.render("doctor_question"), prompt_config=prompts,
             options=("FOUR", "FIVE"), context=(), run_id=f"doctor-{uuid4().hex}",
             task_id="decide-smoke", phase="diagnostic", attempt_id="1",
             model=model, reasoning_effort=reasoning_effort,
@@ -112,13 +116,15 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
                    env: Mapping[str, str] | None = None, check_decide: bool = False,
                    model: str | None = None, reasoning_effort: str | None = None,
                    model_provider: str | None = None, config_profile: str | None = None,
-                   decide_timeout: float = DECIDE_TIMEOUT_SECONDS) -> dict:
+                   decide_timeout: float = DECIDE_TIMEOUT_SECONDS,
+                   prompt_config: PromptConfig | str | Path | None = None) -> dict:
     """Resolve paths like run_todos; metadata by default, Decide only by opt-in.
 
     No profile command, task, authentication read, configuration write or model
     transport call without check_decide. A successful functional test proves the
     effective Codex model's Decide contract, not general model quality or OS isolation.
     """
+    prompts = load_prompt_config(prompt_config)
     if type(check_decide) is not bool:
         raise ValueError("check_decide muss bool sein.")
     if (type(decide_timeout) not in (int, float) or not math.isfinite(decide_timeout)
@@ -144,6 +150,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         "checks": [], "probes": [], "exec_flags": {},
         "configuration_policy": "inherit-trusted-host",
         "model_calls": 0,
+        "prompt_config": prompts.metadata(),
         "decision_probe": {"status": "NOT_RUN", "requested": check_decide,
                            "detail": "Funktionsprobe nur mit --check-decide; kann Modellkosten verursachen."},
         "not_verified": ["Decide-Funktion, Codex-Anmeldung und Modellzugang", "native Sandboxwirkung",
@@ -214,7 +221,7 @@ def collect_report(*, workdir: Path | None = None, todo_file: Path | None = None
         report["decision_probe"] = _decision_probe(
             workspace=workspace, launcher=launcher, env=environment, model=model,
             reasoning_effort=reasoning_effort, timeout=decide_timeout,
-            model_provider=model_provider, config_profile=config_profile,
+            model_provider=model_provider, config_profile=config_profile, prompt_config=prompts,
         ) | {"requested": True}
         report["model_calls"] = report["decision_probe"]["model_calls"]
         passed = report["decision_probe"]["status"] == "PASS"
@@ -243,14 +250,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help="Reasoning-Effort für --check-decide.")
     parser.add_argument("--decide-timeout", type=float, default=None,
                         help=f"Zeitlimit der Funktionsprobe in Sekunden (Standard {DECIDE_TIMEOUT_SECONDS}, plus Metadaten/Prozessbereinigung).")
+    parser.add_argument("--prompt-config", default="default", metavar="default|de|en|FILE",
+                        help="TOML prompt catalog for the optional live diagnostic.")
     args = parser.parse_args(argv)
+    try:
+        prompts = load_prompt_config(args.prompt_config)
+    except PromptConfigError as exc:
+        parser.error(str(exc))
     if not args.check_decide and any(value is not None for value in (args.model, args.reasoning_effort, args.decide_timeout, args.model_provider, args.config_profile)):
         parser.error("Modell-, Provider-, Profil-, Effort- und Timeout-Overrides benötigen --check-decide.")
     if args.decide_timeout is not None and (not math.isfinite(args.decide_timeout) or args.decide_timeout <= 0):
         parser.error("--decide-timeout muss eine endliche positive Sekundenzahl sein.")
     report = collect_report(workdir=args.workdir, todo_file=args.todo_file, check_decide=args.check_decide,
                             model=args.model, reasoning_effort=args.reasoning_effort,
-                            model_provider=args.model_provider, config_profile=args.config_profile,
+                            model_provider=args.model_provider, config_profile=args.config_profile, prompt_config=prompts,
                             decide_timeout=DECIDE_TIMEOUT_SECONDS if args.decide_timeout is None else args.decide_timeout)
     if args.json:
         print(json.dumps(report, ensure_ascii=True, indent=2))

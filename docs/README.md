@@ -24,6 +24,7 @@ ARQUILO's core is a Python 3.11+ controller around a separately installed and au
 | Understand plan authority, state, recovery, or Git safeguards | [Controller safety](controller-safety.md) |
 | Generate a plan and pause before executing it | [Operator controls](operator-controls.md) |
 | Find project run logs | [Project logs](project-logs.md) |
+| Edit or translate internal prompt elements | [Prompt configuration](prompt-configuration.md) |
 | Configure the restricted Decide path | [Decide configuration](decide-configuration.md) |
 | Test ARQUILO or interpret CI evidence | [Testing](testing.md) |
 | Upgrade older inputs or understand renamed/removed features | [Compatibility](compatibility.md) |
