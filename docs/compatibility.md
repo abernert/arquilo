@@ -56,7 +56,7 @@ No pipeline command is implemented by this migration. The
 
 ARQUILO is the only active project name. Use `arquilo.py` and
 `arquilo_doctor.py`, `ARQUILO_*` configuration names and `arquilo.*` schema
-identifiers. This development branch uses package version 0.9.0; it is not a published release. Individual schema version
+identifiers. The public package version is 0.9.0. Individual schema version
 suffixes describe their payload contracts, not the package version; see the diagnostic migrations below.
 
 ## Historical project name — DORA Lean

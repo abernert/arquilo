@@ -7,7 +7,7 @@ authors:
     given-names: Alexander
     affiliation: Independent
 version: "0.9.0"
-# Development version; no release date or release tag has been published.
+date-released: 2026-10-21
 license: Apache-2.0
 repository-code: "https://github.com/abernert/arquilo"
 url: "https://github.com/abernert/arquilo"
