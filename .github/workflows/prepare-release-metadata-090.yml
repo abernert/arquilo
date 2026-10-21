@@ -1,0 +1,67 @@
+name: Prepare owner-approved 0.9.0 release metadata
+on:
+  push:
+    branches: ['prepare/release-metadata-090-20261021']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.repository == 'abernert/arquilo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: '8185038657645118eef0859da971ba8be923d2ef'
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Update only six release metadata files on the reviewed source
+        shell: python
+        run: |
+          import hashlib, pathlib, subprocess
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == '8185038657645118eef0859da971ba8be923d2ef'
+          changes = {
+              'CITATION.cff': [('# Development version; no release date or release tag has been published.', 'date-released: 2026-10-21')],
+              'CHANGELOG.md': [('## 0.9.0 — development (not released)', '## 0.9.0 — 2026-10-21 (public preview)'), ('- This version is confined to a development branch: no main merge, release tag\n  or public release is created by this change.', '- Publish the owner-approved prompt configuration feature as a public preview.\n  Default selection preserves the original 0.8.0 prompt wording; custom prompts\n  and translations remain subject to operator validation.')],
+              'README.md': [('**Development version: 0.9.0 (not released).** This branch adds editable', '**Public preview: 0.9.0.** Includes editable'), ('\n Suitable for supervised evaluation', '\nSuitable for supervised evaluation')],
+              'README.de.md': [('**Entwicklungsstand 0.9.0, noch nicht veröffentlicht.** Dieser Branch ergänzt', '**Öffentliche Vorschau: 0.9.0.** Diese Version enthält'), ('\n Python 3.11 oder neuer genügt', '\nPython 3.11 oder neuer genügt')],
+              'docs/compatibility.md': [('This development branch uses package version 0.9.0; it is not a published release.', 'The public package version is 0.9.0.')],
+              'docs/prompt-configuration.md': [('# Prompt configuration — 0.9.0 development', '# Prompt configuration — 0.9.0'), ('**Development branch, not a published release.**', '**Public preview.**'), ('## Validation in this branch', '## Validation')],
+          }
+          for name, replacements in changes.items():
+              path = pathlib.Path(name)
+              text = path.read_text(encoding='utf-8')
+              for old, new in replacements:
+                  assert text.count(old) == 1, name
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8', newline='')
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          modified = subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          assert set(modified) == set(changes)
+          subprocess.run(['git', 'add', '--', *changes], check=True)
+      - name: Validate metadata and byte-identical release package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+          echo '7c653fb5c38fc1eb9515e5fd57d38ff465c2834ed4723c426d7192b6c58ed217  dist/arquilo-0.9.0.zip' | sha256sum -c -
+      - name: Export metadata-only product commit; never update main or the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/abernert/arquilo/pulls/29 --jq .head.sha)" = 8185038657645118eef0859da971ba8be923d2ef
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Prepare owner-approved ARQUILO 0.9.0 release metadata'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/prepare/export-release-metadata-0.9.0
+          git rev-parse HEAD
+          git rev-parse HEAD^{tree}
