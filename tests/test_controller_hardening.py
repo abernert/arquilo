@@ -468,6 +468,8 @@ class GitTests(Fixture):
         super().setUp()
         self.state.mkdir()
         self.git('init', '-q')
+        # Keep detached Git maintenance out of these disposable test repos.
+        self.git('config', 'maintenance.auto', 'false')
         self.git('config', 'user.name', 'Synthetic Test')
         self.git('config', 'user.email', 'test@example.invalid')
         for name in ('first.txt', 'second.txt', 'staged-note', 'unstaged-note'):
@@ -478,6 +480,21 @@ class GitTests(Fixture):
     def git(self, *args):
         proc = subprocess.run(['git', *args], cwd=self.workspace, capture_output=True, check=True)
         return proc.stdout
+
+    def bare_remote(self):
+        remote = self.base / 'remote.git'
+        self.git('init', '--bare', '-q', str(remote))
+        # receive-pack otherwise may spawn maintenance after push returns,
+        # racing TemporaryDirectory.cleanup() on the remote object directory.
+        for key in ('receive.autogc', 'maintenance.auto'):
+            self.git('-C', str(remote), 'config', key, 'false')
+        return remote
+
+    def test_temporary_repositories_disable_automatic_maintenance(self):
+        self.assertEqual(self.git('config', '--bool', 'maintenance.auto').strip(), b'false')
+        remote = self.bare_remote()
+        for key in ('receive.autogc', 'maintenance.auto'):
+            self.assertEqual(self.git('-C', str(remote), 'config', '--bool', key).strip(), b'false')
 
     def test_commit_only_explicit_paths_preserves_other_changes_and_logs(self):
         (self.workspace / 'staged-note').write_text('private staged')
@@ -535,8 +552,7 @@ class GitTests(Fixture):
         self.assertNotIn(b'first.txt\0', self.git('ls-files', '-z'))
 
     def test_explicit_push_uses_only_local_bare_remote(self):
-        remote=self.base/'remote.git'
-        subprocess.run(['git','init','--bare','-q',str(remote)],check=True)
+        remote = self.bare_remote()
         self.git('remote','add','origin',str(remote))
         self.git('push','-qu','origin','HEAD')
         g=ReviewedGit(self.workspace,['first.txt'],self.state,push=True)
@@ -547,8 +563,7 @@ class GitTests(Fixture):
         self.assertEqual(remote_head.strip().decode(),result['commit'])
 
     def test_push_refuses_unrelated_unpushed_commits(self):
-        remote=self.base/'remote.git'
-        subprocess.run(['git','init','--bare','-q',str(remote)],check=True)
+        remote = self.bare_remote()
         self.git('remote','add','origin',str(remote)); self.git('push','-qu','origin','HEAD')
         self.git('commit','--allow-empty','-qm','Unrelated owner commit')
         with self.assertRaises(ReviewedGitError):
