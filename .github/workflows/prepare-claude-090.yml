@@ -53,9 +53,6 @@ jobs:
                       self.assertEqual(self.git('-C', str(remote), 'config', '--bool', key).strip(), b'false')
 
           '''
-          # Remove only the Python continuation indentation added to this literal.
-          lines = helper.splitlines(keepends=True)
-          helper = lines[0] + ''.join(line[10:] if line.startswith('          ') else line for line in lines[1:])
           assert s.count(anchor) == 1
           s = s.replace(anchor, helper + anchor)
           old = "        remote=self.base/'remote.git'\n        subprocess.run(['git','init','--bare','-q',str(remote)],check=True)"
