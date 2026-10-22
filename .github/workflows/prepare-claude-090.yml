@@ -1,0 +1,23 @@
+name: Prepare Claude backend 0.9.0
+on:
+  push:
+    branches: [prepare/claude-backend-090-20261022]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle public source and history (no credentials)
+        run: git bundle create "$RUNNER_TEMP/arquilo-source.bundle" --all
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: arquilo-source-integration
+          path: ${{ runner.temp }}/arquilo-source.bundle
+          retention-days: 1
+          if-no-files-found: error
