@@ -7,6 +7,8 @@ replace evidence. Pure validation/normalization helpers do not perform I/O.
 """
 from __future__ import annotations
 
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
+
 import argparse
 import json
 import math
@@ -100,43 +102,18 @@ def normalize_review_confidence(payload: dict[str, Any] | None = None) -> dict[s
     }
 
 
-def confidence_prompt_fields() -> str:
+def confidence_prompt_fields(*, prompt_config: PromptConfig | None = None) -> str:
     """Fragment inserted into the shared task/parent JSON grammar."""
+    prompts = load_prompt_config(prompt_config)
     return (
-        '  "confidence": 0.0 to 1.0 | null,\n'
-        '  "confidence_reason": "evidence-based explanation of certainty and its limits" | null,\n'
-        '  "confidence_breakdown": {\n'
-        '    "requirements_coverage": 0.0 to 1.0 | null,\n'
-        '    "implementation_correctness": 0.0 to 1.0 | null,\n'
-        '    "test_evidence": 0.0 to 1.0 | null,\n'
-        '    "regression_safety": 0.0 to 1.0 | null\n'
-        '  },\n'
-        '  "evidence": ["specific inspected artifact/reference or observed check and result"],\n'
-        '  "uncertainties": ["what could not be verified and why"],\n'
-        '  "suggested_checks": ["smallest useful follow-up check; suggestion only"]\n'
+        prompts.render('confidence_fields')
     )
 
 
-def confidence_prompt_rules() -> str:
+def confidence_prompt_rules(*, prompt_config: PromptConfig | None = None) -> str:
+    prompts = load_prompt_config(prompt_config)
     return (
-        "- confidence is your uncalibrated confidence that the verdict is correct, NOT a measured probability. "
-        "For PASS it expresses confidence that the task satisfies its contract; a well-evidenced FAIL can also have high confidence.\n"
-        "- Ground every numeric confidence in a non-empty confidence_reason and at least one specific evidence entry. "
-        "Use confidence=null when you cannot give an evidence-backed estimate; never invent a score, test, execution result or reference.\n"
-        "- Explain both the support for the verdict and the remaining limits. Record unverified areas in uncertainties "
-        "and optionally propose the smallest useful suggested_checks. Suggested checks are not new requirements or execution authority.\n"
-        "- confidence_breakdown contains separate subjective assessments: requirements_coverage (coverage of explicit criteria), "
-        "implementation_correctness (support that the implementation satisfies them), test_evidence (strength of relevant observed checks), "
-        "regression_safety (support that existing behavior is preserved). Higher is stronger support, never higher risk. "
-        "These dimensions are NOT averaged into confidence; a certain FAIL may have low implementation_correctness.\n"
-        "- Use null for unknown or inapplicable dimensions, especially tests/regressions on non-code tasks. "
-        "Do not impose software tests, an evidence ledger, or other new deliverables on writing/analysis tasks. "
-        "Inspection of actual requested artifacts is valid evidence. Distinguish checks you observed from claims by the producer.\n"
-        "- Confidence is advisory only. Never hide a concrete unmet acceptance criterion in uncertainties: report a blocker. "
-        "Never discard a blocker, change PASS/FAIL, request breakdown or repeat work merely to obtain a higher score.\n"
-        f"- Limit confidence_reason and each confidence list entry to {MAX_TEXT} characters; "
-        f"evidence, uncertainties and suggested_checks each allow at most {MAX_ITEMS} entries. "
-        "Do not return confidence_level; the controller derives that display label.\n"
+        prompts.render('confidence_rules', max_text=MAX_TEXT, max_items=MAX_ITEMS)
     )
 
 

@@ -1,7 +1,9 @@
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
-"""Small AutoBuild call boundary; no processes, configuration reads or scheduler."""
+"""Small AutoBuild call boundary; immutable validated options, no scheduler or processes."""
 from __future__ import annotations
+
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
 
 from dataclasses import asdict, dataclass
 import json
@@ -10,6 +12,7 @@ from typing import Any
 
 import codex_policy
 import agent_backend
+from task_resources import TaskResources
 from removed_features import check_removed_fields
 from execution_budget import DEFAULT_MAX_CALLS, positive_limit
 from runtime_contracts import AutoBuildStatus, ExitCode
@@ -35,10 +38,25 @@ class AutoBuildOptions:
     auto_continue: bool = False
     print_end_answer: bool = False
     verbose: bool = False
+    mcp: tuple[str, ...] | None = None
+    review_mcp: tuple[str, ...] | None = None
+    skills: tuple[str, ...] | None = None
+    skill_dirs: tuple[str, ...] = ()
+    prompt_config: PromptConfig | str | Path | dict | None = None
 
     def __post_init__(self):
         agent_backend.validate_options(self.backend, config_profile=self.config_profile, extra_args=self.extra_arg)
         positive_limit(self.max_calls)
+        object.__setattr__(self, "prompt_config", load_prompt_config(self.prompt_config))
+        resources = TaskResources(mcp=self.mcp, review_mcp=self.review_mcp, skills=self.skills)
+        agent_backend.validate_resources(self.backend, mcp=resources.mcp, review_mcp=resources.review_mcp)
+        for key in ("mcp", "review_mcp", "skills"):
+            object.__setattr__(self, key, getattr(resources, key))
+        if isinstance(self.skill_dirs, str) or not isinstance(self.skill_dirs, (list, tuple)):
+            raise ValueError("skill_dirs must be a sequence of operator-selected paths")
+        if any(not isinstance(p, (str, Path)) or not str(p) or "\0" in str(p) for p in self.skill_dirs):
+            raise ValueError("Invalid skill directory")
+        object.__setattr__(self, "skill_dirs", tuple(str(p) for p in self.skill_dirs))
         codex_policy.validate_start_policy(sandbox=self.sandbox,
             network_access=self.network_access, allow_read_only=True)
         codex_policy.validate_config_profile(self.config_profile)

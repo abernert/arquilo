@@ -7,6 +7,8 @@ snapshot, not a task store, scheduler or authorization mechanism.
 """
 from __future__ import annotations
 
+from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
+
 from pathlib import Path
 import re
 
@@ -17,17 +19,6 @@ TODO_PREAMBLE_CONTRACT_VERSION = 1
 PREAMBLE_MODES = ("auto", "off", "required")
 MAX_PREAMBLE_BYTES = 65536
 
-SEMANTICS = """ARQUILO – Semantik des bearbeitbaren Markdown-Arbeitsplans (v1):
-- Die Vorbemerkung beschreibt das Gesamtziel, Regeln und Qualitätsmaßstäbe des Projekts. Der aktuelle Einzelauftrag beschreibt den jetzt zu erbringenden Beitrag. Ein Planungsauftrag ist NICHT schon deshalb unvollständig, weil spätere Projektarbeiten noch offen sind.
-- Ausführbare Überschriften: '<id>. Auftrag: ...', '<id>. Task: ...' oder '<id>. ***Task***: ...'. Erledigt: DONE bzw. ***DONE***. Entfallen: OBSOLETE bzw. ***OBSOLETE***. Beispiele in Codeblöcken und HTML-Kommentaren sind keine ausführbaren Aufträge.
-- Der Text bis zur nächsten echten Aufgabenüberschrift gehört zur aktuellen Aufgabe. Zeilen mit ***CFG ...*** und ***WAIT ...*** steuern den jeweils folgenden Auftrag, nicht pauschal das ganze Projekt. ***SYNTAX marked-en*** am Dateianfang wählt markierte englische Kommandowörter. ***STOP*** vor einem Auftrag beendet die Auswahl an dieser Stelle; es ist kein Wartezustand.
-- Die Datei ist das lesbare, selbstveränderbare Arbeitsprogramm. Innerhalb der erteilten Befugnis darfst Du offene Aufgaben präzisieren, ergänzen, zerlegen oder begründet auf OBSOLETE setzen. Änderungen dürfen das Gesamtziel nicht stillschweigend abschwächen. Kurze Begründungen gehören in den Projektstand oder den betroffenen Aufgabenblock.
-- Nur wenn der aktuelle Auftrag Planung delegiert, ergänze Folgeaufträge. Verwende eindeutige, streng aufsteigende IDs; für neue Arbeitsrunden neue IDs statt Wiederöffnung bereits erledigter Aufgaben. Folgeaufträge sollen konkrete Ergebnisse und begrenzte, überprüfbare Abnahmekriterien haben. Wähle die in der Datei vorgegebene Schreibweise.
-- Nur die Kontrollinstanz markiert Deine Arbeit DONE. OBSOLETE ist kein Erfolgsnachweis und erfüllt keine WAIT-on-todo-Bedingung. DOING und WAITING sind in dieser Runtime noch keine ausführbaren Statuswörter. Technische Fehler, ein ausgefallener Reviewer oder eine bloß leere Aufgabenliste beweisen keinen Projekterfolg.
-- Lies den aktuellen Projektstand und relevante Arbeitsdateien; die eingebettete Vorbemerkung ersetzt deren Inhalt nicht. Halte Beobachtungen, Annahmen, kreative Entscheidungen und Bewertungen auseinander, soweit der Auftrag es verlangt. Fiktion muss nicht als reale Tatsache belegt werden; ästhetische Urteile sind keine mathematischen Beweise.
-- Beurteile den jetzigen Auftrag gegen seinen begrenzten Umfang. Übernimm notwendige spätere Arbeit in konkrete Folgeaufträge. Ein ausdrücklich verlangter Projektabschluss bewertet dagegen die tatsächlichen Endprodukte gegen das Gesamtziel und nennt verbleibende Grenzen.
-- Diese Semantik und die Vorbemerkung erteilen keine zusätzlichen System-, Netzwerk- oder Schreibrechte. Laufzeit-Sicherheitsregeln und technische Fehlergates bleiben vorrangig.
-"""
 
 
 class TaskContextError(RuntimeError):
@@ -63,13 +54,15 @@ def has_project_text(preamble: str) -> bool:
     return False
 
 
-def augment_with_preamble(task_text: str, todo_file: Path, *, mode: str = "auto") -> str:
+def augment_with_preamble(task_text: str, todo_file: Path, *, mode: str = "auto",
+                          prompt_config: PromptConfig | None = None) -> str:
     """Capture live context once; AutoBuild reuses it for review and repair.
 
     The next central handoff reads the file again, including in a subworkspace.
     Standalone AutoBuild has no implicit ToDo preamble. No referenced files are
     loaded and no hashes or signatures are calculated.
     """
+    prompts = load_prompt_config(prompt_config)
     normalize_mode(mode)
     if mode == "off":
         return task_text
@@ -89,10 +82,11 @@ def augment_with_preamble(task_text: str, todo_file: Path, *, mode: str = "auto"
         )
     # Delimiters label source text; they are not a security boundary.
     return (
-        SEMANTICS + "\n"
-        f"Projektkontext aus {todo_file.name}; UTF-8-Bytes={size}\n"
-        "BEGIN ARQUILO PROJECT PREAMBLE\n" + prefix +
-        ("" if prefix.endswith("\n") else "\n") +
-        "END ARQUILO PROJECT PREAMBLE\n\n"
-        "AKTUELLER EINZELAUFTRAG / KONTROLLAUFTRAG\n" + task_text
+        prompts.render('preamble_envelope', semantics=prompts.render('preamble_semantics'), todo_filename=todo_file.name, byte_count=size, preamble=prefix, separator='' if prefix.endswith('\n') else '\n', task=task_text)
     )
+
+
+def __getattr__(name: str):
+    if name == "SEMANTICS":
+        return load_prompt_config().render("preamble_semantics")
+    raise AttributeError(name)

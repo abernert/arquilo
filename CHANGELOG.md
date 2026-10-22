@@ -12,6 +12,67 @@
 - Keep the released version/tag unchanged; this branch needs explicit host/model
   qualification before client use.
 
+- Integrate the released 0.9.0 base without modifying `main` or release tags.
+- Preserve prompt catalogs/snapshots through Claude execution, correction,
+  reviews, worker payloads and doctor/Decide; preserve Codex defaults.
+- Bind explicit skill instructions with backend-specific roots, never looking
+  up Codex home for Claude. Accept explicit empty MCP selections; reject named
+  MCP selections before execution rather than silently ignoring them.
+- Add 0.9.0 integration regressions and an isolated owner smoke-test recipe.
+
+## 0.9.0 — 2026-10-21 (public preview)
+
+- Externalize 53 built-in model-facing prompt elements into human-readable TOML
+  files: `prompts/default.toml` preserves 0.8.0 wording, while `de.toml` and
+  `en.toml` provide German and English instructions. Keep protocol keys/enums,
+  user content and technical diagnostics outside automatic translation.
+- Add `--prompt-config default|de|en|FILE` to task-list runs, direct AutoBuild
+  and doctor, plus explicit Python API selection. A complete custom file may
+  change wording without editing Python; strict key/placeholder validation
+  rejects broken or incomplete catalogs instead of mixing fallback texts.
+- Pass one immutable catalog snapshot through task execution, corrections,
+  review, parent review, decisions and parallel worker serialization. Archive
+  its complete text, identity and source/content hashes for reproducibility.
+  Never reread a worker's former source path or execute template expressions.
+- Preserve existing runtime-profile additions, mandatory review parsers,
+  permission checks, controller authority, budgets and recovery gates. Prompt
+  edits can still change substantive model behavior and require operator review.
+- Add default-byte regression fixtures and isolated offline tests for selection,
+  mutation, cross-process snapshots, language isolation and controller flows.
+  Include all catalogs and their editing guide in the runtime distribution.
+- Publish the owner-approved prompt configuration feature as a public preview.
+  Default selection preserves the original 0.8.0 prompt wording; custom prompts
+  and translations remain subject to operator validation.
+
+## 0.8.0 — 2026-10-20 (public preview)
+
+- Add explicit `--mcp`, `--review-mcp` and `--skills` selections to task-list
+  runs and direct AutoBuild calls, plus operator-selected `--skill-dir` roots.
+  Task `CFG` accepts `mcp`, `review_mcp` and `skills`; one `DEFAULTS` directive
+  before the first task supplies list-wide resource defaults. CLI selections
+  are ceilings. Tasks and descendants may narrow, never silently broaden them.
+- Add a run-level `--agent` default for the existing per-task Codex profile hint.
+  Preserve provider, authentication, proxy, sandbox and network settings.
+- Enforce explicit MCP selection using temporary, verified native Codex config
+  overrides; leave persistent configuration untouched. Discover configured
+  direct servers with native `mcp list --json`, disable unselected servers and
+  plugin/app integrations, and verify the effective set before model startup.
+  Disabled, missing, policy-denied or incompatible selections fail closed.
+  Inventory can access native authentication metadata; it never initializes
+  STDIO tools and no raw configuration or credentials enter ARQUILO archives.
+- Explicit production MCP selection defaults review to no MCP. `review_mcp`
+  can select a subset; remote read-only permissions remain an operator concern.
+  Preflight in resource-controlled mode, and Decide when MCP selection is
+  explicit, do not inherit production MCPs.
+- Bind selected local `SKILL.md` instructions and their content hashes into one
+  captured original request shared by production, review and correction. Keep
+  the existing task-list preamble semantics. Do not install skills, execute
+  their scripts at binding time, or pretend that helper files are snapshotted.
+  `skills=none` adds no explicit skills; it is not a native skill-catalog sandbox.
+- Extend syntax validation, capability metadata, worker serialization, dry-run
+  visibility and offline/native compatibility tests. No full user handbook is
+  added in this release; its proposed text remains a separate owner-review draft.
+
 ## 0.7.4 — 2026-10-19 (public preview)
 
 - Treat strictly recognized, pre-terminal Codex `Reconnecting... n/m`

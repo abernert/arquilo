@@ -128,3 +128,71 @@ py -3.11 C:\Arquilo\run_todos.py --todo-file C:\Project\tasks.md --workdir C:\Pr
 ```
 
 Shell network access additionally requires `--network-access` on the runner. [Migration](MIGRATION.md) explains removed switches and the distinction between approval policy and sandbox. [Project preamble](TODO_PREAMBLE.md) explains `auto|off|required`, reference prompts, Markdown visibility, and dynamic follow-up tasks.
+
+## Explicit resources (0.8.0)
+
+`CFG mcp=... review_mcp=... skills=...` accepts comma-separated, case-sensitive
+names, or `none`. The equivalent run flags are `--mcp`, `--review-mcp` and
+`--skills`. A run-level `--agent` supplies the default for existing `CFG agent`.
+One `***DEFAULTS mcp=... skills=...***` before the first real task supplies
+list-wide resource defaults. It is machine-readable metadata, not a new source
+of authority; ordinary preamble text keeps its existing meaning. CFG remains
+local to the immediately following task. Examples/comments stay non-executable.
+
+Example (server and skill names must already exist on the operator's system):
+
+```md
+# Goal
+Prepare proposals only; do not publish externally.
+
+***DEFAULTS mcp=issues,docs skills=ticket-draft***
+
+***CFG mcp=issues***
+1. ***Task***: Prepare a proposal from input.json and identify open questions.
+
+***CFG mcp=none skills=none***
+2. ***Task***: Summarize the accepted local proposal.
+```
+
+Selections replace, rather than add to, the inherited set. A CLI selection is
+both a default and a ceiling; list defaults and task/descendant selections may
+only narrow it. A task's initial selection also bounds model-edited task lists
+within that run. Omitting all resource settings preserves the old behavior.
+In explicit MCP mode, missing/disabled/policy-denied servers cause an error,
+not re-enablement or silent omission. Server definitions, authentication and
+per-tool permissions remain in the operator's trusted Codex configuration.
+
+Explicit `mcp` defaults the review to no MCP. `review_mcp=issues` can provide a
+subset to reviewers; server-side credentials/tool permissions must enforce any
+remote read-only restriction. Preflight does not inherit production MCPs in
+resource-controlled mode; Decide is MCP-free when MCP selection is explicit. MCP selection is not an offline mode: it does
+not disable provider communication, shell access or separately allowed web search.
+Plugin/app integrations are disabled for explicit MCP calls; this first adapter
+selects direct servers, not plugin-bundled MCPs. Native config inspection may
+query auth metadata, but never starts STDIO tools or model calls. Raw inventory
+is withheld from logs. Do not change Codex configuration concurrently with a run.
+
+Skills are explicitly bound instruction snapshots, not another agent or a
+permission grant. Without `--skill-dir`, lookup uses `<workdir>/.agents/skills`,
+`~/.agents/skills`, and `$CODEX_HOME/skills` (default `~/.codex/skills`). With one
+or more `--skill-dir` arguments, only those roots are searched. Each root contains
+skill directories with `SKILL.md`, YAML frontmatter and a simple `name` field.
+Duplicate names, unsafe paths, missing definitions and oversized context fail
+before the task model call. The operator can use `--skill-dir` to disambiguate.
+
+Production, review and fixes receive the same captured skill instructions plus
+the normal preamble and task. Scripts/references remain external files resolved
+relative to the recorded skill directory; they are not copied or automatically
+executed. Do not change those files while working. `skills=none` means no explicit
+binding; it does not disable Codex's normal implicit skill discovery or file
+access. Native `AGENTS.md` discovery is likewise unaffected.
+
+A dry run validates task syntax and explicit skill bindings and shows the
+selected names without launching Codex, MCP servers, scripts or model calls.
+It cannot certify native MCP inventory, authentication or remote permissions.
+
+The first explicit MCP adapter supports configured STDIO and Streamable HTTP
+servers with portable IDs (letters, digits, underscores and hyphens). Dots in
+server IDs are rejected: the tested native CLI override parser does not use
+TOML key quoting for path components. Rename such a local alias before using
+explicit selection; no transport or credentials are copied to command arguments.

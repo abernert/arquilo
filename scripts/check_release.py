@@ -15,6 +15,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(ROOT))
 from scripts.stage_lean import package_files
 from scripts.check_naming import check_naming
+from prompt_config import load_prompt_config
 
 
 def check_release(source: Path = ROOT) -> dict:
@@ -24,6 +25,8 @@ def check_release(source: Path = ROOT) -> dict:
     required = {"LICENSE", "NOTICE", "VERSION", "README.md", "arquilo.py", "arquilo_doctor.py", "SECURITY.md"}
     if not required.issubset(names):
         raise ValueError("Missing required distribution files: " + ", ".join(sorted(required - set(names))))
+    for language in ("default", "de", "en"):
+        load_prompt_config(source / "prompts" / f"{language}.toml")
     version = (source / "VERSION").read_text(encoding="utf-8").strip()
     if not re.fullmatch(r"0\.\d+\.\d+|[1-9]\d*\.\d+\.\d+", version):
         raise ValueError("VERSION must use major.minor.patch")
@@ -71,7 +74,7 @@ def check_release(source: Path = ROOT) -> dict:
         raise ValueError("Broken local links: " + "; ".join(bad_links))
     return {"status": "PASS", "version": version, "runtime_files": len(names),
             "python_files": code_count, "checks": ["allowlist", "license", "attribution",
-            "version", "python_syntax", "headers", "local_document_links", "active_naming"]}
+            "version", "python_syntax", "headers", "local_document_links", "active_naming", "prompt_catalogs"]}
 
 
 def main(argv=None) -> int:

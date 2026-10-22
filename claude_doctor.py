@@ -12,22 +12,25 @@ import sys
 from agent_types import TransportTimeouts
 from claude_transport import probe_cli
 from controller_state import default_state_root
+from prompt_config import load_prompt_config
 
 
 def collect_report(*, workdir=None, todo_file=None, env=None, check_decide=False,model=None,
-                   reasoning_effort=None, decide_timeout=120, **unused):
+                   reasoning_effort=None, decide_timeout=120, prompt_config=None, **unused):
     from decision_exec import DecisionExecSettings, execute_decision
     from decision_request import DecisionRequest
+    prompts = load_prompt_config(prompt_config)
     environment=dict(os.environ if env is None else env)
     workspace=Path(workdir or (Path(todo_file).parent if todo_file else Path.cwd())).expanduser().resolve()
     report={"schema_version":"arquilo.claude_code.doctor.v1", "backend":"claude-code", "status":"FAIL",
         "checks_status":"FAIL", "arquilo_version":(Path(__file__).parent/'VERSION').read_text().strip(),
         "python":{"version":platform.python_version(),"executable":sys.executable},
         "paths":{"workdir":str(workspace),"runner_state_root":str(default_state_root())},
+        "prompt_config": prompts.metadata(),
         "checks":[],"model_calls":0,"decision_probe":{"status":"NOT_RUN","detail":"Use --check-decide for a paid functional probe."},
         "not_verified":["Native sandbox enforcement", "Production/review model quality", "Provider data residency"],
         "notes":["No Codex checks, model calls, login or configuration reads.",
-                 "Claude uses trusted user auth/provider configuration; project settings/hooks/MCP/skills disabled.",
+                 "Claude uses trusted user auth/provider configuration; project settings/hooks/MCP/native skill discovery disabled; explicit skill text bindings are separate.",
                  "Production Bash requires Claude native sandbox; on native Windows use WSL2 for production."]}
     if not workspace.is_dir() or (todo_file and not Path(todo_file).is_file()):
         report['checks'].append({'name':'paths','status':'FAIL','detail':'Workspace or task file missing'})
@@ -38,8 +41,8 @@ def collect_report(*, workdir=None, todo_file=None, env=None, check_decide=False
     if probe['status'] != 'PASS':
         return report
     if check_decide:
-        req=DecisionRequest(question='What is 2 + 2?',options=('FOUR','FIVE'),context=(),model=model,
-            reasoning_effort=reasoning_effort,run_id='doctor',task_id='probe',phase='decide',attempt_id='1')
+        req=DecisionRequest(question=prompts.render('doctor_question'),options=('FOUR','FIVE'),context=(),model=model,
+            reasoning_effort=reasoning_effort,run_id='doctor',task_id='probe',phase='decide',attempt_id='1',prompt_config=prompts)
         settings=DecisionExecSettings(backend='claude-code',project_root=workspace,env=environment,
             log_root=workspace/'.arquilo_runs'/'doctor',timeouts=TransportTimeouts(total=decide_timeout))
         call=execute_decision(req,settings=settings)

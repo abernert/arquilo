@@ -53,3 +53,14 @@ def logs_name(backend: str) -> str:
 def add_backend_argument(parser) -> None:
     parser.add_argument("--backend", choices=BACKENDS, default="codex",
                         help="Agent runtime for ALL phases including review and Decide (default: codex).")
+
+
+def validate_resources(backend: str, *, mcp=None, review_mcp=None) -> None:
+    """Reject unsupported named integrations before any selected backend runs."""
+    validate_backend(backend)
+    if backend == "claude-code":
+        from task_resources import ResourceError, selection
+        if selection(mcp) or selection(review_mcp):
+            raise ResourceError(
+                "Named MCP selections are not supported by the experimental Claude Code backend. "
+                "Use --mcp none --review-mcp none; no Codex fallback or native MCP inheritance is allowed.")

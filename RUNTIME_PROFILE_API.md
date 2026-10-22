@@ -55,3 +55,10 @@ Es gibt keine Felder für installierbare Zusatzgruppen mehr.
 `preflight.command` is executable owner-trusted host code, not sandboxed model
 configuration. Inspect profiles before execution. Argument order, repeats, empty
 values and whitespace are preserved; only a finite positive timeout is valid.
+
+## Promptkataloge (Entwicklungsstand 0.9.0)
+
+`--prompt-config default|de|en|DATEI` wählt die eingebauten Textbausteine aus
+menschenlesbaren TOML-Dateien. Das ist nicht dasselbe wie dieses JSON-Runtime-Profil:
+dessen additive Regeln und vorhandene Textslots bleiben wirksam und werden nicht
+automatisch übersetzt. Siehe [Promptkonfiguration](docs/prompt-configuration.md).

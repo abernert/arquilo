@@ -4,7 +4,7 @@ on:
     branches: [feat/claude-code-backend]
   pull_request:
     branches: [main]
-    paths: ['agent_*.py', 'claude_*.py', 'tests/test_claude*.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
+    paths: ['agent_*.py', 'claude_*.py', 'autobuild*.py', 'run_todos.py', 'decision*.py', 'arquilo_doctor.py', 'task_resources.py', 'prompt_config.py', 'prompts/**', 'tests/test_claude*.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
 permissions:
   contents: read
 concurrency:

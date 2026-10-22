@@ -27,7 +27,7 @@ from project_logs import numbered_directory
 from runtime_contracts import ExecutionResult, ExecutionStatus, Failure, FailureKind
 from runtime_failure import execution_error
 from runtime_files import atomic_write_text, native_path
-from agent_backend import resolve_model, resolve_effort, validate_options
+from agent_backend import resolve_model, resolve_effort, validate_options, validate_resources
 
 REQUIRED_FLAGS = ("--print", "--output-format", "--verbose", "--session-id", "--no-session-persistence",
                   "--permission-mode", "--tools", "--allowedTools", "--disallowedTools",
@@ -429,8 +429,9 @@ def _execution(trace,phase):
 
 def run_claude_exec_json(prompt,cwd,*,sandbox,output_last_message_path,raw_log,pretty_log,extra_args=(),
                         model=None,reasoning_effort=None,network_access=False,output_schema_path=None,
-                        env=None,timeouts=None,config_profile=None,**kwargs):
+                        env=None,timeouts=None,config_profile=None,mcp_servers=None,**kwargs):
     validate_options("claude-code",config_profile=config_profile,extra_args=extra_args)
+    validate_resources("claude-code", mcp=mcp_servers)
     environment=dict(os.environ if env is None else env)
     request=ClaudeRequest(prompt=prompt,cwd=cwd,sandbox=sandbox,env=environment,
         raw_log=raw_log,pretty_log=pretty_log,model=resolve_model(model,backend="claude-code",environ=environment),

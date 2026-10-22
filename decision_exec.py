@@ -118,6 +118,7 @@ def execute_attempt(
     model_provider: str | None = None, config_profile: str | None = None,
     process_stop_path: Path | None = None,
     cancel_requested: Callable[[], str | None] | None = None,
+    mcp_disabled: bool = False,
 ) -> DecisionAttempt:
     """Run a fresh non-repo attempt using the single shared Codex transport.
 
@@ -128,6 +129,8 @@ def execute_attempt(
     """
     if not isinstance(request, DecisionRequest):
         raise TypeError("request must be DecisionRequest")
+    if type(mcp_disabled) is not bool:
+        raise ValueError("mcp_disabled must be bool")
     agent_backend.validate_options(backend, config_profile=config_profile, model_provider=model_provider, trusted_codex_home=trusted_codex_home)
     if backend == "claude-code":
         from claude_decision import execute_attempt as claude_attempt
@@ -180,6 +183,7 @@ def execute_attempt(
             model=request.model, reasoning_effort=request.reasoning_effort,
             model_provider=model_provider, config_profile=config_profile,
             network_access=False, sandbox="read-only", decision_only=True,
+            mcp_servers=() if mcp_disabled else None,
             phase="decide", timeouts=timeouts or transport.TransportTimeouts(total=120),
             process_stop_path=process_stop_path, cancel_requested=cancel_requested, **outputs,
         )
@@ -211,6 +215,7 @@ class DecisionExecSettings:
     cancel_requested: Callable[[], str | None] | None = None
     max_attempts: int = 1
     call_budget: CallBudget | None = None
+    mcp_disabled: bool = False
 
     def __post_init__(self) -> None:
         agent_backend.validate_options(self.backend, config_profile=self.config_profile, model_provider=self.model_provider, trusted_codex_home=self.trusted_codex_home)
@@ -219,6 +224,8 @@ class DecisionExecSettings:
         if self.backend == "claude-code" and Path(self.launcher).name.lower() in {"codex", "codex.exe", "codex.cmd"}:
             raise ValueError("Claude Code backend cannot use the Codex launcher")
         from codex_policy import validate_config_profile, validate_model_provider
+        if type(self.mcp_disabled) is not bool:
+            raise ValueError("mcp_disabled must be bool")
         validate_model_provider(self.model_provider)
         validate_config_profile(self.config_profile)
         if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 2:
@@ -322,6 +329,8 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
             directory = _attempt_directory(parent, number)
             archive.write_json(directory / "call.json", manifest)
             archive.write_json(directory / "input.json", request.to_dict())
+            atomic_write_text(directory / "prompt_config_snapshot.json",
+                              json.dumps(request.prompt_config.snapshot(), ensure_ascii=False, indent=2) + "\n")
             atomic_write_text(directory / "prompt.md", prompt)
             schema_path, response_path = directory / "schema.json", directory / "response.json"
             atomic_write_text(schema_path, json.dumps(response_schema(request), ensure_ascii=False, indent=2) + "\n")
@@ -344,7 +353,8 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
                 temp_root=settings.temp_root, launcher=settings.launcher, timeouts=settings.timeouts,
                 model_provider=settings.model_provider, config_profile=settings.config_profile,
                 output_schema=schema_path, output_last_message=response_path,
-                process_stop_path=settings.process_stop_path, cancel_requested=settings.cancel_requested)
+                process_stop_path=settings.process_stop_path, cancel_requested=settings.cancel_requested,
+                **({"mcp_disabled": True} if settings.mcp_disabled else {}))
             result = validate_response(request, attempt.result.execution, response_path)
         except BudgetExhausted as exc:
             result = _failure(request, "call_budget_exhausted", str(exc))

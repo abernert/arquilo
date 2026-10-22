@@ -36,6 +36,8 @@ from agent_types import TransportTimeouts, CommandExec, FileChange, RunResult, T
 from runtime_contracts import ExecutionResult, ExecutionStatus, Failure, FailureKind
 from runtime_failure import execution_error
 import codex_policy
+import mcp_selection
+from task_resources import selection, ResourceError
 from codex_launcher import resolve_launcher
 from process_tree import InterruptiblePipe, ProcessTree, ProcessTreeError, REAP_TIMEOUT, finish_cleanup
 from runtime_files import atomic_write_text, native_path, safe_component, unique_directory
@@ -69,6 +71,9 @@ class CodexExecRequest:
     log_redactor: Callable[[str], str] | None = None
     prompt_display: str = "<prompt>"
     decision_only: bool = False
+    mcp_servers: tuple[str, ...] | None = None
+    mcp_inventory: tuple[str, ...] = ()
+    mcp_verified: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.prompt, str) or not self.prompt.strip():
@@ -87,6 +92,8 @@ class CodexExecRequest:
             object.__setattr__(self, name, tuple(values))
         if not self.launcher:
             raise ValueError("launcher must not be empty")
+        object.__setattr__(self, "mcp_servers", selection(self.mcp_servers))
+        object.__setattr__(self, "mcp_inventory", selection(self.mcp_inventory) or ())
         codex_policy.validate_launcher(self.launcher)
         codex_policy.validate_sandbox(self.sandbox)
         codex_policy.validate_extra_args(self.extra_args)
@@ -153,6 +160,8 @@ def build_command(request: CodexExecRequest) -> list[str]:
     else:
         # Existing production/review write and network grants are unchanged.
         cmd += codex_policy.sandbox_arguments(sandbox=request.sandbox, network_access=request.network_access)
+    for value in mcp_selection.config_values(request.mcp_servers, request.mcp_inventory):
+        cmd += ["-c", value]
     cmd.append("-")
     return cmd
 
@@ -178,6 +187,40 @@ def _start_process(command: Sequence[str], *, cwd: Path, env: Mapping[str, str])
         tree.abort_start(proc)
         raise
     return proc
+
+
+def probe_mcp_inventory(arguments: Sequence[str], *, request: CodexExecRequest) -> bytes:
+    """Native metadata only. Suppress raw stdout/stderr: they may contain secrets."""
+    if reason := _cancellation_reason(request):
+        raise mcp_selection.McpInventoryCancelled(reason)
+    command = [*request.launcher, *arguments]
+    proc = _start_process(command, cwd=request.cwd, env=request.env)
+    try:
+        import time
+        deadline = time.monotonic() + 30
+        while True:
+            if reason := _cancellation_reason(request):
+                raise mcp_selection.McpInventoryCancelled(reason)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ResourceError("Codex MCP inventory timed out; raw output withheld.")
+            try:
+                stdout, _stderr = proc.communicate(timeout=min(0.2, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    except BaseException:
+        _terminate_process_group(proc, grace_seconds=0.1, reason="mcp_inventory_aborted")
+        proc.communicate(timeout=REAP_TIMEOUT)
+        raise
+    finally:
+        cleanup = _terminate_process_group(proc, grace_seconds=0.1, reason="mcp_inventory_exit")
+        finish_cleanup(proc.arquilo_process_tree.close, cleanup)
+        if cleanup.errors:
+            raise ProcessTreeError("MCP inventory process cleanup failed")
+    if proc.returncode != 0:
+        raise ResourceError("Codex MCP configuration could not be inspected; raw output withheld. Check codex mcp list locally.")
+    return stdout
 
 
 def probe_version(*, launcher: Sequence[str], cwd: Path, env: Mapping[str, str],
@@ -720,6 +763,9 @@ def _prepare_capture(request: CodexExecRequest, acc: RunResult) -> bytes:
         "stdout": {"received_bytes": 0, "archived_bytes": 0, "eof": False, "invalid_utf8_bytes": 0},
         "stderr": {"received_bytes": 0, "archived_bytes": 0, "eof": False, "invalid_utf8_bytes": 0},
         "diagnostics": [], "started_at": datetime.now().astimezone().isoformat(),
+        "mcp_selection": ({"selected": list(request.mcp_servers),
+                           "known_servers": list(request.mcp_inventory), "verified": request.mcp_verified}
+                          if request.mcp_servers is not None else None),
         "raw_files": {"stdin": "prompt.utf8", "stdout": "stdout.bin", "stderr": "stderr.bin"},
         "normalized_event_log": str(request.raw_log), "pretty_log": str(request.pretty_log),
         "answer_file": "response.txt", "answer_source": "last stdout agent/assistant message (normalized)",
@@ -1199,6 +1245,12 @@ def execute(request: CodexExecRequest) -> TransportResult:
     build_command(request)  # Validate before even creating a per-call archive.
     trace = RunResult()
     try:
+        if request.mcp_servers is not None and not _cancellation_reason(request):
+            from dataclasses import replace
+            inventory = mcp_selection.resolve_inventory(
+                request.mcp_servers, profile=request.config_profile,
+                probe=lambda argv: probe_mcp_inventory(argv, request=request))
+            request = replace(request, mcp_inventory=inventory, mcp_verified=True)
         prompt_bytes = _prepare_capture(request, trace)
         cancellation = _cancellation_reason(request)
         if cancellation:
@@ -1219,6 +1271,8 @@ def execute(request: CodexExecRequest) -> TransportResult:
                     code="codex_decision_cli_failed", phase=request.phase))
         if not trace.process_stop_triggered:
             trace = _run(request, trace, prompt_bytes)
+    except mcp_selection.McpInventoryCancelled as exc:
+        observe_stop(trace, str(exc))
     except CodexExecutionError as exc:
         trace = exc.result
     except (OSError, UnicodeError) as exc:

@@ -1,6 +1,6 @@
 # ARQUILO
 
-**Experimenteller Branch:** `--backend claude-code` verwendet Claude Code in allen
+**Experimenteller Branch auf Basis von ARQUILO 0.9.0:** `--backend claude-code` verwendet Claude Code in allen
 Phasen einschließlich Review und Decide, ohne Codex-Aufruf. Standard bleibt
 `--backend codex`. [Anleitung und Grenzen](docs/claude-code-backend.md).
 
@@ -10,7 +10,9 @@ ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
 Orchestration**. Zur Herkunft des Projekts siehe die ausdrücklich
 [historischen Namens- und Migrationshinweise](docs/compatibility.md).
 
-Die Version **0.7.4 ist eine öffentliche Vorschau**. Python 3.11 oder neuer genügt
+**Öffentliche Vorschau: 0.9.0.** Diese Version enthält
+[editierbare Default-, deutsche und englische Promptkonfigurationen](docs/prompt-configuration.md).
+Python 3.11 oder neuer genügt
 für den Kern; Python-Drittpakete sind nicht erforderlich. Echte Modellaufrufe
 benötigen eine separat installierte und angemeldete Codex-CLI und können
 Modellnutzung verbrauchen. Das ist keine rein lokale KI und keine

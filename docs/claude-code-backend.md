@@ -7,9 +7,34 @@ preflight, configuration-home lookup, or fallback is used on that path. Shared
 Python result/policy helpers retain some historical names; that is not a Codex
 process or provider dependency. OpenCode is reserved, **not implemented**.
 
-This is unreleased work based on 0.7.4. Do not treat it as client-production
+This is unreleased backend work integrated with **ARQUILO 0.9.0** (including
+the 0.8.0 resource contracts and 0.9.0 prompt catalogs). Do not treat it as client-production
 qualification or as a data-residency guarantee. `VERSION` was not released or
-retagged for this feature branch.
+retagged for this feature branch: `VERSION` is 0.9.0; the released `v0.9.0` tag
+and `main` remain unchanged.
+
+## Compatibility with ARQUILO 0.9.0
+
+- `--prompt-config default|de|en|FILE` works across production, fixes, reviews,
+  parent-review calls, Decide, doctor and worker serialization. Omission selects
+  `default`. Each run retains the same immutable catalog snapshot; workers do
+  not reopen an edited or deleted custom source file.
+- `--skills`, `--skill-dir`, list `DEFAULTS` and task `CFG` retain the 0.8.0
+  inheritance/ceiling rules. Selected `SKILL.md` text and hashes are bound to the
+  original request, not installed or executed as Claude tools. Claude defaults
+  to `.agents/skills` and `.claude/skills` under the workspace and user home;
+  **no `CODEX_HOME` or `.codex/skills` discovery**. Explicit roots replace these
+  defaults. Duplicate skill names fail rather than choosing arbitrary precedence.
+- `--mcp none` and `--review-mcp none` are supported. **Named MCP servers remain
+  unsupported by this deliberately restricted Claude adapter.** Named selections
+  in CLI/list/task settings fail before model execution, including a named MCP
+  requested only by a later task. Omission still means no native Claude MCPs;
+  it does not inherit Codex or Claude project MCP configuration. Capability
+  metadata reports this limitation rather than claiming feature parity.
+- `--agent` / `CFG agent` are Codex profile selectors, not Claude subagents.
+  They are rejected for Claude, as are Codex-only provider/profile overrides.
+- Historical `review resume` remains Codex-only; native Claude session resume
+  and cross-backend recovery are not added in this integration.
 
 ## Install and select
 
@@ -29,6 +54,7 @@ python3 -B arquilo.py doctor --backend claude-code --workdir /path/to/project --
 # Same task list, different execution runtime.
 python3 -B arquilo.py tasklist run --backend claude-code \
   --workdir /path/to/project --todo-file /path/to/project/tasks.md \
+  --prompt-config de --mcp none --review-mcp none \
   --process-stop-policy controller-only --max-calls 12
 
 # Returning to Codex is explicit; omitting --backend also means Codex.
@@ -61,9 +87,9 @@ environment values are retained, but not dumped to the logs.
 Every invocation uses a fresh UUID session and UTF-8 stdin. The adapter requests
 native stream-json output, no session persistence, `dontAsk` permission handling,
 explicit built-in tools, no arbitrary MCP servers, and safe mode. Project/local
-settings, CLAUDE.md, skills, custom agents and installed plugins are not used by this
-initial integration. Relevant project instructions must be in the captured task
-or additive ARQUILO runtime profile. Trusted user authentication/model/provider
+settings, CLAUDE.md, native skill discovery, custom agents and installed plugins
+are not used by this integration. Relevant project instructions must be in the captured task, an explicitly
+bound skill instruction snapshot, or an additive ARQUILO runtime profile. Trusted user authentication/model/provider
 settings are retained. Mandatory corporate policy can still apply; a company
 policy is not silently bypassed. Unknown integration or tool events fail the
 invocation, but post-event validation cannot undo a tool already executed.
@@ -91,7 +117,8 @@ requires Claude's native sandbox with `failIfUnavailable` and no unsandboxed
 escape. By default its shell network is denied. `--network-access` removes that
 additional deny; it does **not** automatically grant destinations prohibited by
 the trusted host policy. Provider/model communication is separate from shell
-networking. Web search/fetch, external MCP, skills and subagents remain disabled.
+networking. Web search/fetch, external MCP, native skill tools and subagents remain disabled.
+Explicit ARQUILO skill text bindings do not enable those tools.
 Tests that require shell execution should be performed in production/fix and
 produce evidence for the file-reading reviewer. This first reviewer deliberately
 cannot re-run a test command itself.
@@ -135,7 +162,7 @@ metadata but are not encrypted and are not safe to publish unreviewed.
 `--no-session-persistence` is not a promise of zero native logs or zero retention
 at the model provider. Set client-specific retention and deletion rules.
 
-The 0.7.4 `review resume` command validates **historical Codex reconnect archives**;
+The existing `review resume` command validates **historical Codex reconnect archives**;
 it remains Codex-specific and refuses `--backend claude-code` before dispatch.
 No Claude request is silently converted into a Codex recovery. Native Claude
 session resume/mixed-runtime review routing are not part of this first backend.
@@ -163,7 +190,7 @@ option, explanation = decide('Is 2 + 2 equal to 4?', ['YES', 'NO'], settings=set
 ## Validation and upstream documentation
 
 ```bash
-python3 -B -m unittest discover -s tests -p 'test_claude_backend.py' -v
+python3 -B -m unittest discover -s tests -p 'test_claude_backend*.py' -v
 python3 -B -m unittest discover -s tests -v
 python3 -B scripts/check_release.py
 python3 -B scripts/build_runtime_zip.py
@@ -179,7 +206,53 @@ loopback provider, never a real model. Native CLI tests
 and real-model/client-host tests are distinct levels; passing an offline suite
 does not establish native tool isolation or model quality.
 
-Official references checked 2026-10-19:
+The 0.9.0 integration regression suite additionally covers all built-in catalogs,
+custom/frozen catalogs through correction loops and actual Python workers,
+Claude doctor prompt selection, legacy-review Decide, explicit empty MCPs,
+fail-closed named MCP requests, and skill instruction bindings without Codex
+home discovery. These fixtures are not real-model quality evidence.
+
+## Isolated owner smoke test before merge
+
+Keep the stable runner and client workspaces untouched. From your existing
+ARQUILO repository, create a separate test worktree (choose a new target path):
+
+```bash
+git fetch origin
+git worktree add --detach ../arquilo-claude-test origin/feat/claude-code-backend
+cd ../arquilo-claude-test
+python3 -B arquilo.py --version
+claude --version
+```
+
+On macOS or Linux/WSL, create a disposable task workspace:
+
+```bash
+SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/arquilo-claude-smoke.XXXXXX")"
+printf '%s\n' '1. ***TASK***: Create hello.txt containing exactly Hello from ARQUILO.' > "$SMOKE_DIR/tasks.md"
+python3 -B arquilo.py doctor --backend claude-code --workdir "$SMOKE_DIR" --prompt-config de
+```
+
+Only after doctor passes, run the model-backed smoke test below. It uses your
+existing Claude authentication and may incur provider charges. Use a disposable
+host/account where required by the safety boundaries above.
+
+```bash
+python3 -B arquilo.py tasklist run --backend claude-code \
+  --workdir "$SMOKE_DIR" --todo-file "$SMOKE_DIR/tasks.md" \
+  --prompt-config de --mcp none --review-mcp none \
+  --process-stop-policy controller-only --max-calls 12
+cat "$SMOKE_DIR/hello.txt"
+cat "$SMOKE_DIR/tasks.md"
+```
+
+Check the actual output, the separate review evidence and the final task status.
+A missing, failed or invalid review must never mark the task `DONE`. A green
+metadata-only doctor does not prove that the model provider, native sandbox or
+client-host permissions work. Do not remove a failure/stop marker blindly.
+
+Official CLI reference rechecked 2026-10-22; safety references from the original
+backend qualification (2026-10-19):
 - https://code.claude.com/docs/en/cli-reference
 - https://code.claude.com/docs/en/headless
 - https://code.claude.com/docs/en/settings
