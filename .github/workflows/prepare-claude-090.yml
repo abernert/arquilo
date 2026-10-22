@@ -3,21 +3,109 @@ on:
   push:
     branches: [prepare/claude-backend-090-20261022]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  source:
+  integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Bundle public source and history (no credentials)
-        run: git bundle create "$RUNNER_TEMP/arquilo-source.bundle" --all
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          name: arquilo-source-integration
-          path: ${{ runner.temp }}/arquilo-source.bundle
-          retention-days: 1
-          if-no-files-found: error
+          python-version: '3.11'
+      - name: Reconstruct exact locally tested tree without preparation files
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, gzip, hashlib, os, pathlib, subprocess
+          old = '8818f0f3003e90a6c68e1e02440dc0f9d58c67e5'
+          main = '35e5f17457bfd1c42b439f522f83c4d435421e1c'
+          expected_auto = '8e0ea5d12c9352304040d80017a21719d54f01ea'
+          expected_final = '2d59711289acde04211e8bfaf1fb0f2582cdbf8b'
+          def git(*args, cwd=None):
+              return subprocess.check_output(['git', *args], cwd=cwd, text=True).strip()
+          assert git('rev-parse', 'origin/feat/claude-code-backend') == old
+          assert git('rev-parse', 'origin/main') == main
+          encoded = pathlib.Path('integration/claude-090.patch.gz.b64').read_text().strip()
+          # Repair one transport transcription, then require the original patch digest.
+          encoded = encoded.replace('IDWcPSOFAMoP34XG5CGI', 'IDWcPSOFKoP34XG5CGI')
+          patch = gzip.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(patch).hexdigest() == 'c18be3b470cc3a0aa3a2dc50d818ad43b7dbeb838f95e90ec7480af053d0564a'
+          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          patch_path = temp / 'integration.patch'
+          patch_path.write_bytes(patch)
+          merge = subprocess.run(['git', 'merge-tree', '--write-tree', old, main], text=True, capture_output=True)
+          assert merge.returncode in (0, 1), merge.stderr
+          auto = merge.stdout.splitlines()[0]
+          assert auto == expected_auto, (auto, merge.stdout)
+          work = temp / 'integrated'
+          subprocess.run(['git', 'worktree', 'add', '--detach', str(work), old], check=True)
+          subprocess.run(['git', 'read-tree', '--reset', '-u', auto], cwd=work, check=True)
+          subprocess.run(['git', 'apply', '--index', str(patch_path)], cwd=work, check=True)
+          assert git('write-tree', cwd=work) == expected_final
+          subprocess.run(['git', 'diff', '--cached', '--check'], cwd=work, check=True)
+          assert not (work / 'integration').exists()
+          assert not (work / '.github/workflows/prepare-claude-090.yml').exists()
+          (temp / 'integration-tree.txt').write_text(expected_final + '\n')
+          print('Verified final source tree:', expected_final)
+          PY
+      - name: Full offline regression suite
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/integrated"
+          python -B -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/integration-tests.log"
+      - name: Distribution contracts and runtime package
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/integrated"
+          python -B scripts/check_release.py | tee "$RUNNER_TEMP/integration-release-check.json"
+          python -B scripts/build_runtime_zip.py | tee "$RUNNER_TEMP/integration-package.json"
+      - name: Publish clean merge commit to staging branch only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/integrated"
+          TREE=$(git write-tree)
+          test "$TREE" = 2d59711289acde04211e8bfaf1fb0f2582cdbf8b
+          export GIT_AUTHOR_NAME='ARQUILO integration'
+          export GIT_AUTHOR_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+          export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+          COMMIT=$(git commit-tree "$TREE" -p 8818f0f3003e90a6c68e1e02440dc0f9d58c67e5 -p 35e5f17457bfd1c42b439f522f83c4d435421e1c <<'MESSAGE'
+          Merge ARQUILO 0.9.0 into experimental Claude Code backend
+
+          Integrate frozen prompt catalogs, backend-aware skill bindings and explicit
+          empty MCP selections across tasklists, AutoBuild, workers and doctor.
+          Preserve Codex defaults; reject unsupported Claude MCP/profile selections
+          before model execution. Retain read-only reviews and no Codex fallback.
+
+          Add 12 integration regressions. Local replay: 658 tests, 5 skips; full
+          Linux offline suite and release/package contracts verified again in CI.
+          Real-model/client-host smoke remains required before merge/release.
+          No main update, release tag, preparation workflow or helper history.
+          MESSAGE
+          )
+          AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$AUTH"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push https://github.com/abernert/arquilo.git "$COMMIT:refs/heads/prepare/claude-backend-090-result-20261022"
+          printf '%s\n' "$COMMIT" > "$RUNNER_TEMP/integration-commit.txt"
+          echo "Clean staging commit: $COMMIT"
+          git log -1 --format='%H %P %T' "$COMMIT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: claude-090-integration-evidence
+          path: |
+            ${{ runner.temp }}/integration-*.txt
+            ${{ runner.temp }}/integration-tests.log
+            ${{ runner.temp }}/integration-release-check.json
+            ${{ runner.temp }}/integration-package.json
+            ${{ runner.temp }}/integrated/dist/arquilo-*
+          retention-days: 7
+          if-no-files-found: warn
