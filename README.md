@@ -62,8 +62,11 @@ ARQUILO focuses on the controller around task execution, not on another chat UI:
 - **Small deployment surface:** Python 3.11+ and its standard library; no Python
   package installation, database, server or framework dependency for the core.
 
-The runtime currently uses a **separately installed and authenticated Codex CLI**.
-It is not a provider-independent backend and does not include Codex. Model access
+The runtime uses a **separately installed and authenticated agent CLI**: Codex by
+default, or the experimental `--backend claude-code` for the entire run (including
+reviews and Decide; no Codex executable/login is needed on that path). See
+[Claude Code setup and safety limits](docs/claude-code-backend.md).
+ARQUILO does not include either agent runtime. Model access
 may require a paid plan or incur usage charges under your provider arrangement.
 Disabling shell networking does not make model inference local or offline.
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — experimental Claude Code backend
+
+- Add run-wide `--backend {codex,claude-code}`; Codex remains the default.
+- Route production, fixes, review, parent review, Decide, doctor/preflight and
+  parallel worker payloads without a Codex executable/authentication dependency
+  when Claude is selected. No runtime/provider fallback; OpenCode not yet enabled.
+- Add strict native session/result validation, tool-role boundaries, owned process
+  cancellation and raw evidence. Preserve shared status, review and budget gates.
+- Include backend modules in the runtime ZIP and document native sandbox limits.
+- Keep the released version/tag unchanged; this branch needs explicit host/model
+  qualification before client use.
+
+- Integrate the released 0.9.0 base without modifying `main` or release tags.
+- Preserve prompt catalogs/snapshots through Claude execution, correction,
+  reviews, worker payloads and doctor/Decide; preserve Codex defaults.
+- Bind explicit skill instructions with backend-specific roots, never looking
+  up Codex home for Claude. Accept explicit empty MCP selections; reject named
+  MCP selections before execution rather than silently ignoring them.
+- Add 0.9.0 integration regressions and an isolated owner smoke-test recipe.
+
 ## 0.9.0 — 2026-10-21 (public preview)
 
 - Externalize 53 built-in model-facing prompt elements into human-readable TOML

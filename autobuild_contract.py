@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import codex_policy
+import agent_backend
 from task_resources import TaskResources
 from removed_features import check_removed_fields
 from execution_budget import DEFAULT_MAX_CALLS, positive_limit
@@ -21,6 +22,7 @@ from legacy_naming import schema_matches
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AutoBuildOptions:
+    backend: str = "codex"
     sandbox: str = "workspace-write"
     network_access: bool = False
     config_profile: str | None = None
@@ -43,9 +45,11 @@ class AutoBuildOptions:
     prompt_config: PromptConfig | str | Path | dict | None = None
 
     def __post_init__(self):
+        agent_backend.validate_options(self.backend, config_profile=self.config_profile, extra_args=self.extra_arg)
         positive_limit(self.max_calls)
         object.__setattr__(self, "prompt_config", load_prompt_config(self.prompt_config))
         resources = TaskResources(mcp=self.mcp, review_mcp=self.review_mcp, skills=self.skills)
+        agent_backend.validate_resources(self.backend, mcp=resources.mcp, review_mcp=resources.review_mcp)
         for key in ("mcp", "review_mcp", "skills"):
             object.__setattr__(self, key, getattr(resources, key))
         if isinstance(self.skill_dirs, str) or not isinstance(self.skill_dirs, (list, tuple)):
