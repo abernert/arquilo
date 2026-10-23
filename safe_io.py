@@ -150,7 +150,12 @@ def check_path(path: Path, *, missing_ok: bool = True) -> Path:
     return path
 
 
-def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
+def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False,
+               share_delete: bool = False) -> int:
+    # Only immutable metadata snapshots may survive atomic replacement. Never
+    # grant in-place write sharing or relax the directory leases/no-follow rule.
+    if share_delete and (shared or mode not in ('r', 'rb')):
+        raise ValueError('Delete sharing is restricted to read-only snapshots')
     writing = any(char in mode for char in 'wax+')
     if os.name == 'nt':
         import ctypes
@@ -163,7 +168,8 @@ def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
         create.restype = wintypes.HANDLE
         access = (0x80000000 if 'r' in mode or '+' in mode else 0) | (0x40000000 if writing else 0)
         disposition = 1 if 'x' in mode else (4 if any(c in mode for c in 'wa') else 3)
-        handle = create(str(path), access, 3 if shared else 1, None, disposition, 0x00200000, None)
+        share = (3 if shared else 1) | (4 if share_delete else 0)
+        handle = create(str(path), access, share, None, disposition, 0x00200000, None)
         if handle == wintypes.HANDLE(-1).value:
             error = ctypes.get_last_error()
             if error in (80, 183):
@@ -186,7 +192,22 @@ def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
         if 'a' in mode:
             flags |= os.O_APPEND
         try:
-            opened = os.open(path.name, flags, 0o600, dir_fd=fd)
+            if shared and 'a' in mode:
+                # Shared lock files are permanent coordination objects. Separate
+                # open-existing from exclusive first creation; do not combine a
+                # non-exclusive O_CREAT with simultaneous first-open on macOS.
+                # A competing creator is the only permitted fallback. Deletion,
+                # permission errors and unsafe paths still fail closed.
+                existing_flags = flags & ~(os.O_CREAT | os.O_EXCL)
+                try:
+                    opened = os.open(path.name, existing_flags, dir_fd=fd)
+                except FileNotFoundError:
+                    try:
+                        opened = os.open(path.name, flags | os.O_EXCL, 0o600, dir_fd=fd)
+                    except FileExistsError:
+                        opened = os.open(path.name, existing_flags, dir_fd=fd)
+            else:
+                opened = os.open(path.name, flags, 0o600, dir_fd=fd)
         except OSError as exc:
             if exc.errno == errno.ELOOP:
                 raise UnsafePathError(f'Linked controller file: {path}') from exc
@@ -205,10 +226,11 @@ def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
 
 
 @contextmanager
-def open_file(path: Path, mode: str = 'r', *, encoding='utf-8', newline=None, buffering=-1, shared=False):
+def open_file(path: Path, mode: str = 'r', *, encoding='utf-8', newline=None, buffering=-1,
+              shared=False, share_delete=False):
     path = lexical_path(path)
     with directory(path.parent, create=any(c in mode for c in 'wax')) as (_, fd):
-        opened = _open_leaf(path, fd, mode, shared=shared)
+        opened = _open_leaf(path, fd, mode, shared=shared, share_delete=share_delete)
         with os.fdopen(opened, mode, encoding=None if 'b' in mode else encoding,
                        newline=None if 'b' in mode else newline, buffering=buffering) as stream:
             yield stream
