@@ -150,7 +150,12 @@ def check_path(path: Path, *, missing_ok: bool = True) -> Path:
     return path
 
 
-def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
+def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False,
+               share_delete: bool = False) -> int:
+    # Only immutable metadata snapshots may survive atomic replacement. Never
+    # grant in-place write sharing or relax the directory leases/no-follow rule.
+    if share_delete and (shared or mode not in ('r', 'rb')):
+        raise ValueError('Delete sharing is restricted to read-only snapshots')
     writing = any(char in mode for char in 'wax+')
     if os.name == 'nt':
         import ctypes
@@ -163,7 +168,8 @@ def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
         create.restype = wintypes.HANDLE
         access = (0x80000000 if 'r' in mode or '+' in mode else 0) | (0x40000000 if writing else 0)
         disposition = 1 if 'x' in mode else (4 if any(c in mode for c in 'wa') else 3)
-        handle = create(str(path), access, 3 if shared else 1, None, disposition, 0x00200000, None)
+        share = (3 if shared else 1) | (4 if share_delete else 0)
+        handle = create(str(path), access, share, None, disposition, 0x00200000, None)
         if handle == wintypes.HANDLE(-1).value:
             error = ctypes.get_last_error()
             if error in (80, 183):
@@ -186,7 +192,22 @@ def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
         if 'a' in mode:
             flags |= os.O_APPEND
         try:
-            opened = os.open(path.name, flags, 0o600, dir_fd=fd)
+            if shared and 'a' in mode:
+                # Shared lock files are permanent coordination objects. Separate
+                # open-existing from exclusive first creation; do not combine a
+                # non-exclusive O_CREAT with simultaneous first-open on macOS.
+                # A competing creator is the only permitted fallback. Deletion,
+                # permission errors and unsafe paths still fail closed.
+                existing_flags = flags & ~(os.O_CREAT | os.O_EXCL)
+                try:
+                    opened = os.open(path.name, existing_flags, dir_fd=fd)
+                except FileNotFoundError:
+                    try:
+                        opened = os.open(path.name, flags | os.O_EXCL, 0o600, dir_fd=fd)
+                    except FileExistsError:
+                        opened = os.open(path.name, existing_flags, dir_fd=fd)
+            else:
+                opened = os.open(path.name, flags, 0o600, dir_fd=fd)
         except OSError as exc:
             if exc.errno == errno.ELOOP:
                 raise UnsafePathError(f'Linked controller file: {path}') from exc
@@ -205,10 +226,11 @@ def _open_leaf(path: Path, fd, mode: str, *, shared: bool = False) -> int:
 
 
 @contextmanager
-def open_file(path: Path, mode: str = 'r', *, encoding='utf-8', newline=None, buffering=-1, shared=False):
+def open_file(path: Path, mode: str = 'r', *, encoding='utf-8', newline=None, buffering=-1,
+              shared=False, share_delete=False):
     path = lexical_path(path)
     with directory(path.parent, create=any(c in mode for c in 'wax')) as (_, fd):
-        opened = _open_leaf(path, fd, mode, shared=shared)
+        opened = _open_leaf(path, fd, mode, shared=shared, share_delete=share_delete)
         with os.fdopen(opened, mode, encoding=None if 'b' in mode else encoding,
                        newline=None if 'b' in mode else newline, buffering=buffering) as stream:
             yield stream
@@ -234,6 +256,58 @@ def write_bytes(path: Path, data: bytes, *, exclusive: bool = False) -> None:
 
 def write_text(path: Path, text: str, *, exclusive: bool = False) -> None:
     write_bytes(path, text.encode('utf-8'), exclusive=exclusive)
+
+
+def _windows_replace_open_snapshot(source: Path, destination: Path) -> None:
+    """Atomic rename over a delete-sharing reader; caller holds parent leases.
+
+    MoveFileEx (os.replace) can reject an open destination even when its reader
+    shares deletion. FileRenameInfoEx with POSIX semantics preserves that old
+    file object and publishes the new one. No write sharing, permission changes,
+    copy/truncate fallback, or retry loop is involved. Unsupported filesystems
+    and readers that do not share deletion still fail closed.
+    """
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    rename = kernel.SetFileInformationByHandle
+    rename.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    rename.restype = wintypes.BOOL
+    # DELETE plus FILE_READ_ATTRIBUTES, OPEN_EXISTING, OPEN_REPARSE_POINT.
+    handle = create(str(source), 0x00010080, 1 | 2 | 4, None, 3, 0x00200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        opened = msvcrt.open_osfhandle(handle, os.O_BINARY | os.O_RDONLY)
+    except BaseException:
+        close(handle)
+        raise
+    try:
+        _regular(os.fstat(opened), source)
+        # The variable UTF-16 tail follows the Windows ABI-aligned header.
+        encoded = str(destination).encode('utf-16-le')
+        class RenameInfo(ctypes.Structure):
+            _fields_ = [('flags', wintypes.DWORD), ('root', wintypes.HANDLE),
+                        ('length', wintypes.DWORD), ('name', wintypes.WCHAR * 1)]
+        size = max(ctypes.sizeof(RenameInfo), RenameInfo.name.offset + len(encoded) + 2)
+        buffer = ctypes.create_string_buffer(size)
+        info = RenameInfo.from_buffer(buffer)
+        info.flags = 1 | 2  # REPLACE_IF_EXISTS | POSIX_SEMANTICS, not IGNORE_READONLY.
+        info.root = None
+        info.length = len(encoded)
+        ctypes.memmove(ctypes.addressof(buffer) + RenameInfo.name.offset, encoded, len(encoded))
+        if not rename(handle, 22, buffer, size):  # FileRenameInfoEx
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        os.close(opened)
 
 
 def atomic_write(path: Path, data: bytes) -> None:
@@ -272,7 +346,14 @@ def atomic_write(path: Path, data: bytes) -> None:
             except FileNotFoundError:
                 pass
             if fd is None:
-                os.replace(pending, path)
+                try:
+                    os.replace(pending, path)
+                except OSError as exc:
+                    if getattr(exc, 'winerror', None) not in (5, 32):
+                        raise
+                    # An alternate atomic rename primitive, never an unsafe
+                    # overwrite or suppression of a real permission failure.
+                    _windows_replace_open_snapshot(pending, path)
             else:
                 os.replace(pending.name, path.name, src_dir_fd=fd, dst_dir_fd=fd)
         except BaseException as exc:

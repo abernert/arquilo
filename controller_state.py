@@ -89,8 +89,12 @@ def _state_identity(path: Path) -> dict | None:
 
 
 def _private_metadata(path: Path) -> dict:
+    # These are advisory identity hints, read from one opened snapshot. A
+    # registry writer publishes a new file by atomic replacement, never by
+    # modifying these bytes in place. On Windows allow only that replacement;
+    # the default controller readers retain their stricter sharing policy.
     try:
-        with safe_io.open_file(path, 'rb') as stream:
+        with safe_io.open_file(path, 'rb', share_delete=True) as stream:
             data = stream.read(65537)
         value = json.loads(data) if len(data) <= 65536 else None
     except (FileNotFoundError, json.JSONDecodeError, UnicodeError):
@@ -129,7 +133,8 @@ def _legacy_identity_hint(path: Path) -> dict | None:
             if hint is not None:
                 return hint
     try:
-        with safe_io.open_file(path / 'latest-run.txt', 'r', encoding='utf-8') as stream:
+        with safe_io.open_file(path / 'latest-run.txt', 'r', encoding='utf-8',
+                               share_delete=True) as stream:
             latest = stream.read(256).strip()
     except FileNotFoundError:
         return None
