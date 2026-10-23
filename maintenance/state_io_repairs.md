@@ -45,3 +45,21 @@ Native CI must also run the existing repository suite. Do not rerun a failing
 native race repeatedly until green; investigate any repeatable failure. No
 historical DONE entries, budget keys, counters or published release assets are
 modified by this change.
+
+## Native Windows correction
+
+The first CI pass confirmed that delete-sharing alone is insufficient for
+`os.replace`/MoveFileEx when its destination is open. The implementation now
+uses the Windows `FileRenameInfoEx` atomic rename primitive with
+`REPLACE_IF_EXISTS | POSIX_SEMANTICS` when ordinary replacement reports Windows
+error 5 or 32. The source is opened without following reparse points and checked
+as a single-link regular file; the existing parent-directory leases remain
+held. It never enables write sharing, ignores read-only attributes, copies over
+the target, or retries until success. Unsupported filesystems and incompatible
+readers fail closed and retain the complete pending recovery file. The native
+tests retain both the positive open-snapshot case and the strict-reader/in-place
+write negative controls. This uses a modern Windows filesystem capability;
+legacy filesystems without it cannot perform this overlapping replacement.
+
+Platform references: Microsoft `FILE_RENAME_INFORMATION` flags and
+`FILE_INFO_BY_HANDLE_CLASS`/`SetFileInformationByHandle` documentation.

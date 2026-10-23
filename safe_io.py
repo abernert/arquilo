@@ -258,6 +258,58 @@ def write_text(path: Path, text: str, *, exclusive: bool = False) -> None:
     write_bytes(path, text.encode('utf-8'), exclusive=exclusive)
 
 
+def _windows_replace_open_snapshot(source: Path, destination: Path) -> None:
+    """Atomic rename over a delete-sharing reader; caller holds parent leases.
+
+    MoveFileEx (os.replace) can reject an open destination even when its reader
+    shares deletion. FileRenameInfoEx with POSIX semantics preserves that old
+    file object and publishes the new one. No write sharing, permission changes,
+    copy/truncate fallback, or retry loop is involved. Unsupported filesystems
+    and readers that do not share deletion still fail closed.
+    """
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = [wintypes.HANDLE]
+    close.restype = wintypes.BOOL
+    rename = kernel.SetFileInformationByHandle
+    rename.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    rename.restype = wintypes.BOOL
+    # DELETE plus FILE_READ_ATTRIBUTES, OPEN_EXISTING, OPEN_REPARSE_POINT.
+    handle = create(str(source), 0x00010080, 1 | 2 | 4, None, 3, 0x00200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        opened = msvcrt.open_osfhandle(handle, os.O_BINARY | os.O_RDONLY)
+    except BaseException:
+        close(handle)
+        raise
+    try:
+        _regular(os.fstat(opened), source)
+        # The variable UTF-16 tail follows the Windows ABI-aligned header.
+        encoded = str(destination).encode('utf-16-le')
+        class RenameInfo(ctypes.Structure):
+            _fields_ = [('flags', wintypes.DWORD), ('root', wintypes.HANDLE),
+                        ('length', wintypes.DWORD), ('name', wintypes.WCHAR * 1)]
+        size = max(ctypes.sizeof(RenameInfo), RenameInfo.name.offset + len(encoded) + 2)
+        buffer = ctypes.create_string_buffer(size)
+        info = RenameInfo.from_buffer(buffer)
+        info.flags = 1 | 2  # REPLACE_IF_EXISTS | POSIX_SEMANTICS, not IGNORE_READONLY.
+        info.root = None
+        info.length = len(encoded)
+        ctypes.memmove(ctypes.addressof(buffer) + RenameInfo.name.offset, encoded, len(encoded))
+        if not rename(handle, 22, buffer, size):  # FileRenameInfoEx
+            raise ctypes.WinError(ctypes.get_last_error())
+    finally:
+        os.close(opened)
+
+
 def atomic_write(path: Path, data: bytes) -> None:
     """Replace through a held parent, never following the destination file.
 
@@ -294,7 +346,14 @@ def atomic_write(path: Path, data: bytes) -> None:
             except FileNotFoundError:
                 pass
             if fd is None:
-                os.replace(pending, path)
+                try:
+                    os.replace(pending, path)
+                except OSError as exc:
+                    if getattr(exc, 'winerror', None) not in (5, 32):
+                        raise
+                    # An alternate atomic rename primitive, never an unsafe
+                    # overwrite or suppression of a real permission failure.
+                    _windows_replace_open_snapshot(pending, path)
             else:
                 os.replace(pending.name, path.name, src_dir_fd=fd, dst_dir_fd=fd)
         except BaseException as exc:
