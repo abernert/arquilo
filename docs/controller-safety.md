@@ -150,6 +150,14 @@ Changes to the branch or staging index outside the runner cause a refusal.
 Do not change the worktree/index concurrently. The selected paths are authorized
 for this run, not a blanket secret scan or per-file correctness guarantee.
 
+**0.9.1 limitation:** these bytes are captured during commit construction after
+review, not as an immutable candidate before review. Concurrent file changes can
+therefore break the association between reviewed and committed content. Upstream
+tracking refs and separate destination checks do not close the outstanding remote
+history/authorization races. Leave automatic commit and push disabled for
+untrusted or concurrently changing workspaces. See the
+[Operator Guide](guides/operator-guide.en.md#git).
+
 Add `--git-push` **only** when publication to the configured upstream is intended.
 HEAD must initially match that upstream; unrelated unpushed commits are not
 published automatically. No force push is used. Branch protection can refuse

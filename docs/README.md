@@ -2,6 +2,20 @@
 
 This page is the map of ARQUILO's documentation. Start with the path that matches what you are trying to do.
 
+## Handbooks by audience
+
+| Audience | Handbook |
+| --- | --- |
+| Anwender | [Benutzerhandbuch Deutsch](guides/user-guide.de.md) |
+| User | [User Guide English](guides/user-guide.en.md) |
+| Power user / operator | [Advanced / Operator Guide](guides/operator-guide.en.md) |
+| Developer / technical integrator | [Technical / Architecture Guide](guides/technical-guide.en.md) |
+
+The manuals give a continuous learning path; the pages below remain focused
+recipes and references. See the [guide index](guides/README.md) for version scope
+and [documentation maintenance](documentation-maintenance.md) for bilingual
+parity, example checks and package inclusion. Existing reference URLs remain valid.
+
 ## First run
 
 1. Read the [installation guide](installation.md) for macOS, Linux, or Windows.

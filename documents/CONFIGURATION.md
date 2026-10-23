@@ -14,10 +14,35 @@ The core uses the Python standard library, CLI arguments, and optionally a JSON 
 | Call budget | `--max-calls <number>`; default **0 = unlimited**, positive values apply per task tree across restarts. Previously stored finite budgets adopt the new default while preserving usage. [Details](WORKFLOW_LIMITS.md). |
 | Workdir logs | `--logs-in-workdir`; off by default. Live diagnostics go to `<workdir>/.codex_runs/run_todos`; controller state/budgets stay external. |
 | Mutable plan | `--allow-todo-modifications`; off by default. Permit and record valid changes in the same task file; `--stop 2` remains an execution boundary. [Examples](../docs/operator-controls.md). |
+| Stop ownership | `--process-stop-policy model\|controller-only`; default `model`. The latter assigns stop handling to the controller in the task contract, not an OS prohibition on writing a sentinel. Existing stop signals remain effective. |
 | Dry run | `--dry-run --dry-run-file <file>`; writes a command preview, runs neither Codex nor profile preflight, and changes no task status. |
 | Diagnostics | `python arquilo_doctor.py --workdir <directory> --json`; free local metadata, no version pinning. Add `--check-decide` for a real functional probe that may incur one model call; `--model`, `--reasoning-effort`, and `--decide-timeout` apply only to that probe. [Usage and limits](QUICKSTART.md). |
 
 AutoBuild has the same model/network options and accepts `--task` or `--task-file` instead of a ToDo list. Additional retained options for selection, preamble, continuation, and specialized paths are documented by `--help`. There is no new general configuration file duplicating CLI values.
+
+## Resource, profile and prompt selectors
+
+These operator-facing selectors are implemented in the current runtime. Server,
+skill and profile names in examples refer to existing trusted host definitions;
+ARQUILO does not install them.
+
+| Selector | Behavior and boundary |
+| --- | --- |
+| `--agent NAME` | Default native Codex profile/agent hint; task `CFG agent` can override it. Not a team definition or a general profile allowlist. |
+| `--mcp NAME[,NAME]` or `none` | Explicit direct-server selection, default and ceiling. Omission retains native configuration behavior. |
+| `--review-mcp NAME[,NAME]` or `none` | Review subset of production MCPs; explicit production selection defaults review to none. Does not guarantee remote read-only access. |
+| `--skills NAME[,NAME]` or `none` | Explicit instruction snapshots; no automatic helper execution. `none` does not disable native implicit discovery. |
+| `--skill-dir PATH` | Repeatable operator-selected roots containing skill directories; replaces automatic search roots. |
+| `--prompt-config default\|de\|en\|FILE` | Complete TOML catalog selected once per run and passed as an immutable snapshot. No corresponding task CFG field. |
+| `--project-id ID` | Readable log namespace bound to workspace/plan; does not change budget identity. |
+
+One resource `DEFAULTS` directive before the first task can supply list-wide
+MCP/skill defaults. Task and descendant selections replace, rather than add to,
+the inherited selection and may not exceed an explicit operator ceiling.
+Profile, prompt-language and resource choices are different configuration layers.
+See [task resource details](todo_directives.md#explicit-resources-080),
+[prompt configuration](../docs/prompt-configuration.md) and the
+[Operator Guide configuration map](../docs/guides/operator-guide.en.md#configuration).
 
 ## Precedence and normalization
 
