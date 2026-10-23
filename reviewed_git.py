@@ -168,7 +168,9 @@ class ReviewedGit:
         env = dict(self.environment)
         if index is not None:
             env['GIT_INDEX_FILE'] = str(index)
-        command = [self.executable, '-c', 'core.fsmonitor=false',
+        # Private state paths include plan/run identities and can exceed MAX_PATH.
+        # This is a per-command override, not a mutation of the user's Git config.
+        command = [self.executable, '-c', 'core.longpaths=true', '-c', 'core.fsmonitor=false',
                    '-c', 'core.hooksPath=' + str(self.empty), '-c', 'core.untrackedCache=false',
                    '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-c', 'commit.gpgSign=false',
                    '-c', 'tag.gpgSign=false', '-c', 'push.followTags=false',
@@ -181,7 +183,10 @@ class ReviewedGit:
                 env[f'GIT_CONFIG_VALUE_{number}'] = value
             if self.publication is None:
                 raise ReviewedGitError('Private publication repository not initialized.')
-            command += ['--git-dir=' + str(self.publication)]
+            # Git validates the literal GIT_DIR length before long-path expansion.
+            # Resolve a short relative name from the pinned private parent, not
+            # from the task workspace; do not relocate state or alter host config.
+            command += ['--git-dir=' + self.publication.relative_to(self.directory).as_posix()]
             for key, value in self.identity.items():
                 command += ['-c', 'user.' + key + '=' + value]
             cwd = self.directory
