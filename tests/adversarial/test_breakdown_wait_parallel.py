@@ -265,7 +265,7 @@ class BreakdownWaitParallelTests(IsolatedControllerCase):
         self.assertEqual(self.todo.read_text(), expected)
         self.assertEqual(json.loads((runner.state_dir / "plan.json").read_text())["text"], expected)
 
-    def test_parallel_contradictory_worker_result_stays_open(self):
+    def test_parallel_contradictory_worker_result_stops_pending_batch_acceptance(self):
         plan = ("***CFG parallel=g workspace=a result_file=todo_result_1.md***\n"
                 "1. ***Task***: Write first.\n"
                 "***CFG parallel=g workspace=b result_file=todo_result_2.md***\n"
@@ -281,12 +281,14 @@ class BreakdownWaitParallelTests(IsolatedControllerCase):
         with patch.object(runner, "_run_autobuild_impl", side_effect=worker), redirect_stdout(io.StringIO()):
             runner.run()
         self.assertNotIn("1", runner.completed)
-        self.assertIn("2", runner.completed)
+        # The terminal failure publishes process_stop before batch acceptance;
+        # already produced sibling artifacts are retained, but not accepted DONE.
+        self.assertNotIn("2", runner.completed)
         self.assertFalse((self.work / "first.txt").exists())
         self.assertEqual((self.work / "second.txt").read_bytes(), b"second\n")
         self.assertIn("1 report", (self.work / "todo_result_1.md").read_text())
         self.assertIn("2 report", (self.work / "todo_result_2.md").read_text())
-        expected = plan.replace("2. ***Task***", "2. ***DONE***")
+        expected = plan
         self.assertEqual(self.todo.read_text(), expected)
         self.assertEqual(json.loads((runner.state_dir / "plan.json").read_text())["text"], expected)
         self.assertNotEqual(runner.exit_code, 0)

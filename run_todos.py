@@ -14,6 +14,8 @@ import safe_io
 from controller_state import PlanAuthority, PlanIntegrityError, state_directory, default_state_root
 from project_logs import project_logs, validate_project_id, timestamp_name, reserve_directory
 from reviewed_git import ReviewedGit, ReviewedGitError
+from codex_launcher import resolve_launcher
+from host_launcher import launcher_environment, resolve_executable
 from runtime_config import (
     environment_value,
     CODEX_REASONING_EFFORT_CHOICES,
@@ -68,7 +70,7 @@ from autobuild import (
     failure_summary as autobuild_failure_summary,
 )
 from review_contract import (parse_review_classification, review_classification_passes,
-                             build_review_context_reference,
+                             build_review_context_reference, validate_review_classification,
                              review_instructions)
 from decision_request import read_input_text, snapshot_todo
 
@@ -259,7 +261,7 @@ def _normalize_boolish(raw: Any) -> bool:
 
 def _normalize_review_classification_payload(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
-        return parse_review_classification(json.dumps(raw, ensure_ascii=False))
+        return validate_review_classification(raw)
     return parse_review_classification(raw if isinstance(raw, str) else "")
 
 
@@ -519,6 +521,7 @@ def run_codex_workspace_write_preflight(
     reasoning_effort: Optional[str] = None,
     mcp_disabled: bool = False,
     prompt_config: PromptConfig | None = None,
+    workdir: Path | None = None,
 ) -> None:
     prompts = load_prompt_config(prompt_config)
     version_command = ["codex", "--version"]
@@ -555,8 +558,14 @@ def run_codex_workspace_write_preflight(
         return
 
     try:
+        # Resolve against the actual project before switching to the temporary
+        # probe workspace; both probes use the same host installation and PATH.
+        workspace = workdir if workdir is not None else Path.cwd()
+        selected = resolve_launcher("codex", cwd=workspace, env=os.environ)
+        child_env = launcher_environment(os.environ, workspace=workspace,
+                                         executable=selected.argv[0])
         version_process = codex_transport.probe_version(
-            launcher=("codex",), cwd=Path.cwd(), env=dict(os.environ),
+            launcher=(selected.source,), cwd=workspace, env=child_env,
             timeout=timeout_seconds,
         )
     except OSError as exc:
@@ -577,7 +586,7 @@ def run_codex_workspace_write_preflight(
         try:
             request = codex_transport.CodexExecRequest(
                 prompt=prompts.render("preflight"),
-                cwd=temp_workspace, env=dict(os.environ),
+                cwd=temp_workspace, env=child_env, launcher=(selected.source,),
                 raw_log=temp_workspace / "preflight.jsonl",
                 pretty_log=temp_workspace / "preflight.log",
                 model=resolved_model, reasoning_effort=resolved_reasoning_effort,
@@ -893,7 +902,8 @@ class TodoRunner:
         if self.git_enabled:
             self.git_repo_root = self._assert_git_repository()
             if not self.dry_run:
-                self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir, push=git_push)
+                self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir,
+                    push=git_push, executable=self._git_executable)
         # The run is allocated only after the authoritative plan lock is held.
         self.run_dir = self.runs_dir / timestamp_name(self.run_started_at)
         self.autobuild_runs_dir = self.run_dir
@@ -1240,6 +1250,8 @@ class TodoRunner:
                 )
                 return
             while True:
+                if self._poll_process_stop():
+                    break
                 # Validate the live plan before WAIT/STOP or a no-work return,
                 # not only after these directives have already been interpreted.
                 self.plan_authority.check()
@@ -1264,7 +1276,7 @@ class TodoRunner:
                     continue
                 if not self._wait_directives_allow_execution(todo):
                     self.stop_triggered = True
-                    self.exit_code = EXIT_INCOMPLETE
+                    self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP if self.process_stop_detected else EXIT_INCOMPLETE
                     break
                 print(f"[run] ToDo {todo.identifier} – {todo.title}")
                 outcome = self._handle_todo(todo)
@@ -1528,6 +1540,16 @@ class TodoRunner:
             if not getattr(self, "process_stop_detected", False):
                 self.process_stop_details = outcome.process_stop_details
             self.process_stop_detected = self.stop_triggered = True
+            if getattr(self, "_active_parallel_stop_paths", ()) and not self.dry_run:
+                # Child processes cannot see the parent's in-memory latch.
+                # Publish before any result/log copying; preserve owner files.
+                with self.log_lock:
+                    if not os.path.lexists(self.process_stop_path):
+                        try:
+                            safe_io.write_text(self.process_stop_path,
+                                stop_reason(self.process_stop_details) + "\n", exclusive=True)
+                        except FileExistsError:
+                            pass
 
     def _show_failure_logs(self, outcome: TaskOutcome) -> None:
         paths = {}
@@ -1745,7 +1767,25 @@ class TodoRunner:
         return task_text
 
     def _process_stop_active(self) -> bool:
-        return self.process_stop_path.exists()
+        return os.path.lexists(self.process_stop_path)
+
+    def _poll_process_stop(self) -> bool:
+        """Latch a physical stop before dispatch/acceptance, including peer stops."""
+        if self.process_stop_detected:
+            return True
+        for path in (self.process_stop_path, *getattr(self, "_active_parallel_stop_paths", ())):
+            if os.path.lexists(path):
+                self.process_stop_detected = self.stop_triggered = True
+                self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
+                self.process_stop_details = stop_reason(self._read_process_stop_details(path))
+                return True
+        return False
+
+    def _stop_outcome_if_requested(self, outcome: TaskOutcome) -> TaskOutcome:
+        if self._poll_process_stop():
+            return replace(outcome, completed=False, process_stop_triggered=True,
+                           process_stop_details=stop_reason(self.process_stop_details))
+        return outcome
 
     def _read_process_stop_details(
         self, target: Optional[Path] = None
@@ -1755,18 +1795,32 @@ class TodoRunner:
             return None
         try:
             return read_utf8(path).strip()
-        except OSError:
+        except (OSError, ValueError):
             return None
 
 
         # Kein Guard gesetzt und keine Ergebnisse vorhanden – erster Lauf, kein Anker nötig.
 
 
+    def _host_git(self) -> tuple[str, dict[str, str]]:
+        """Bind the host Git identity before repository inspection or mutations."""
+        try:
+            if not getattr(self, "_git_executable", None):
+                self._git_executable = str(resolve_executable("git", workspace=self.workdir,
+                                                              env=os.environ))
+            env = launcher_environment(os.environ, workspace=self.workdir,
+                                       executable=self._git_executable)
+        except OSError as exc:
+            raise GitIntegrationError(f"Git-Host-Launcher nicht verfügbar: {exc}") from exc
+        return self._git_executable, env
+
     def _assert_git_repository(self) -> Path:
+        executable, env = self._host_git()
         try:
             status = subprocess.run(
-                ["git", "rev-parse", "--is-inside-work-tree"],
+                [executable, "rev-parse", "--is-inside-work-tree"],
                 cwd=self.workdir,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -1782,8 +1836,9 @@ class TodoRunner:
             )
         try:
             toplevel = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
+                [executable, "rev-parse", "--show-toplevel"],
                 cwd=self.workdir,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -1812,11 +1867,13 @@ class TodoRunner:
         *,
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess:
-        command = ["git", *args]
+        executable, env = self._host_git()
+        command = [executable, *args]
         try:
             completed = subprocess.run(
                 command,
                 cwd=self.workdir,
+                env=env,
                 text=True,
                 capture_output=capture_output,
                 check=True,
@@ -1844,6 +1901,8 @@ class TodoRunner:
     def _maybe_git_commit(self, todo: TodoItem, outcome: TaskOutcome) -> None:
         if not self.git_enabled:
             return
+        if self._poll_process_stop():
+            return
         if self.dry_run:
             self.recorder.record(f"{todo.identifier}-git", "# explicit reviewed Git selection; no Git mutation")
             return
@@ -1862,20 +1921,24 @@ class TodoRunner:
         text = read_utf8(self.todo_file)
         return render_command("Auftrag", effective_syntax(text, self.todo_syntax))
 
-    def _mark_todo_as_done(self, todo: TodoItem) -> None:
-        self.plan_authority.check()
+    def _mark_todo_as_done(self, todo: TodoItem) -> bool:
+        """Accept a reviewed task, or return False when a stop vetoes acceptance."""
+        if self._poll_process_stop():
+            return False
+        text = self.plan_authority.snapshot()
         if self.dry_run:
             print(
                 f"[info] Dry-run: Würde ToDo {todo.identifier} im ToDo-File als DONE markieren."
             )
-            return
-        text = read_utf8(self.todo_file, preserve_newlines=True, preserve_bom=True)
-        self.reviewed_this_run.add(todo.identifier)
+            return True
         if self.allow_todo_modifications:
             headers_now = _todo_line_map(text)
             if todo.identifier not in headers_now or headers_now[todo.identifier][0] == "OBSOLETE":
+                if self._poll_process_stop():
+                    return False
+                self.reviewed_this_run.add(todo.identifier)
                 self._overview(f"Reviewed original task {todo.identifier}; mutable plan removed/retired it; no DONE written")
-                return
+                return True
             frozen = getattr(self, "review_contracts", {}).get(todo.identifier)
             if frozen is not None and headers_now[todo.identifier][0] != "DONE":
                 from decision_request import snapshot_todo
@@ -1884,8 +1947,11 @@ class TodoRunner:
                     reference_prompt=original['original_request'],
                     attempt_prompt=original['original_request'], source=str(self.todo_file))
                 if current_snapshot.task_text != original['task_text']:
+                    if self._poll_process_stop():
+                        return False
+                    self.reviewed_this_run.add(todo.identifier)
                     self._overview(f"Reviewed original task {todo.identifier}; changed revision remains open")
-                    return
+                    return True
         lines = text.splitlines(keepends=True)
         changed = False
         headers = dict(task_headers(text))
@@ -1894,8 +1960,11 @@ class TodoRunner:
                 continue
             status = canonical_status(match.group(2))
             if status == "DONE":
+                if self._poll_process_stop():
+                    return False
+                self.reviewed_this_run.add(todo.identifier)
                 print(f"[info] ToDo {todo.identifier} ist bereits als DONE markiert; keine Änderung nötig.")
-                return
+                return True
             if status == "OBSOLETE":
                 raise RuntimeError(f"ToDo {todo.identifier} wurde während der Bearbeitung OBSOLETE; kein DONE wird geschrieben.")
             syntax = effective_syntax(text, self.todo_syntax)
@@ -1918,8 +1987,13 @@ class TodoRunner:
             break
         if not changed:
             raise RuntimeError(f"ToDo {todo.identifier} kann nicht als DONE markiert werden: Eintrag nicht gefunden.")
-        self.plan_authority.replace_approved("".join(lines))
+        if self._poll_process_stop():
+            return False
+        self.plan_authority.replace_approved(
+            "".join(lines), expected_text=text, task_id=todo.identifier)
+        self.reviewed_this_run.add(todo.identifier)
         print(f"[info] ToDo {todo.identifier} wurde im ToDo-File als DONE markiert.")
+        return True
 
     @staticmethod
     def _path_within(path: Path, parent: Path) -> bool:
@@ -2212,6 +2286,7 @@ class TodoRunner:
         todos = self._parse_todo_file()
         batch: List[TodoItem] = []
         ordered = list(_todo_line_map(read_utf8(self.todo_file)))
+        barrier = self._stop_barrier_position(ordered)
         if self.stop_id and self.stop_id not in ordered:
             raise RuntimeError(f"Stop-ToDo {self.stop_id} fehlt; Parallelgruppe wird nicht gestartet.")
         stop_position = ordered.index(self.stop_id) if self.stop_id else None
@@ -2222,6 +2297,8 @@ class TodoRunner:
                     continue
                 seed_found = True
             if stop_position is not None and ordered.index(item.identifier) > stop_position:
+                break
+            if barrier is not None and ordered.index(item.identifier) >= barrier:
                 break
             if self.allow_todo_modifications and self._initial_stop_scope is not None and item.identifier not in self._initial_stop_scope:
                 continue
@@ -2236,17 +2313,20 @@ class TodoRunner:
             if self._stop_marker_before(item):
                 break
             batch.append(item)
-        return batch or [seed_todo]
+        return batch
 
     def _run_parallel_group(self, seed_todo: TodoItem) -> bool:
         group = seed_todo.config.get("parallel")
         if not group:
             return False
         batch = self._collect_parallel_group_batch(seed_todo)
+        if not batch:
+            self.stop_marker_triggered = self.stop_triggered = True
+            return True
         for item in batch:
             if not self._wait_directives_allow_execution(item):
                 self.stop_triggered = True
-                self.exit_code = EXIT_INCOMPLETE
+                self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP if self.process_stop_detected else EXIT_INCOMPLETE
                 return True
         resolved_workspaces: Set[Path] = set()
         for item in batch:
@@ -2256,11 +2336,14 @@ class TodoRunner:
                     f"ToDo {item.identifier}: parallele Ausführung erfordert CFG workspace=<unterpfad>."
                 )
             resolved_workspace = self._resolve_directive_workspace(raw_workspace)
-            if resolved_workspace in resolved_workspaces:
+            if resolved_workspace == self.workdir or any(
+                    resolved_workspace.is_relative_to(existing) or existing.is_relative_to(resolved_workspace)
+                    for existing in resolved_workspaces):
                 raise RuntimeError(
-                    f"ToDo {item.identifier}: Parallelgruppe '{group}' enthält doppelte Workspace-Zuordnung ({resolved_workspace})."
+                    f"ToDo {item.identifier}: Parallelgruppe '{group}' enthält doppelte Workspace-Zuordnung oder überlappende Workspaces ({resolved_workspace})."
                 )
             resolved_workspaces.add(resolved_workspace)
+        self._active_parallel_stop_paths = tuple(path / "process_stop" for path in sorted(resolved_workspaces))
         outcomes: Dict[str, Tuple[TaskOutcome, TodoExecutionContext, Path]] = {}
         if len(batch) == 1:
             todo = batch[0]
@@ -2288,6 +2371,9 @@ class TodoRunner:
                     todo = future_map[future]
                     try:
                         outcomes[todo.identifier] = future.result()
+                        observed = outcomes[todo.identifier][0]
+                        if observed.process_stop_triggered:
+                            self._observe_outcome_stop(observed)
                     except Exception as exc:
                         print(
                             f"[warn] ToDo {todo.identifier}: parallele Ausführung fehlgeschlagen ({exc})."
@@ -2314,6 +2400,8 @@ class TodoRunner:
         stop_requested = False
         for todo in batch:
             outcome, context, primary_result_file = outcomes[todo.identifier]
+            outcome = self._stop_outcome_if_requested(outcome)
+            outcomes[todo.identifier] = outcome, context, primary_result_file
             self._observe_outcome_stop(outcome)
             if outcome.abort or outcome.process_stop_triggered or outcome.execution_error:
                 outcome.completed = False
@@ -2323,9 +2411,12 @@ class TodoRunner:
             print(f"[run] ToDo {todo.identifier} – {todo.title}")
             self.attempted.add(todo.identifier)
             if outcome.completed:
-                print(f"[ok]   ToDo {todo.identifier} abgeschlossen.")
                 self._finalize_post_todo_log(outcome)
-                self._mark_todo_as_done(todo)
+                if not self._mark_todo_as_done(todo):
+                    outcome = self._stop_outcome_if_requested(outcome)
+                    outcomes[todo.identifier] = outcome, context, primary_result_file
+            if outcome.completed:
+                print(f"[ok]   ToDo {todo.identifier} abgeschlossen.")
                 self.completed.add(todo.identifier)
                 self.incomplete.discard(todo.identifier)
                 self.failed.discard(todo.identifier)
@@ -2387,6 +2478,7 @@ class TodoRunner:
             self.completed_parallel_groups.add(group)
         if self.terminal_execution_error:
             self.exit_code = failure_exit_code(self.terminal_execution_error)
+        self._active_parallel_stop_paths = ()
         return stop_requested
 
     def _stop_for_execution_error(self, todo_id: str, outcome: TaskOutcome) -> TaskOutcome:
@@ -2460,7 +2552,8 @@ class TodoRunner:
             return replace(outcome, completed=False)
         if outcome.completed:
             self._finalize_post_todo_log(outcome)
-            self._mark_todo_as_done(todo)
+            if not self._mark_todo_as_done(todo):
+                return self._stop_outcome_if_requested(outcome)
             self.completed.add(todo.identifier)
             self.incomplete.discard(todo.identifier)
             self.failed.discard(todo.identifier)
@@ -3047,11 +3140,20 @@ class TodoRunner:
         if not hasattr(self, "review_contracts"):
             self.review_contracts = {}
         if todo_id not in self.review_contracts:
+            accepted = self.plan_authority.snapshot()
             snapshot = snapshot_todo(
-                read_input_text(todo_file), task_id=todo_id,
+                accepted, task_id=todo_id,
                 reference_prompt=task_text, attempt_prompt=task_text,
                 source=str(todo_file),
             )
+            if todo_file != self.todo_file:
+                copied = snapshot_todo(
+                    read_input_text(todo_file), task_id=todo_id,
+                    reference_prompt=task_text, attempt_prompt=task_text,
+                    source=str(todo_file),
+                )
+                if (copied.task_text, copied.preamble) != (snapshot.task_text, snapshot.preamble):
+                    raise PlanIntegrityError('Copied task plan differs from the accepted original contract.')
             contract_text = json.dumps({
                 "schema_version": "arquilo.review_contract.v1",
                 "original_request": task_text, "task_text": snapshot.task_text,
@@ -3062,10 +3164,14 @@ class TodoRunner:
             self.review_contracts[todo_id] = (contract_path, contract_text)
 
     def _run_autobuild(self, identifier: str, task_text: str, **kwargs) -> TaskOutcome:
+        if self._poll_process_stop():
+            return TaskOutcome(completed=False, message="process_stop blocks dispatch",
+                               process_stop_triggered=True, process_stop_details=self.process_stop_details)
         self.plan_authority.check()
         active_file = kwargs.get("todo_file_override") or self.todo_file
         before = read_utf8(active_file)
         outcome = self._run_autobuild_impl(identifier, task_text, **kwargs)
+        outcome = self._stop_outcome_if_requested(outcome)
         self._observe_outcome_stop(outcome)
         if self.dry_run:
             return outcome
@@ -3286,6 +3392,8 @@ class TodoRunner:
                                      if self.runtime_profile_active else None),
                 budget_directory=budget.directory, budget_root_id=budget.root_id,
                 allow_todo_modifications=self.allow_todo_modifications,
+                process_stop_paths=(self.process_stop_path, *getattr(self, "_active_parallel_stop_paths", ())),
+                launcher_workspace=self.workdir,
             )
             try:
                 if use_cli_subprocess:
@@ -3309,6 +3417,7 @@ class TodoRunner:
                     summary_json=None,
                     summary_json_attempts=list(summary_paths),
                 )
+                self._observe_outcome_stop(outcome)
                 outcome = self._attach_log_metadata(
                     outcome,
                     todo_id=todo_id,
@@ -3328,6 +3437,8 @@ class TodoRunner:
                         summary.process_stop_details = stop_reason(self._read_process_stop_details(candidate))
                         break
                 validated_summary = validate_result(autobuild_summary_document(summary))
+            if validated_summary.get("process_stop_triggered"):
+                self._observe_outcome_stop(summary)
             terminal = validated_summary.get("terminal_attempt")
             capture_directory = (Path(terminal["capture_directory"]) if terminal is not None
                                  and terminal["capture_directory"] is not None else None)
@@ -3845,25 +3956,11 @@ class TodoRunner:
                 base_content=context.questions_seed_content,
                 label=f"ToDo {context.todo_identifier or 'unknown'} Fragen",
             )
-            if context.process_stop_path.exists():
-                try:
-                    details = read_utf8(context.process_stop_path)
-                except OSError:
-                    details = ""
-                if details:
-                    existing = (
-                        self._read_text_file_if_exists(self.process_stop_path) or ""
-                    )
-                    if details not in existing:
-                        safe_io.mkdir(self.process_stop_path.parent)
-                        if existing:
-                            merged_details = existing
-                            if not merged_details.endswith("\n"):
-                                merged_details += "\n"
-                            merged_details += f"\n---\n{details}"
-                            self._atomic_write_text(self.process_stop_path, merged_details)
-                        else:
-                            self._atomic_write_text(self.process_stop_path, details)
+            if os.path.lexists(context.process_stop_path):
+                if (not os.path.lexists(self.process_stop_path)
+                        or self._read_process_stop_details() is not None):
+                    self._append_process_stop_details(
+                        stop_reason(self._read_process_stop_details(context.process_stop_path)))
 
     def _wait_condition_is_met(self, expression: str) -> bool:
         value = expression.strip()
@@ -3883,6 +3980,8 @@ class TodoRunner:
         return self._todo_status_map().get(value) == "DONE"
 
     def _wait_directives_allow_execution(self, todo: TodoItem) -> bool:
+        if self._poll_process_stop():
+            return False
         if not todo.wait_directives:
             return True
         if self.process_stop_detected or self.stop_triggered:
@@ -3904,10 +4003,12 @@ class TodoRunner:
             done = all(checks) if mode != "any" else any(checks)
             while not done and deadline is not None and time.monotonic() < deadline:
                 time.sleep(0.5)
-                if self.process_stop_detected or self.stop_triggered:
+                if self._poll_process_stop() or self.stop_triggered:
                     return False
                 checks = [self._wait_condition_is_met(expr) for expr in expressions]
                 done = all(checks) if mode != "any" else any(checks)
+            if self._poll_process_stop():
+                return False
             if done:
                 continue
             on_timeout = str(wait_cfg.get("on_timeout", "stop")).strip().lower()
@@ -3920,7 +4021,23 @@ class TodoRunner:
                 f"[fatal] WAIT-Bedingung für ToDo {todo.identifier} nicht erfüllt: {wait_cfg.get('on')}"
             )
             return False
-        return True
+        return not self._poll_process_stop()
+
+    def _stop_barrier_position(self, ordered: List[str]) -> Optional[int]:
+        """STOP acts within owner scope before depth, status or processed filters."""
+        text = read_utf8(self.todo_file)
+        visible = dict(visible_lines(text))
+        stop_position = ordered.index(self.stop_id) if self.stop_id in ordered else None
+        for index, match in task_headers(text):
+            identifier = match.group(1)
+            if identifier in self.skip_before_ids:
+                continue
+            position = ordered.index(identifier)
+            if stop_position is not None and position > stop_position:
+                break
+            if visible.get(index - 1, "").strip() == self.STOP_SENTINEL:
+                return position
+        return None
 
     def _next_todo(self) -> Optional[TodoItem]:
         todos = self._parse_todo_file()
@@ -3933,7 +4050,10 @@ class TodoRunner:
         if self.stop_id and self.stop_id not in ordered:
             raise RuntimeError(f"Stop-ToDo {self.stop_id} fehlt; keine weiteren Aufgaben werden gestartet.")
         stop_position = ordered.index(self.stop_id) if self.stop_id in ordered else None
+        barrier = self._stop_barrier_position(ordered)
         for item in todos:
+            if barrier is not None and ordered.index(item.identifier) >= barrier:
+                break
             if self.allow_todo_modifications and self._initial_stop_scope is not None and item.identifier not in self._initial_stop_scope:
                 continue
             if item.identifier in self.skip_before_ids or item.identifier in self.processed:
@@ -3943,6 +4063,8 @@ class TodoRunner:
             if item.depth > self.max_depth:
                 continue
             return item
+        if barrier is not None:
+            self.stop_marker_triggered = self.stop_triggered = True
         return None
 
     def _parse_todo_file(self) -> List[TodoItem]:
@@ -3977,7 +4099,7 @@ class TodoRunner:
         self, trigger_parent: Optional[str] = None, force: bool = False
     ) -> None:
         self._ensure_runtime_tracking_state()
-        if not self.pending_reviews or self.process_stop_detected:
+        if not self.pending_reviews or self._poll_process_stop():
             return
 
         status_map = self._todo_status_map()
@@ -4079,6 +4201,8 @@ class TodoRunner:
                 return
             if review.passed:
                 parent_todo = self._find_open_todo_item(parent)
+                if self._poll_process_stop():
+                    return
                 if parent_todo is None:
                     # It may already have been marked DONE by a resumed controller.
                     if self._todo_status_map().get(parent) != "DONE":
@@ -4097,7 +4221,10 @@ class TodoRunner:
                         )
                         return
                 else:
-                    self._mark_todo_as_done(parent_todo)
+                    if not self._mark_todo_as_done(parent_todo):
+                        return
+                if self._poll_process_stop():
+                    return
                 self.completed.add(parent)
                 self.incomplete.discard(parent)
                 self.failed.discard(parent)
@@ -4601,6 +4728,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         workdir = (
             args.workdir.expanduser().resolve() if args.workdir else todo_path.parent
         )
+        if os.path.lexists(workdir / "process_stop"):
+            print("[fatal] process_stop blocks startup before preflight.", file=sys.stderr)
+            return RUN_TODOS_EXIT_PROCESS_STOP
         # Reject missing/invalid context before even the optional Codex
         # capability preflight. Dispatch still captures the live file afresh.
         try:
@@ -4664,11 +4794,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         try:
+            if os.path.lexists(workdir / "process_stop"):
+                runner.run()
+                return RUN_TODOS_EXIT_PROCESS_STOP
             if not args.dry_run:
                 run_runtime_profile_preflight(runtime_profile, workdir=workdir, todo_file=todo_path)
+            if os.path.lexists(workdir / "process_stop"):
+                runner.run()
+                return RUN_TODOS_EXIT_PROCESS_STOP
             if not args.skip_codex_preflight:
                 run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
                     model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts,
+                    workdir=workdir,
                     **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:

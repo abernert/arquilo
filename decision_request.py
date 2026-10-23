@@ -18,7 +18,8 @@ import re
 from typing import Any
 
 from runtime_contracts import DecisionResult
-from runtime_files import native_path
+from runtime_files import validate_path
+import safe_io
 from todo_syntax import task_headers
 
 DEFAULT_MAX_INPUT_BYTES = 1024 * 1024
@@ -73,13 +74,14 @@ def read_input_text(path: str | Path, *, limit: int = DEFAULT_MAX_INPUT_BYTES) -
     """Bounded read; an initial UTF-8 BOM is allowed, line endings are preserved."""
     _limit(limit)
     try:
-        path = native_path(path, label="decision input")
+        validate_path(path, label="decision input")
+        path = safe_io.lexical_path(path)
     except (TypeError, ValueError, OSError) as exc:
         raise DecisionInputError("decision_input_unreadable", "input_path", str(exc)) from exc
     try:
-        with path.open("rb") as stream:
+        with safe_io.open_file(path, "rb") as stream:
             data = stream.read(limit + 1)
-    except OSError as exc:
+    except (OSError, safe_io.UnsafePathError) as exc:
         raise DecisionInputError("decision_input_unreadable", str(path), str(exc)) from exc
     if len(data) > limit:
         raise DecisionInputError("decision_input_too_large", str(path),

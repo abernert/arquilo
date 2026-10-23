@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.9.1 — 2026-10-23 (public preview; foundational control repairs)
+
+- Derive review provenance from the actual input format. A failed review or
+  any blocking issue vetoes completion before Decide, at AutoBuild completion,
+  and at the private worker-result boundary. Preserve legitimate legacy review
+  compatibility and its required semantic decision.
+- Bind DONE and breakdown adoption to the exact accepted/validated plan bytes.
+  DONE may change only the selected open task's command token. Capture original
+  contracts from accepted plan evidence; use bounded no-follow input reads.
+- Preserve existing state keys and spent budgets. Register physical plan
+  identity under an allocation lock; reject alternate path spellings that would
+  create a second state or put controller state inside the model workspace.
+  Incomplete legacy budget-only state still requires the original paths.
+- Enforce STOP before selection filters, during WAIT, before startup preflights
+  and at final acceptance. Share root/peer sentinels with Python workers and
+  publish a validated worker stop before output copying. Opaque stop sentinels
+  still cancel; they do not authorize reading linked targets. Reject overlapping
+  parallel workspaces, including a parallel workspace equal to the root.
+- Resolve controller Codex/Git launchers through absolute external host paths,
+  sanitize child PATH, retain the supported Windows npm launcher, and pin Git
+  selection for the run. Project-local or relative controller launchers are no
+  longer accepted. Linked decision input files are also refused.
+- Add offline regressions with real plan journals, restart, synchronized file
+  mutation, real Python workers and synthetic host programs. Historical DONE
+  entries and spent budgets are not rewritten. Git review-snapshot/push binding
+  and broader process supervision remain separate work.
+- Update the controller and Python workers together; keep the same workspace,
+  task-file and state-root paths. Normal host installations such as
+  `~/.local/bin/codex` remain supported when outside the selected workspaces.
+
 ## 0.9.0 — 2026-10-21 (public preview)
 
 - Externalize 53 built-in model-facing prompt elements into human-readable TOML

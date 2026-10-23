@@ -95,7 +95,7 @@ class Fixture(unittest.TestCase):
     def launch(self, scenarios):
         original = transport._start_process
         count = 0
-        def start(command, *, cwd, env):
+        def start(command, *, cwd, env, launcher_workspace=None):
             nonlocal count
             if count >= len(scenarios):
                 raise AssertionError("An unapproved additional phase/retry was started")
@@ -105,7 +105,8 @@ class Fixture(unittest.TestCase):
                 spec.update(stop=str(self.stop), reason=STOP)
             path = self.base / f"scenario-{count}.json"
             path.write_text(json.dumps(spec), encoding="utf-8")
-            proc = original([sys.executable, "-B", str(self.stub), str(path)], cwd=cwd, env=env)
+            proc = original([sys.executable, "-B", str(self.stub), str(path)], cwd=cwd, env=env,
+                            launcher_workspace=launcher_workspace)
             self.processes.append(proc)
             if spec.get("ready_before_launch_return"):
                 # Timeout sequences must begin with their intended event,

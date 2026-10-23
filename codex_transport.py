@@ -38,6 +38,7 @@ import codex_policy
 import mcp_selection
 from task_resources import selection, ResourceError
 from codex_launcher import resolve_launcher
+from host_launcher import launcher_environment
 from process_tree import InterruptiblePipe, ProcessTree, ProcessTreeError, REAP_TIMEOUT, finish_cleanup
 from runtime_files import atomic_write_text, native_path, safe_component, unique_directory
 
@@ -72,6 +73,7 @@ class CodexExecRequest:
     output_schema: Path | None = None
     output_last_message: Path | None = None
     launcher: tuple[str, ...] = ("codex",)
+    launcher_workspace: Path | None = None
     extra_args: tuple[str, ...] = ()
     sandbox: str | None = "workspace-write"
     config_profile: str | None = None
@@ -129,6 +131,13 @@ class CodexExecRequest:
         object.__setattr__(self, "env", MappingProxyType(env))
         cwd = native_path(self.cwd, label="Codex cwd")
         object.__setattr__(self, "cwd", cwd)
+        if self.launcher_workspace is not None:
+            from runtime_files import validate_path
+            validate_path(self.launcher_workspace, label="launcher_workspace")
+            if not Path(self.launcher_workspace).is_absolute():
+                raise ValueError("launcher_workspace must be an explicit absolute path")
+            object.__setattr__(self, "launcher_workspace",
+                               native_path(self.launcher_workspace, label="launcher_workspace"))
         for name in ("raw_log", "pretty_log", "output_schema", "output_last_message", "process_stop_path"):
             value = getattr(self, name)
             if value is not None:
@@ -179,16 +188,21 @@ def build_command(request: CodexExecRequest) -> list[str]:
     return cmd
 
 
-def _start_process(command: Sequence[str], *, cwd: Path, env: Mapping[str, str]) -> subprocess.Popen:
+def _start_process(command: Sequence[str], *, cwd: Path, env: Mapping[str, str],
+                   launcher_workspace: Path | None = None) -> subprocess.Popen:
     """The sole Codex process-start boundary, including the version probe."""
     cwd = native_path(cwd, label="Codex cwd")
-    launcher = resolve_launcher(command[0], cwd=cwd, env=env)
+    if launcher_workspace is not None:
+        env = launcher_environment(env, workspace=launcher_workspace)
+    launcher = resolve_launcher(command[0], cwd=cwd, env=env,
+                                additional_workspace=launcher_workspace)
     argv = [*launcher.argv, *command[1:]]
+    child_env = launcher_environment(env, workspace=cwd, executable=launcher.argv[0])
     tree = ProcessTree()
     proc = None
     try:
         proc = subprocess.Popen(
-            argv, cwd=str(cwd), env=dict(env), shell=False,
+            argv, cwd=str(cwd), env=child_env, shell=False,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=False, bufsize=0, **tree.popen_options,
         )
@@ -207,7 +221,8 @@ def probe_mcp_inventory(arguments: Sequence[str], *, request: CodexExecRequest) 
     if reason := _cancellation_reason(request):
         raise mcp_selection.McpInventoryCancelled(reason)
     command = [*request.launcher, *arguments]
-    proc = _start_process(command, cwd=request.cwd, env=request.env)
+    proc = _start_process(command, cwd=request.cwd, env=request.env,
+                          launcher_workspace=request.launcher_workspace)
     try:
         import time
         deadline = time.monotonic() + 30
@@ -252,11 +267,12 @@ def metadata_probe_arguments(probe: str) -> list[str]:
 
 
 def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
-                       env: Mapping[str, str], timeout: float) -> subprocess.CompletedProcess:
+                       env: Mapping[str, str], timeout: float,
+                       launcher_workspace: Path | None = None) -> subprocess.CompletedProcess:
     """Cost-free introspection using the same launcher and owned process tree."""
     codex_policy.validate_launcher(launcher)
     command = [*launcher, *metadata_probe_arguments(probe)]
-    proc = _start_process(command, cwd=cwd, env=env)
+    proc = _start_process(command, cwd=cwd, env=env, launcher_workspace=launcher_workspace)
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except BaseException:
@@ -276,7 +292,8 @@ def probe_cli_metadata(*, probe: str, launcher: Sequence[str], cwd: Path,
 def inspect_decision_cli(*, launcher: Sequence[str], cwd: Path, env: Mapping[str, str],
                          model: str | None = None, config_profile: str | None = None,
                          timeout: float = 10,
-                         cancel_requested: Callable[[], str | None] | None = None) -> dict:
+                         cancel_requested: Callable[[], str | None] | None = None,
+                         launcher_workspace: Path | None = None) -> dict:
     """Verify only the flags the upcoming call needs, without loading user config."""
     report = {"status": "FAIL", "flags": {}, "probes": [], "interrupted": False,
               "detail": "Codex Exec capabilities could not be read."}
@@ -286,7 +303,8 @@ def inspect_decision_cli(*, launcher: Sequence[str], cwd: Path, env: Mapping[str
             report.update(interrupted=True, detail="Decide cancelled before CLI check.")
             return report
         report["probes"].append(record)
-        result = probe_cli_metadata(probe="help", launcher=launcher, cwd=cwd, env=env, timeout=timeout)
+        result = probe_cli_metadata(probe="help", launcher=launcher, cwd=cwd, env=env, timeout=timeout,
+                                    launcher_workspace=launcher_workspace)
         record.update(exit_code=result.returncode, stderr_present=bool(result.stderr))
         if cancel_requested is not None and cancel_requested():
             report.update(interrupted=True, detail="Decide cancelled during CLI check.")
@@ -857,7 +875,8 @@ def _run(request: CodexExecRequest, acc: RunResult, prompt_bytes: bytes) -> RunR
         append(pretty_log, f"[{ts()}] [cancelled] {cancellation}\n")
         return acc
     try:
-        proc = _start_process(cmd, cwd=cwd, env=request.env)
+        proc = _start_process(cmd, cwd=cwd, env=request.env,
+                              launcher_workspace=request.launcher_workspace)
     except OSError as exc:
         raise CodexExecutionError(acc, execution_error(
             f"Cannot execute Codex: {exc}", code="codex_launch_failed", phase=request.phase,
@@ -1313,6 +1332,7 @@ def execute(request: CodexExecRequest) -> TransportResult:
                 launcher=request.launcher, cwd=request.cwd, env=request.env,
                 model=request.model, config_profile=request.config_profile,
                 cancel_requested=lambda: _cancellation_reason(request),
+                launcher_workspace=request.launcher_workspace,
             )
             trace.capture["decision_cli_compatibility"] = compatibility
             trace.capture["configuration_policy"] = "inherit-trusted-host"

@@ -98,7 +98,9 @@ class PlanTests(Fixture):
 
     def test_approved_transition_and_restart(self):
         a = self.authority()
-        new = PLAN.replace('1. ***TASK***', '1. ***DONE***')
+        # Windows text-mode fixtures use CRLF. A permitted status transition
+        # must preserve the actual accepted bytes, including its line endings.
+        new = a.snapshot().replace('1. ***TASK***', '1. ***DONE***')
         a.replace_approved(new)
         a.close()
         b = self.authority()

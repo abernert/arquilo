@@ -279,7 +279,7 @@ def _invalid_review(message: str) -> Dict[str, Any]:
     }
 
 
-def _review_protocol_error(payload: Dict[str, Any]) -> Optional[str]:
+def _review_protocol_error(payload: Dict[str, Any], *, normalized: bool = False) -> Optional[str]:
     allowed = {"verdict", "short_summary", "issues", "blocking_issues",
                "non_blocking_observations", "breakdown_recommended", "breakdown_reason",
                "schema_version", "source_format", "valid"} | CONFIDENCE_FIELDS
@@ -318,9 +318,9 @@ def _review_protocol_error(payload: Dict[str, Any]) -> Optional[str]:
             continue
         return f"Review {key} contains an empty or malformed issue."
     if explicit:
-        # Normalized legacy results retain their declared weaker input format.
-        # They remain FAIL when blocked and cannot acquire a fabricated PASS.
-        normalized_legacy = (payload.get("schema_version") == "autobuild.review.v2"
+        # Only controller-normalized records can have legacy issue fields.
+        # A raw JSON reviewer cannot opt into this path by declaring provenance.
+        normalized_legacy = (normalized and payload.get("schema_version") == "autobuild.review.v2"
                              and payload.get("source_format") in {"json_legacy", "text_legacy"})
         seen_ids = set()
         for item in issues:
@@ -383,7 +383,36 @@ def parse_review_classification(review_findings: str) -> Dict[str, Any]:
 
     Only explicit blocking issues determine PASS/FAIL. Optional observations
     remain visible but never force an additional repair loop or breakdown.
+    Input format is determined by this parser, never by reviewer metadata.
     """
+    return _parse_review_classification(review_findings, normalized=False)
+
+
+def validate_review_classification(classification: Any) -> Dict[str, Any]:
+    """Validate an internal review record without reinterpreting its provenance.
+
+    Use parse_review_classification for raw model output. Controller summaries
+    carry the already parsed source format, including legacy prose whose issue
+    records do not have structured requirement fields. Retaining that metadata
+    never grants completion: every format must still satisfy the same verdict
+    and blocker checks. Historical review dictionaries without normalization
+    metadata remain accepted; partially annotated internal records do not.
+    """
+    if not isinstance(classification, dict):
+        return _invalid_review("Review classification must be an object.")
+    metadata = {"schema_version", "source_format", "valid"}
+    if metadata.intersection(classification) and not metadata.issubset(classification):
+        # Missing provenance must not reinterpret parsed prose as structured
+        # JSON and thereby remove its mandatory semantic decision.
+        return _invalid_review("Normalized review requires schema_version, source_format and valid.")
+    try:
+        encoded = json.dumps(classification, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError, RecursionError):
+        return _invalid_review("Review classification must be finite JSON.")
+    return _parse_review_classification(encoded, normalized=True)
+
+
+def _parse_review_classification(review_findings: str, *, normalized: bool) -> Dict[str, Any]:
 
     if not isinstance(review_findings, str):
         return _invalid_review("Reviewer output must be text.")
@@ -421,7 +450,7 @@ def parse_review_classification(review_findings: str) -> Dict[str, Any]:
             json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         except (ValueError, UnicodeError, RecursionError):
             return _invalid_review("Review contains invalid Unicode or non-finite JSON data.")
-        protocol_error = _review_protocol_error(payload)
+        protocol_error = _review_protocol_error(payload, normalized=normalized)
         if protocol_error:
             return _invalid_review(protocol_error)
     elif cleaned.startswith(("{", "[", "```")) or cleaned.lower() in {"null", "true", "false"}:
@@ -490,8 +519,8 @@ def parse_review_classification(review_findings: str) -> Dict[str, Any]:
             breakdown_reason = str(breakdown_raw_reason).strip() or None
 
     if payload is None:
-        normalized = cleaned.lstrip("-•* ").lower()
-        normalized_plain = normalized.replace("**", "").replace("__", "")
+        normalized_prose = cleaned.lstrip("-•* ").lower()
+        normalized_plain = normalized_prose.replace("**", "").replace("__", "")
         no_issue_prefixes = (
             "no issues",
             "no_issues",
@@ -507,7 +536,7 @@ def parse_review_classification(review_findings: str) -> Dict[str, Any]:
                 _normalize_blocking_review_issue(line, index)
                 for index, line in enumerate(explicit_blocking_lines, start=1)
             ]
-        elif normalized.startswith(no_issue_prefixes) or explicit_no_blocking:
+        elif normalized_prose.startswith(no_issue_prefixes) or explicit_no_blocking:
             short_summary = cleaned
         else:
             non_blocking_markers = (
@@ -538,14 +567,16 @@ def parse_review_classification(review_findings: str) -> Dict[str, Any]:
             if blocking
             else "No blocking issues remain."
         )
+    source_format = "text_legacy" if payload is None else (
+        "structured" if explicit_contract else "json_legacy")
+    if normalized and payload is not None and payload.get("schema_version") == "autobuild.review.v2":
+        source_format = payload.get("source_format", source_format)
     return {
         "schema_version": "autobuild.review.v2",
         "valid": True,
-        # Normalized legacy reviews use explicit fields but retain their validated input format.
-        "source_format": (
-            payload.get("source_format", "structured" if explicit_contract else "json_legacy")
-            if payload is not None else "text_legacy"
-        ),
+        # Raw JSON always has a JSON format. Only the separate internal record
+        # validator retains provenance previously assigned by this parser.
+        "source_format": source_format,
         "verdict": verdict,
         "short_summary": short_summary,
         "blocking_issues": blocking,
@@ -566,10 +597,7 @@ def review_classification_passes(classification: Any) -> bool:
 
     if not isinstance(classification, dict):
         return False
-    try:
-        classification = parse_review_classification(json.dumps(classification, allow_nan=False))
-    except (TypeError, ValueError, RecursionError):
-        return False
+    classification = validate_review_classification(classification)
     issues = classification.get("blocking_issues")
     return (
         classification.get("valid") is True

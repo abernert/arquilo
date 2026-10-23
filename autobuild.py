@@ -34,6 +34,7 @@ from review_contract import (
     review_requires_runner_handling, build_review_context_reference,
 )
 import codex_transport
+from host_launcher import launcher_environment, trusted_path
 from runtime_config import environment_value, transport_timeout_values
 import codex_policy
 from task_resources import TaskResources, SkillCatalog, bind_resources, add_resource_arguments
@@ -698,6 +699,7 @@ def run_codex_exec_json(
     phase: str = "execution",
     config_profile: Optional[str] = None,
     mcp_servers: Optional[Sequence[str]] = None,
+    launcher_workspace: Optional[Path] = None,
 ) -> RunResult:
     """Compatibility adapter; process state belongs to codex_transport.execute."""
     request = codex_transport.CodexExecRequest(
@@ -707,6 +709,7 @@ def run_codex_exec_json(
         verbose=verbose, model=model, reasoning_effort=reasoning_effort,
         network_access=network_access, env=dict(os.environ) if env is None else env,
         config_profile=config_profile, mcp_servers=mcp_servers,
+        launcher_workspace=launcher_workspace,
         process_stop_path=process_stop_path, cancel_requested=cancel_requested,
         console_todo_id=console_todo_id, phase=phase,
         timeouts=timeouts if timeouts is not None else codex_transport.TransportTimeouts(
@@ -841,9 +844,17 @@ def evaluate_completion_decision(
         raise DecisionInputError("decision_missing_input", "task_snapshot", "Concrete task evidence is required")
     if type(latest_answer) is not str or not latest_answer.strip():
         raise DecisionInputError("decision_missing_input", "latest_answer", "The production answer is required")
+    # A known FAIL/blocker is a controller veto in every input format. Decide
+    # may interpret non-blocking legacy prose, but cannot waive a review defect.
+    blocking = classification.get("blocking_issues")
+    blocking_count = len(blocking) if isinstance(blocking, list) else 0
+    if classification.get("verdict") == "FAIL" or blocking_count:
+        return DecisionResult(
+            is_finished=False, selected_option="INCOMPLETE",
+            explanation=prompts.render("decision_result_incomplete", count=blocking_count),
+            source="review_contract", fallback_used=False,
+        )
     if classification.get("source_format") in {"structured", "json_legacy"}:
-        blocking = classification.get("blocking_issues")
-        blocking_count = len(blocking) if isinstance(blocking, list) else 0
         return DecisionResult(
             is_finished=blocking_count == 0,
             selected_option="COMPLETE" if blocking_count == 0 else "INCOMPLETE",
@@ -928,6 +939,7 @@ def start(
     # Revalidate at the execution boundary, including objects changed after
     # construction; reject before reading task files or setting up a workspace.
     options.__post_init__()
+    context.__post_init__()
     prompts = options.prompt_config
     sandbox, network_access = options.sandbox, options.network_access
     config_profile = options.config_profile
@@ -964,6 +976,16 @@ def start(
     single_file = native_path(file, label="file") if file else None
 
     workspace, _ = setup_workspace(workdir_path, single_file)
+    # A CFG task cwd can be narrower than the model-writable primary workspace.
+    # Keep that controller boundary through private-worker serialization, while
+    # retaining the active cwd boundary for standalone/external task workspaces.
+    launcher_workspace = Path(context.launcher_workspace) if context.launcher_workspace is not None else workspace
+
+    def host_environment(source):
+        return launcher_environment(
+            launcher_environment(source, workspace=launcher_workspace), workspace=workspace)
+
+    child_env = host_environment(os.environ)
     if options.skills is not None:
         task_text = bind_resources(task_text, TaskResources(skills=options.skills),
             SkillCatalog(workdir=workspace, roots=options.skill_dirs), prompt_config=prompts)
@@ -975,6 +997,29 @@ def start(
                 f"process_stop aktiv unter {candidate}. Lösche die Datei, bevor AutoBuild startet."
             )
         process_stop_full = candidate
+    # Controller-selected root/peer sentinels survive worker serialization. A
+    # stop is latched for this attempt, even if its file is subsequently removed.
+    stop_paths = tuple(dict.fromkeys(
+        ([process_stop_full] if process_stop_full is not None else [])
+        + [safe_io.lexical_path(path) for path in context.process_stop_paths]))
+    latched_stop_reason: Optional[str] = None
+
+    def process_stop_requested() -> Optional[str]:
+        nonlocal latched_stop_reason
+        if latched_stop_reason is None:
+            for path in stop_paths:
+                if os.path.lexists(path):
+                    try:
+                        details = safe_io.read_bytes(path).decode("utf-8", errors="replace").strip()
+                    except (OSError, ValueError):
+                        details = None
+                    latched_stop_reason = stop_reason(details)
+                    break
+        return latched_stop_reason
+
+    initial_stop = process_stop_requested()
+    if initial_stop:
+        raise ProcessStopActiveError(initial_stop)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     default_logs = (unique_directory(workspace / ".codex_runs", prefix=f"run_{stamp}")
                     if logfile is None or rawlog is None else None)
@@ -1021,9 +1066,12 @@ def start(
         )
         extra_args = list(base_extra_args)
         try:
+            reason = process_stop_requested()
+            if reason:
+                return RunResult(process_stop_triggered=True, process_stop_details=reason)
             claim = call_budget.consume(todo_identifier or "standalone", budget_phase(stage))
             append(pretty_log, f"[{ts()}] [call_budget] {json.dumps(claim, ensure_ascii=False)}\n")
-            return run_codex_exec_json(
+            result = run_codex_exec_json(
                 prompt=prompt,
                 cwd=workspace,
                 sandbox=effective_sandbox,
@@ -1035,13 +1083,20 @@ def start(
                 model=model,
                 reasoning_effort=reasoning_effort,
                 process_stop_path=process_stop_full,
+                cancel_requested=process_stop_requested,
                 console_todo_id=todo_identifier,
                 phase=stage,
                 network_access=network_access,
                 config_profile=config_profile,
+                env=child_env,
+                launcher_workspace=launcher_workspace,
                 **({"mcp_servers": (options.review_mcp if effective_sandbox == "read-only" else options.mcp)}
                    if options.mcp is not None or options.review_mcp is not None else {}),
             )
+            reason = process_stop_requested()
+            if reason:
+                codex_transport.observe_stop(result, reason)
+            return result
         except CodexExecutionError as exc:
             error = {**exc.error, "phase": stage}
             if stage == "review" and error.get("code") == "codex_missing_answer":
@@ -1263,11 +1318,12 @@ def start(
         print("Review findings:", review_findings)
         try:
             settings = decision_settings
-            if latest_review_classification.get("source_format") == "text_legacy":
+            if (latest_review_classification.get("source_format") == "text_legacy"
+                    and review_classification_passes(latest_review_classification)):
                 if settings is None:
                     settings = DecisionExecSettings(
                         project_root=workspace, config_profile=config_profile,
-                        env=dict(os.environ), log_root=pretty_log.parent,
+                        env=child_env, log_root=pretty_log.parent,
                         process_stop_path=process_stop_full,
                     )
                 elif not isinstance(settings, DecisionExecSettings) or settings.project_root != workspace:
@@ -1275,8 +1331,19 @@ def start(
                                              "Decision settings must belong to the active workspace")
                 elif process_stop_full is not None:
                     settings = replace(settings, process_stop_path=process_stop_full)
+                try:
+                    if ("/" in settings.launcher or "\\" in settings.launcher
+                            or (os.name == "nt" and Path(settings.launcher).drive)):
+                        trusted_path(settings.launcher, workspace=launcher_workspace, windows=os.name == "nt")
+                except OSError as exc:
+                    raise DecisionInputError("decision_invalid_input", "decision_settings", str(exc)) from exc
                 settings = replace(settings, call_budget=call_budget,
+                                   env=host_environment(settings.env),
+                                   launcher_workspace=launcher_workspace,
                                    config_profile=settings.config_profile or config_profile)
+                previous_cancel = settings.cancel_requested
+                settings = replace(settings, cancel_requested=lambda previous=previous_cancel:
+                                   process_stop_requested() or (previous() if previous else None))
                 if options.mcp is not None or options.review_mcp is not None:
                     settings = replace(settings, mcp_disabled=True)
             decision = evaluate_completion_decision(
@@ -1328,7 +1395,14 @@ def start(
             append(pretty_log, f"[{ts()}] [decision_error] {json.dumps(decision_payload, ensure_ascii=False)}\n")
             break
         _record_decision_payload(decision)
-        if decision.is_finished:
+        reason = process_stop_requested()
+        if reason:
+            process_stop_triggered = True
+            process_stop_details = reason
+            completed = False
+            break
+        if (decision.is_finished and not process_stop_triggered
+                and review_classification_passes(latest_review_classification)):
             completed = True
             break
 
@@ -1358,6 +1432,11 @@ def start(
                 f"[{ts()}] [auto-continue] Weitere Iteration ausgelöst.\n",
             )
 
+    reason = process_stop_requested()
+    if reason:
+        process_stop_triggered = True
+        process_stop_details = reason
+        completed = False
     if not completed and runtime_error is None and auftrag_runs >= max_iterations:
         max_msg_pretty = f"[{ts()}] MAX ITERATIONS REACHED ({max_iterations}).\n"
         max_msg_console = (

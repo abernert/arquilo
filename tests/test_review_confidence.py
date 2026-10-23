@@ -24,7 +24,7 @@ import run_todos
 import review_confidence as confidence
 from review_contract import (
     build_fix_prompt, build_review_prompt, parse_review_classification,
-    review_classification_passes, review_instructions,
+    review_classification_passes, review_instructions, validate_review_classification,
 )
 
 PASS = {
@@ -79,7 +79,9 @@ class ConfidenceContractTests(unittest.TestCase):
                 self.assertEqual(result["confidence_level"], "unknown")
                 self.assertEqual(result["evidence"], [])
                 self.assertTrue(all(v is None for v in result["confidence_breakdown"].values()))
-                self.assertEqual(parse(result), result)
+                # Stored legacy records retain parser-owned provenance through
+                # the internal validator, not by reparsing them as model JSON.
+                self.assertEqual(validate_review_classification(result), result)
         result = parse_review_classification("No issues; confidence 99%.")
         self.assertEqual(result["source_format"], "text_legacy")
         self.assertIsNone(result["confidence"])
@@ -272,6 +274,17 @@ class ConfidenceIntegrationTests(unittest.TestCase):
 
 
 class ConfidenceReportTests(unittest.TestCase):
+    def test_stored_legacy_failures_remain_readable_without_losing_blockers(self):
+        for raw in ("Must fix: required output is missing.",
+                    '{"verdict":"FAIL","issues":["Required output is missing."]}'):
+            with self.subTest(raw=raw):
+                classification = parse_review_classification(raw)
+                before = deepcopy(classification)
+                self.assertIn("FAIL | confidence unknown", confidence.format_review_confidence(classification))
+                self.assertEqual(classification, before)
+                self.assertTrue(classification["blocking_issues"])
+                self.assertFalse(review_classification_passes(classification))
+
     def test_report_shows_labels_limits_and_non_executed_suggestions(self):
         text = confidence.format_review_confidence(review())
         for value in ("PASS | confidence high", "uncalibrated reviewer estimate",
