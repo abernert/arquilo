@@ -38,6 +38,7 @@ import codex_policy
 import mcp_selection
 from task_resources import selection, ResourceError
 from codex_launcher import resolve_launcher
+from host_launcher import launcher_environment
 from process_tree import InterruptiblePipe, ProcessTree, ProcessTreeError, REAP_TIMEOUT, finish_cleanup
 from runtime_files import atomic_write_text, native_path, safe_component, unique_directory
 
@@ -184,11 +185,12 @@ def _start_process(command: Sequence[str], *, cwd: Path, env: Mapping[str, str])
     cwd = native_path(cwd, label="Codex cwd")
     launcher = resolve_launcher(command[0], cwd=cwd, env=env)
     argv = [*launcher.argv, *command[1:]]
+    child_env = launcher_environment(env, workspace=cwd, executable=launcher.argv[0])
     tree = ProcessTree()
     proc = None
     try:
         proc = subprocess.Popen(
-            argv, cwd=str(cwd), env=dict(env), shell=False,
+            argv, cwd=str(cwd), env=child_env, shell=False,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=False, bufsize=0, **tree.popen_options,
         )

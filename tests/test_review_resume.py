@@ -17,6 +17,8 @@ import review_resume as recovery
 import autobuild
 import codex_transport
 from autobuild_contract import AutoBuildOptions, AutoBuildContext, validate_result
+from decision_exec import DecisionCall
+from runtime_contracts import DecisionResult, ExecutionResult, ExecutionStatus
 
 OLD = {"type":"error", "message":"Reconnecting... 2/12 (stream disconnected before completion: websocket closed by server before response.completed)"}
 NEW = {"type":"error", "message":"Reconnecting... 1/12 (stream disconnected before completion: stream closed before response.completed)"}
@@ -223,6 +225,51 @@ class ArchiveTests(Fixture):
         self.assertEqual((summary.auftrag_runs,summary.review_runs),(1,1))
         self.assertTrue(summary.completed)
         self.assertTrue(validate_result(autobuild.build_summary_document(summary))["completed"])
+
+    def test_recovered_production_still_requires_a_review_without_blockers(self):
+        evidence = self.recover()
+        blocker = {"id": "missing", "type": "local_fix", "summary": "Output is missing.",
+                   "requirement": "Create the output.", "acceptance_criterion": "Output exists.",
+                   "references": [], "fix_suggestion": "Create the output."}
+        reviews = ("Must fix: required output is missing.",
+                   json.dumps({**PASS, "verdict": "FAIL", "blocking_issues": [blocker],
+                               "source_format": "text_legacy"}))
+        for index, review in enumerate(reviews):
+            calls = []
+
+            def fake_model(**kwargs):
+                calls.append(kwargs["phase"])
+                self.assertEqual(kwargs["phase"], "review")
+                return codex_transport.RunResult(assistant_messages=[review],
+                                                turn_completed=True, process_exit_code=0)
+
+            def fake_complete(request, *, settings):
+                return DecisionCall(result=DecisionResult(
+                    execution=ExecutionResult(status=ExecutionStatus.SUCCEEDED,
+                        answer="COMPLETE", process_exit_code=0, completion_seen=True),
+                    options=request.options, option="COMPLETE", explanation="Synthetic choice."),
+                    directory=None, attempt=None)
+
+            logs = self.home / ("blocked-review-" + str(index))
+            logs.mkdir()
+            options = AutoBuildOptions(logfile=logs / "pretty.log", rawlog=logs / "raw.jsonl",
+                                       summary_json=logs / "summary.json", max_steps=1)
+            context = AutoBuildContext(todo_identifier="2", budget_root_id="2",
+                                       budget_directory=self.home / ("blocked-budget-" + str(index)))
+            with self.subTest(review=review), patch.object(autobuild, "run_codex_exec_json", fake_model), \
+                    patch.object(autobuild, "run_semantic_decision", side_effect=fake_complete) as decide, \
+                    patch.object(autobuild, "_terminal_beep"), \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                state = recovery.install_review_injection(evidence, autobuild)
+                summary = autobuild.start(task=PROMPT, workdir=self.work, options=options, context=context)
+            self.assertTrue(state["used"])
+            self.assertTrue(state["review_seen"])
+            self.assertEqual(calls, ["review"])
+            self.assertFalse(summary.completed)
+            self.assertEqual(summary.review_classification["verdict"], "FAIL")
+            self.assertTrue(summary.review_classification["blocking_issues"])
+            self.assertFalse(validate_result(autobuild.build_summary_document(summary))["completed"])
+            decide.assert_not_called()
 
     def test_injected_replay_must_match_exact_prompt_before_any_model_call(self):
         evidence=self.recover()

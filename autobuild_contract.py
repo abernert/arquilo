@@ -15,7 +15,9 @@ from task_resources import TaskResources
 from removed_features import check_removed_fields
 from execution_budget import DEFAULT_MAX_CALLS, positive_limit
 from runtime_contracts import AutoBuildStatus, ExitCode
-from review_contract import parse_review_classification
+from review_contract import (
+    parse_review_classification, review_classification_passes, validate_review_classification,
+)
 from legacy_naming import schema_matches
 
 
@@ -76,8 +78,15 @@ class AutoBuildContext:
     budget_directory: str | Path | None = None
     budget_root_id: str | None = None
     allow_todo_modifications: bool = False
+    process_stop_paths: tuple[str | Path, ...] = ()
 
     def __post_init__(self):
+        if not isinstance(self.process_stop_paths, (tuple, list)):
+            raise ValueError("process_stop_paths must be a sequence of absolute controller paths")
+        for path in self.process_stop_paths:
+            if not isinstance(path, (str, Path)) or "\0" in str(path) or not Path(path).is_absolute():
+                raise ValueError("process_stop_paths must contain absolute controller paths")
+        object.__setattr__(self, "process_stop_paths", tuple(str(p) for p in self.process_stop_paths))
         if type(self.allow_todo_modifications) is not bool:
             raise ValueError("allow_todo_modifications must be bool")
         if self.task_source not in ("inline", "todo"):
@@ -238,22 +247,27 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
         review = payload.get("review_classification")
         if not isinstance(review, dict) or review.get("valid") is not True:
             raise AutoBuildResultError("AutoBuild completion requires a valid review")
-        try:
-            normalized = parse_review_classification(json.dumps(review, allow_nan=False))
-        except (TypeError, ValueError, RecursionError) as exc:
-            raise AutoBuildResultError("AutoBuild review is not finite JSON") from exc
+        normalized = validate_review_classification(review)
         if normalized.get("valid") is not True:
             raise AutoBuildResultError("AutoBuild completion contains an invalid review contract")
-        if review.get("source_format") == "text_legacy":
+        if not review_classification_passes(normalized):
+            raise AutoBuildResultError("AutoBuild completion contradicts its review verdict or blockers")
+        needs_decision = normalized.get("source_format") == "text_legacy"
+        raw_findings = payload.get("review_findings")
+        if raw_findings is not None:
+            # This is the same latest reviewer output that produced the stored
+            # classification, not production prose or an independent report.
+            # Older summaries may omit it; present evidence cannot be waived.
+            raw_review = parse_review_classification(raw_findings)
+            if not review_classification_passes(raw_review):
+                raise AutoBuildResultError("AutoBuild completion contradicts its raw review findings")
+            needs_decision = needs_decision or raw_review.get("source_format") == "text_legacy"
+        if needs_decision:
             decision = payload.get("decision")
             if (not isinstance(decision, dict) or decision.get("selected_option") != "COMPLETE"
                     or decision.get("source") != "codex_exec" or decision.get("error") is not None
                     or decision.get("fallback_used") is not False):
                 raise AutoBuildResultError("Legacy prose requires a successful explicit Codex decision")
-        if review.get("source_format") != "text_legacy" and (
-                review.get("verdict") != "PASS" or review.get("blocking_issues") != []
-                or review.get("breakdown_recommended") is not False):
-            raise AutoBuildResultError("AutoBuild completion contradicts its structured review")
     if process_exit_code is not None and process_exit_code != code:
         raise AutoBuildResultError(f"AutoBuild exit mismatch: summary {code}, process {process_exit_code}")
     return payload

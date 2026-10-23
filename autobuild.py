@@ -841,9 +841,17 @@ def evaluate_completion_decision(
         raise DecisionInputError("decision_missing_input", "task_snapshot", "Concrete task evidence is required")
     if type(latest_answer) is not str or not latest_answer.strip():
         raise DecisionInputError("decision_missing_input", "latest_answer", "The production answer is required")
+    # A known FAIL/blocker is a controller veto in every input format. Decide
+    # may interpret non-blocking legacy prose, but cannot waive a review defect.
+    blocking = classification.get("blocking_issues")
+    blocking_count = len(blocking) if isinstance(blocking, list) else 0
+    if classification.get("verdict") == "FAIL" or blocking_count:
+        return DecisionResult(
+            is_finished=False, selected_option="INCOMPLETE",
+            explanation=prompts.render("decision_result_incomplete", count=blocking_count),
+            source="review_contract", fallback_used=False,
+        )
     if classification.get("source_format") in {"structured", "json_legacy"}:
-        blocking = classification.get("blocking_issues")
-        blocking_count = len(blocking) if isinstance(blocking, list) else 0
         return DecisionResult(
             is_finished=blocking_count == 0,
             selected_option="COMPLETE" if blocking_count == 0 else "INCOMPLETE",
@@ -975,6 +983,29 @@ def start(
                 f"process_stop aktiv unter {candidate}. Lösche die Datei, bevor AutoBuild startet."
             )
         process_stop_full = candidate
+    # Controller-selected root/peer sentinels survive worker serialization. A
+    # stop is latched for this attempt, even if its file is subsequently removed.
+    stop_paths = tuple(dict.fromkeys(
+        ([process_stop_full] if process_stop_full is not None else [])
+        + [safe_io.lexical_path(path) for path in context.process_stop_paths]))
+    latched_stop_reason: Optional[str] = None
+
+    def process_stop_requested() -> Optional[str]:
+        nonlocal latched_stop_reason
+        if latched_stop_reason is None:
+            for path in stop_paths:
+                if os.path.lexists(path):
+                    try:
+                        details = safe_io.read_bytes(path).decode("utf-8", errors="replace").strip()
+                    except (OSError, ValueError):
+                        details = None
+                    latched_stop_reason = stop_reason(details)
+                    break
+        return latched_stop_reason
+
+    initial_stop = process_stop_requested()
+    if initial_stop:
+        raise ProcessStopActiveError(initial_stop)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     default_logs = (unique_directory(workspace / ".codex_runs", prefix=f"run_{stamp}")
                     if logfile is None or rawlog is None else None)
@@ -1021,9 +1052,12 @@ def start(
         )
         extra_args = list(base_extra_args)
         try:
+            reason = process_stop_requested()
+            if reason:
+                return RunResult(process_stop_triggered=True, process_stop_details=reason)
             claim = call_budget.consume(todo_identifier or "standalone", budget_phase(stage))
             append(pretty_log, f"[{ts()}] [call_budget] {json.dumps(claim, ensure_ascii=False)}\n")
-            return run_codex_exec_json(
+            result = run_codex_exec_json(
                 prompt=prompt,
                 cwd=workspace,
                 sandbox=effective_sandbox,
@@ -1035,6 +1069,7 @@ def start(
                 model=model,
                 reasoning_effort=reasoning_effort,
                 process_stop_path=process_stop_full,
+                cancel_requested=process_stop_requested,
                 console_todo_id=todo_identifier,
                 phase=stage,
                 network_access=network_access,
@@ -1042,6 +1077,10 @@ def start(
                 **({"mcp_servers": (options.review_mcp if effective_sandbox == "read-only" else options.mcp)}
                    if options.mcp is not None or options.review_mcp is not None else {}),
             )
+            reason = process_stop_requested()
+            if reason:
+                codex_transport.observe_stop(result, reason)
+            return result
         except CodexExecutionError as exc:
             error = {**exc.error, "phase": stage}
             if stage == "review" and error.get("code") == "codex_missing_answer":
@@ -1263,7 +1302,8 @@ def start(
         print("Review findings:", review_findings)
         try:
             settings = decision_settings
-            if latest_review_classification.get("source_format") == "text_legacy":
+            if (latest_review_classification.get("source_format") == "text_legacy"
+                    and review_classification_passes(latest_review_classification)):
                 if settings is None:
                     settings = DecisionExecSettings(
                         project_root=workspace, config_profile=config_profile,
@@ -1277,6 +1317,9 @@ def start(
                     settings = replace(settings, process_stop_path=process_stop_full)
                 settings = replace(settings, call_budget=call_budget,
                                    config_profile=settings.config_profile or config_profile)
+                previous_cancel = settings.cancel_requested
+                settings = replace(settings, cancel_requested=lambda previous=previous_cancel:
+                                   process_stop_requested() or (previous() if previous else None))
                 if options.mcp is not None or options.review_mcp is not None:
                     settings = replace(settings, mcp_disabled=True)
             decision = evaluate_completion_decision(
@@ -1328,7 +1371,14 @@ def start(
             append(pretty_log, f"[{ts()}] [decision_error] {json.dumps(decision_payload, ensure_ascii=False)}\n")
             break
         _record_decision_payload(decision)
-        if decision.is_finished:
+        reason = process_stop_requested()
+        if reason:
+            process_stop_triggered = True
+            process_stop_details = reason
+            completed = False
+            break
+        if (decision.is_finished and not process_stop_triggered
+                and review_classification_passes(latest_review_classification)):
             completed = True
             break
 
@@ -1358,6 +1408,11 @@ def start(
                 f"[{ts()}] [auto-continue] Weitere Iteration ausgelöst.\n",
             )
 
+    reason = process_stop_requested()
+    if reason:
+        process_stop_triggered = True
+        process_stop_details = reason
+        completed = False
     if not completed and runtime_error is None and auftrag_runs >= max_iterations:
         max_msg_pretty = f"[{ts()}] MAX ITERATIONS REACHED ({max_iterations}).\n"
         max_msg_console = (

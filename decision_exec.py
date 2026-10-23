@@ -24,6 +24,7 @@ from types import MappingProxyType
 from typing import Callable, Mapping
 
 from codex_launcher import resolve_launcher
+from host_launcher import launcher_environment
 from codex_policy import CodexPolicyError
 import codex_transport as transport
 import decision_archive as archive
@@ -162,7 +163,8 @@ def execute_attempt(
                 else:
                     raise CodexPolicyError("Decision response path must initially be absent")
             outputs[name] = _absolute(value, name)
-    selected = resolve_launcher(launcher, cwd=base, env=child_env)
+    selected = resolve_launcher(launcher, cwd=base, workspace=project, env=child_env)
+    child_env = launcher_environment(child_env, workspace=project, executable=selected.argv[0])
     for path in (selected.source, *selected.argv):
         _outside(native_path(path, label="Codex launcher"), project, "Codex launcher")
     cwd = Path(tempfile.mkdtemp(prefix="arquilo-decide-", dir=base)).resolve()

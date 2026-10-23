@@ -13,6 +13,7 @@ import subprocess
 import uuid
 
 import safe_io
+from host_launcher import launcher_environment, resolve_executable
 
 
 class ReviewedGitError(RuntimeError):
@@ -20,7 +21,8 @@ class ReviewedGitError(RuntimeError):
 
 
 class ReviewedGit:
-    def __init__(self, workspace: Path, paths, state: Path, *, push=False):
+    def __init__(self, workspace: Path, paths, state: Path, *, push=False,
+                 executable: str | None = None):
         self.workspace, self.state, self.push = workspace, state, push
         if not paths:
             raise ReviewedGitError('--git now requires explicit --git-path FILE selections; it never runs git add -A.')
@@ -35,6 +37,11 @@ class ReviewedGit:
             safe_io.check_path(workspace / value)
             if literal not in self.paths:
                 self.paths.append(literal)
+        try:
+            self.executable = str(resolve_executable(executable or 'git',
+                workspace=workspace, env=os.environ))
+        except OSError as exc:
+            raise ReviewedGitError(f'Git launcher unavailable: {exc}') from exc
         self.branch = self.git('symbolic-ref', '-q', 'HEAD').strip().decode()
         self.head = self.git('rev-parse', '--verify', 'HEAD').strip().decode()
         self.initial_index = self.git('ls-files', '--stage', '-z')
@@ -63,11 +70,12 @@ class ReviewedGit:
 
     def git(self, *args, data=None, index=None):
         env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+        env = launcher_environment(env, workspace=self.workspace, executable=self.executable)
         env.update(GIT_LITERAL_PATHSPECS='1', GIT_OPTIONAL_LOCKS='0')
         if index:
             env['GIT_INDEX_FILE'] = str(index)
         try:
-            result = subprocess.run(['git', *args], cwd=self.workspace, env=env,
+            result = subprocess.run([self.executable, *args], cwd=self.workspace, env=env,
                                     input=data, capture_output=True, shell=False, timeout=60)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ReviewedGitError(f'Git operation failed: {exc}') from exc

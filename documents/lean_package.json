@@ -3,7 +3,7 @@
   "python_requires": ">=3.11",
   "runtime_dependencies": [],
   "build_dependencies": [],
-  "runtime_file_count": 93,
+  "runtime_file_count": 94,
   "external_runtime": {
     "codex_cli": "Codex CLI with the required Exec contract; verify using arquilo_doctor.py --check-decide (one model call, may incur costs); no version pin",
     "git": "Only for explicitly enabled --git functions",
@@ -71,6 +71,7 @@
     "examples/minimal_todo.md",
     "examples/planning_todo.md",
     "execution_budget.py",
+    "host_launcher.py",
     "legacy_naming.py",
     "mcp_selection.py",
     "process_tree.py",

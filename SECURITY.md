@@ -26,6 +26,17 @@ not have a separate maintenance commitment.
   atomic-write and path-integrity checks. Those checks protect controller authority;
   they are not injected into Codex, do not filter worker shell commands, and do not
   restrict ordinary project files inside the Codex workspace.
+- Codex and controller Git launchers must be installed outside the workspace.
+  Resolution uses only absolute host PATH entries; empty, relative and
+  workspace-contained entries, including aliases into the workspace, are
+  excluded. Explicit launcher paths must also be absolute and external. The
+  child PATH follows the same rule so a host npm launcher cannot find a
+  workspace Node executable. Standard Windows npm `codex.cmd` is checked and
+  started through external `node.exe` and `codex.js`, without a shell. Keep
+  project-local tool installations out of the controller launcher configuration.
+  Host installations, configuration and other environment values remain
+  trusted; this does not protect against concurrent replacement of host tools
+  or constrain commands deliberately started by those tools.
 - Decide inherits trusted host Codex configuration/environment (including provider,
   proxy and credential dependencies) and requests `read-only`/`never`. It rejects
   tool/unknown events, but this is an acceptance gate, not a pre-tool interceptor.
