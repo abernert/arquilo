@@ -3393,6 +3393,7 @@ class TodoRunner:
                 budget_directory=budget.directory, budget_root_id=budget.root_id,
                 allow_todo_modifications=self.allow_todo_modifications,
                 process_stop_paths=(self.process_stop_path, *getattr(self, "_active_parallel_stop_paths", ())),
+                launcher_workspace=self.workdir,
             )
             try:
                 if use_cli_subprocess:

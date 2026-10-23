@@ -90,13 +90,23 @@ def _npm_launcher(selected: Path, requested: str, dirs: list[Path], workspace: P
 
 def resolve_launcher(requested: str, *, cwd: Path, env: Mapping[str, str],
                      platform_name: str | None = None,
-                     workspace: Path | None = None) -> CodexLauncher:
+                     workspace: Path | None = None,
+                     additional_workspace: Path | None = None) -> CodexLauncher:
     """No process, global env access or cached resolution. platform_name is for
     filesystem contract tests; only real Windows runs verify CreateProcess.
     """
     try:
-        return _resolve_launcher(requested, workspace=workspace if workspace is not None else cwd,
-                                 env=env, windows=(platform_name or os.name) == "nt")
+        windows = (platform_name or os.name) == "nt"
+        selected = _resolve_launcher(requested, workspace=workspace if workspace is not None else cwd,
+                                     env=env, windows=windows)
+        if additional_workspace is not None:
+            # A task's cwd can differ from the controller's original writable
+            # workspace. Preserve both selector and physical-target boundaries.
+            if "/" in requested or "\\" in requested or (windows and ntpath.splitdrive(requested)[0]):
+                trusted_path(requested, workspace=additional_workspace, windows=windows)
+            for path in (selected.source, *selected.argv):
+                trusted_path(path, workspace=additional_workspace, windows=windows)
+        return selected
     except HostLauncherError as exc:
         raise CodexLauncherError(str(exc)) from exc
 

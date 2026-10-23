@@ -94,19 +94,22 @@ def search_directories(*, workspace: Path, env: Mapping[str, str], windows: bool
 
 
 def launcher_environment(env: Mapping[str, str], *, workspace: Path,
-                         executable: str | Path, platform_name: str | None = None) -> dict[str, str]:
+                         executable: str | Path | None = None,
+                         platform_name: str | None = None) -> dict[str, str]:
     """Keep host provisioning, but remove workspace/relative interpreter lookup.
 
     In particular, a trusted POSIX npm entry point's /usr/bin/env node must not
     find project/node. An absent PATH remains absent; an explicitly unsafe-only
-    PATH is replaced with the selected host executable's directory, never ''.
+    PATH uses the selected host executable's directory when one is supplied.
+    Before resolution, an empty result stays empty: bare-name resolution then
+    fails closed instead of restoring a workspace search path.
     """
     windows = (platform_name or os.name) == "nt"
     result = dict(env)
     values = _path_values(env, windows)
     if values:
         dirs = search_directories(workspace=workspace, env=env, windows=windows)
-        if not dirs:
+        if not dirs and executable is not None:
             dirs = [trusted_path(executable, workspace=workspace, windows=windows).parent]
         for key, _ in values:
             del result[key]

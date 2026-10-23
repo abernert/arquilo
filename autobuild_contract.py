@@ -79,8 +79,15 @@ class AutoBuildContext:
     budget_root_id: str | None = None
     allow_todo_modifications: bool = False
     process_stop_paths: tuple[str | Path, ...] = ()
+    launcher_workspace: str | Path | None = None
 
     def __post_init__(self):
+        if self.launcher_workspace is not None:
+            if (not isinstance(self.launcher_workspace, (str, Path))
+                    or "\0" in str(self.launcher_workspace)
+                    or not Path(self.launcher_workspace).is_absolute()):
+                raise ValueError("launcher_workspace must be an absolute controller-selected path")
+            object.__setattr__(self, "launcher_workspace", str(self.launcher_workspace))
         if not isinstance(self.process_stop_paths, (tuple, list)):
             raise ValueError("process_stop_paths must be a sequence of absolute controller paths")
         for path in self.process_stop_paths:

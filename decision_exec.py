@@ -118,6 +118,7 @@ def execute_attempt(
     process_stop_path: Path | None = None,
     cancel_requested: Callable[[], str | None] | None = None,
     mcp_disabled: bool = False,
+    launcher_workspace: Path | None = None,
 ) -> DecisionAttempt:
     """Run a fresh non-repo attempt using the single shared Codex transport.
 
@@ -132,7 +133,11 @@ def execute_attempt(
         raise ValueError("mcp_disabled must be bool")
     prompt = request.to_prompt()  # Validate before filesystem/process work.
     project = _absolute(project_root, "project_root")
+    if launcher_workspace is not None:
+        launcher_workspace = _absolute(launcher_workspace, "launcher_workspace")
     child_env = decision_environment(env, project_root=project, trusted_codex_home=trusted_codex_home)
+    if launcher_workspace is not None:
+        child_env = launcher_environment(child_env, workspace=launcher_workspace)
     base = _outside(_absolute(temp_root if temp_root is not None else tempfile.gettempdir(), "temp_root"),
                     project, "Decide temporary root")
     if not base.is_dir():
@@ -163,7 +168,8 @@ def execute_attempt(
                 else:
                     raise CodexPolicyError("Decision response path must initially be absent")
             outputs[name] = _absolute(value, name)
-    selected = resolve_launcher(launcher, cwd=base, workspace=project, env=child_env)
+    selected = resolve_launcher(launcher, cwd=base, workspace=project, env=child_env,
+                                additional_workspace=launcher_workspace)
     child_env = launcher_environment(child_env, workspace=project, executable=selected.argv[0])
     for path in (selected.source, *selected.argv):
         _outside(native_path(path, label="Codex launcher"), project, "Codex launcher")
@@ -173,6 +179,7 @@ def execute_attempt(
             raise CodexPolicyError("Decision logs/schema/response must stay outside its disposable cwd")
         call = transport.CodexExecRequest(
             prompt=prompt, cwd=cwd, env=child_env, launcher=(selected.source,),
+            launcher_workspace=launcher_workspace,
             model=request.model, reasoning_effort=request.reasoning_effort,
             model_provider=model_provider, config_profile=config_profile,
             network_access=False, sandbox="read-only", decision_only=True,
@@ -200,6 +207,7 @@ class DecisionExecSettings:
     log_root: Path
     temp_root: Path | None = None
     launcher: str = "codex"
+    launcher_workspace: Path | None = None
     model_provider: str | None = None
     config_profile: str | None = None
     timeouts: transport.TransportTimeouts | None = None
@@ -217,7 +225,7 @@ class DecisionExecSettings:
         validate_config_profile(self.config_profile)
         if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 2:
             raise ValueError("Decide max_attempts must be 1 or 2 (at most one format repair)")
-        for name in ("project_root", "trusted_codex_home", "log_root", "temp_root", "process_stop_path"):
+        for name in ("project_root", "trusted_codex_home", "log_root", "temp_root", "process_stop_path", "launcher_workspace"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, _absolute(value, name))
@@ -340,6 +348,7 @@ def execute_decision(request: DecisionRequest, *, settings: DecisionExecSettings
                 model_provider=settings.model_provider, config_profile=settings.config_profile,
                 output_schema=schema_path, output_last_message=response_path,
                 process_stop_path=settings.process_stop_path, cancel_requested=settings.cancel_requested,
+                launcher_workspace=settings.launcher_workspace,
                 **({"mcp_disabled": True} if settings.mcp_disabled else {}))
             result = validate_response(request, attempt.result.execution, response_path)
         except BudgetExhausted as exc:

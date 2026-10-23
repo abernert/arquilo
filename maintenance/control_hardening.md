@@ -17,7 +17,7 @@ set; existing version metadata is deliberately unchanged.
 | AQ-17-02 | A startup stop prevents profile/Codex preflight; stop after profile preflight prevents the next probe | `tests/adversarial/test_control_stop_invariants.py` |
 | AQ-12-02 | Peers receive physical stop paths; validated return-only stops are published before output copying; final acceptance rechecks stop | `tests/adversarial/test_control_stop_invariants.py` |
 | AQ-12-01, path-overlap subset | Reject equal, nested or root-equal parallel workspaces before dispatch | `tests/adversarial/test_control_stop_invariants.py` |
-| AQ-10-01 and confirmed Git PATH variant | External absolute launchers, physical path checks, sanitized child PATH and pinned host Git selection | `tests/test_trusted_launchers.py` |
+| AQ-10-01 and confirmed Git PATH variant | External absolute launchers, physical path checks against primary and active workspaces, sanitized child PATH and pinned host Git selection | `tests/test_trusted_launchers.py`, `tests/adversarial/test_launcher_workspace.py` |
 
 This table is the implemented scope, not a blanket closure of the audit register.
 The parallel path check does not provide a hostile-worker filesystem sandbox.
@@ -73,7 +73,8 @@ older green base commit.
 - Decision input/control files must be ordinary files, not symlinks, hardlinks
   or special files. The supported Windows npm wrapper is retained.
 - Update parent controller and Python workers together. The additive internal
-  `process_stop_paths` context is required for cross-process cancellation.
+  `process_stop_paths` and `launcher_workspace` context preserves peer STOP
+  signals and the primary workspace launcher boundary across worker processes.
 - A stopped batch leaves its produced artifacts available and its pending
   tasks open. Resuming still requires owner inspection and fresh acceptance.
 - Previously persisted invalid DONE statuses are not automatically undone.

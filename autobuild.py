@@ -34,6 +34,7 @@ from review_contract import (
     review_requires_runner_handling, build_review_context_reference,
 )
 import codex_transport
+from host_launcher import launcher_environment, trusted_path
 from runtime_config import environment_value, transport_timeout_values
 import codex_policy
 from task_resources import TaskResources, SkillCatalog, bind_resources, add_resource_arguments
@@ -698,6 +699,7 @@ def run_codex_exec_json(
     phase: str = "execution",
     config_profile: Optional[str] = None,
     mcp_servers: Optional[Sequence[str]] = None,
+    launcher_workspace: Optional[Path] = None,
 ) -> RunResult:
     """Compatibility adapter; process state belongs to codex_transport.execute."""
     request = codex_transport.CodexExecRequest(
@@ -707,6 +709,7 @@ def run_codex_exec_json(
         verbose=verbose, model=model, reasoning_effort=reasoning_effort,
         network_access=network_access, env=dict(os.environ) if env is None else env,
         config_profile=config_profile, mcp_servers=mcp_servers,
+        launcher_workspace=launcher_workspace,
         process_stop_path=process_stop_path, cancel_requested=cancel_requested,
         console_todo_id=console_todo_id, phase=phase,
         timeouts=timeouts if timeouts is not None else codex_transport.TransportTimeouts(
@@ -936,6 +939,7 @@ def start(
     # Revalidate at the execution boundary, including objects changed after
     # construction; reject before reading task files or setting up a workspace.
     options.__post_init__()
+    context.__post_init__()
     prompts = options.prompt_config
     sandbox, network_access = options.sandbox, options.network_access
     config_profile = options.config_profile
@@ -972,6 +976,16 @@ def start(
     single_file = native_path(file, label="file") if file else None
 
     workspace, _ = setup_workspace(workdir_path, single_file)
+    # A CFG task cwd can be narrower than the model-writable primary workspace.
+    # Keep that controller boundary through private-worker serialization, while
+    # retaining the active cwd boundary for standalone/external task workspaces.
+    launcher_workspace = Path(context.launcher_workspace) if context.launcher_workspace is not None else workspace
+
+    def host_environment(source):
+        return launcher_environment(
+            launcher_environment(source, workspace=launcher_workspace), workspace=workspace)
+
+    child_env = host_environment(os.environ)
     if options.skills is not None:
         task_text = bind_resources(task_text, TaskResources(skills=options.skills),
             SkillCatalog(workdir=workspace, roots=options.skill_dirs), prompt_config=prompts)
@@ -1074,6 +1088,8 @@ def start(
                 phase=stage,
                 network_access=network_access,
                 config_profile=config_profile,
+                env=child_env,
+                launcher_workspace=launcher_workspace,
                 **({"mcp_servers": (options.review_mcp if effective_sandbox == "read-only" else options.mcp)}
                    if options.mcp is not None or options.review_mcp is not None else {}),
             )
@@ -1307,7 +1323,7 @@ def start(
                 if settings is None:
                     settings = DecisionExecSettings(
                         project_root=workspace, config_profile=config_profile,
-                        env=dict(os.environ), log_root=pretty_log.parent,
+                        env=child_env, log_root=pretty_log.parent,
                         process_stop_path=process_stop_full,
                     )
                 elif not isinstance(settings, DecisionExecSettings) or settings.project_root != workspace:
@@ -1315,7 +1331,15 @@ def start(
                                              "Decision settings must belong to the active workspace")
                 elif process_stop_full is not None:
                     settings = replace(settings, process_stop_path=process_stop_full)
+                try:
+                    if ("/" in settings.launcher or "\\" in settings.launcher
+                            or (os.name == "nt" and Path(settings.launcher).drive)):
+                        trusted_path(settings.launcher, workspace=launcher_workspace, windows=os.name == "nt")
+                except OSError as exc:
+                    raise DecisionInputError("decision_invalid_input", "decision_settings", str(exc)) from exc
                 settings = replace(settings, call_budget=call_budget,
+                                   env=host_environment(settings.env),
+                                   launcher_workspace=launcher_workspace,
                                    config_profile=settings.config_profile or config_profile)
                 previous_cancel = settings.cancel_requested
                 settings = replace(settings, cancel_requested=lambda previous=previous_cancel:

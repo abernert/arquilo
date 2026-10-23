@@ -25,7 +25,7 @@ unavailable platform as unverified, never as passed.
 
 ***CFG network_access=false web_search=disabled***
 4. ***Task***: Evaluate the supplied native CI evidence for the exact reviewed commit: Linux/Windows/macOS with Python 3.11/3.12/3.13, plus both configured Codex metadata compatibility versions. Inspect failures and skips, especially Windows npm launch, native path aliases and allocation locking. If logs are missing, record the gap and keep this acceptance blocked.
-    Acceptance: Each required native job is identified by commit and outcome, and relevant native behavior is verified. A local simulated Windows test or an older green commit is insufficient.
+    Acceptance: Every required native job has completed successfully on the exact reviewed commit. Each job is identified by commit and outcome, relevant native behavior is verified, and platform skips are explained. A local simulated Windows test or an older green commit is insufficient.
 
 ***CFG network_access=false web_search=disabled***
 5. ***Task***: Produce a final acceptance report using the preceding evidence. Distinguish implemented controls, tested behavior, migration requirements and remaining audit scope. Check that historical invalid DONE entries, budget-only legacy identity, Git publication binding and full process supervision have not been claimed repaired without evidence.

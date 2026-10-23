@@ -34,7 +34,8 @@ class ControllerIOTests(ControllerFixture):
                              '***CFG workspace=two parallel=pair***\n2. ***TASK***: Synthetic parallel two.\n'
                              '3. ***TASK***: Must not run.\n', encoding='utf-8')
         runner, _, calls = self.run_scenarios([
-            {'events': [RECONNECT, WORK], 'bad_utf8': True, 'mode': 'wait', 'stop': True}], worker=True)
+            {'events': [RECONNECT, WORK], 'bad_utf8': True, 'mode': 'wait', 'stop': True}],
+            worker=True, error_barrier='decode_error')
         self.assertEqual(calls, 2)
         self.verify_logs(runner, code=7, terminal_phase='task', index=1, next_id='3')
         for record in runner.task_log_records.values():

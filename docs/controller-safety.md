@@ -160,7 +160,7 @@ An automatic push requires exactly one configured push destination. The runner
 records its resolved URL at startup and refuses a changed destination before
 committing or pushing. Do not edit the repository's remote configuration while
 the run is active; the comparison is not an atomic lock against another local
-process. A failed push can leave the reviewed commit locally while the run is
+process. A failed push can leave the local commit while the run is
 reported as failed. Inspect the local commit and remote ref before retrying;
 completed tasks do not automatically replay the Git step on restart.
 
