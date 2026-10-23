@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — foundational control repairs
+## 0.9.1 — 2026-10-23 (public preview; foundational control repairs)
 
 - Derive review provenance from the actual input format. A failed review or
   any blocking issue vetoes completion before Decide, at AutoBuild completion,
@@ -23,10 +23,12 @@
   selection for the run. Project-local or relative controller launchers are no
   longer accepted. Linked decision input files are also refused.
 - Add offline regressions with real plan journals, restart, synchronized file
-  mutation, real Python workers and synthetic host programs. No version bump,
-  historical DONE repair, budget reset or release publication is included.
-  Git review-snapshot/push binding and broader process supervision remain
-  separate work.
+  mutation, real Python workers and synthetic host programs. Historical DONE
+  entries and spent budgets are not rewritten. Git review-snapshot/push binding
+  and broader process supervision remain separate work.
+- Update the controller and Python workers together; keep the same workspace,
+  task-file and state-root paths. Normal host installations such as
+  `~/.local/bin/codex` remain supported when outside the selected workspaces.
 
 ## 0.9.0 — 2026-10-21 (public preview)
 
