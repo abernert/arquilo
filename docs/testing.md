@@ -191,3 +191,12 @@ cases check complete capture and cleanup; intentional archive faults must remain
 visible. Keep the existing Windows/macOS/Linux and Python matrices, metadata and
 loopback-provider compatibility checks. These tests validate the controller,
 not a particular corporate network or live model/sandbox deployment.
+
+## Documentation regression checks
+
+The [handbooks](guides/README.md) have a repository-only offline suite in
+`tests/test_documentation_guides.py`. It checks the guide manifest/version,
+German/English chapter and command parity, packaged links, supported example
+options, a sample runtime profile, and dry runs of the synthetic task lists.
+It performs no billed model calls and does not prove translation semantics or
+real model output correctness. See [maintenance instructions](documentation-maintenance.md).

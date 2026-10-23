@@ -1,5 +1,15 @@
 # ARQUILO
 
+## Handbücher
+
+Beginne mit dem [Benutzerhandbuch auf Deutsch](docs/guides/user-guide.de.md)
+oder dem gleichwertigen [User Guide auf Englisch](docs/guides/user-guide.en.md).
+Für komplexe Abläufe gibt es den [Advanced / Operator Guide](docs/guides/operator-guide.en.md),
+für die interne Technik den [Technical / Architecture Guide](docs/guides/technical-guide.en.md),
+beide auf Englisch. Die [Handbuchübersicht](docs/guides/README.md) beschreibt Zielgruppen
+und Geltungsbereich. Diese Dokumentation ändert weder die Laufzeitversion 0.9.1
+noch das bereits veröffentlichte Release-ZIP.
+
 **Markdown-Aufträge ausführen, Ergebnisse unabhängig prüfen, kontrolliert fortsetzen.**
 
 ARQUILO steht für **Agentic Runtime for Quality, Unified Iteration, Logging and
