@@ -63,3 +63,12 @@ Removed predecessor features are not current ARQUILO options. The complete [hist
 ## Controller state and Git since 0.3.0
 
 The authoritative reference is [Controller safety](../docs/controller-safety.md), including `--state-dir`, `--accept-plan-changes`, `--git-path`, and `--git-push`. Git push is no longer an automatic consequence of `--git`. Existing dry-run reports are never overwritten. Existing policy read failures stop the run.
+
+## Git-integrity repair checkout
+
+In the unreleased repair based on 0.9.1, `--git` retains its explicit opt-in but
+requires a controller-accepted pre-review snapshot. The reviewer receives a
+private read-only copy; commits use its exact selected bytes. Git publication is
+serial-only, excludes the task plan, and uses a pinned private publisher for
+`--git-push`. See [Git publication](../docs/git-publication.md) for supported
+workspaces, host credential configuration, limits and recovery.

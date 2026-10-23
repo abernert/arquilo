@@ -240,7 +240,8 @@ class CrashResumeBudgetTests(IsolatedControllerCase):
         runner = self.runner()
         runner.git_enabled = True
         runner.git_selection = type("SyntheticGit", (), {
-            "commit": lambda self, message: (_ for _ in ()).throw(OSError("synthetic Git failure"))
+            "begin_review": lambda self, **kwargs: None,
+            "commit": lambda self, message, **kwargs: (_ for _ in ()).throw(OSError("synthetic Git failure"))
         })()
 
         def successful(**kwargs):

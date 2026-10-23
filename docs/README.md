@@ -21,6 +21,7 @@ ARQUILO's core is a Python 3.11+ controller around a separately installed and au
 | Understand the controller and review flow | [Architecture](architecture.md) |
 | Understand trust boundaries before real use | [Security](../SECURITY.md) |
 | Diagnose setup or runtime failures | [Troubleshooting](troubleshooting.md) |
+| Publish exact reviewed outputs with the unreleased Git repair | [Git publication](git-publication.md) |
 | Understand plan authority, state, recovery, or Git safeguards | [Controller safety](controller-safety.md) |
 | Generate a plan and pause before executing it | [Operator controls](operator-controls.md) |
 | Find project run logs | [Project logs](project-logs.md) |

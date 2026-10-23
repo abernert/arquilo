@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from adversarial.harness import IsolatedControllerCase
 from reviewed_git import ReviewedGit, ReviewedGitError
+from git_review_fixture import publish
 import safe_io
 from todo_lint import lint_todo_file
 from todo_syntax import task_headers
@@ -54,7 +55,7 @@ class PeerGitTests(unittest.TestCase):
 
     def assert_only_reviewed_ref_pushed(self, selection):
         (self.work / 'output.txt').write_bytes(b'reviewed\n')
-        result = selection.commit('reviewed output')
+        result = publish(selection, 'reviewed output')
         self.assertTrue(result['pushed'])
         self.assertEqual(self.git('--git-dir', str(self.remote), 'for-each-ref',
                                   '--format=%(refname)').splitlines(),
@@ -84,22 +85,23 @@ class PeerGitTests(unittest.TestCase):
         self.git('config', 'url.' + str(other) + '.insteadOf', str(self.remote))
         (self.work / 'output.txt').write_bytes(b'reviewed\n')
         with self.assertRaisesRegex(ReviewedGitError, 'destination changed'):
-            selection.commit('must stop')
+            publish(selection, 'must stop')
         self.assertEqual(self.git('rev-parse', 'HEAD'), old)
         self.assertEqual(self.git('--git-dir', str(other), 'for-each-ref'), b'')
 
     def test_removing_pinned_pushurl_is_rejected_before_commit(self):
         other = self.base / 'other.git'
         self.git('init', '--bare', '-q', str(other))
+        self.git('push', '-q', str(other), 'HEAD')
         self.git('config', 'remote.origin.pushurl', str(other))
         selection = ReviewedGit(self.work, ['output.txt'], self.state, push=True)
         old = self.git('rev-parse', 'HEAD')
         self.git('config', '--unset', 'remote.origin.pushurl')
         (self.work / 'output.txt').write_bytes(b'reviewed\n')
         with self.assertRaisesRegex(ReviewedGitError, 'destination changed'):
-            selection.commit('must stop')
+            publish(selection, 'must stop')
         self.assertEqual(self.git('rev-parse', 'HEAD'), old)
-        self.assertEqual(self.git('--git-dir', str(other), 'for-each-ref'), b'')
+        self.assertEqual(self.git('--git-dir', str(other), 'rev-parse', selection.remote_branch).strip(), old.strip())
 
 
 class PeerParserTests(IsolatedControllerCase):

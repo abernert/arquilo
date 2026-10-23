@@ -14,6 +14,7 @@ import safe_io
 from controller_state import PlanAuthority, PlanIntegrityError, state_directory, default_state_root
 from project_logs import project_logs, validate_project_id, timestamp_name, reserve_directory
 from reviewed_git import ReviewedGit, ReviewedGitError
+from git_snapshot import ReviewedCandidate
 from codex_launcher import resolve_launcher
 from host_launcher import launcher_environment, resolve_executable
 from runtime_config import (
@@ -681,6 +682,7 @@ class TaskOutcome:
     budget_exhausted: Optional[Dict[str, Any]] = None
     process_stop_details: Optional[str] = None
     capture_directory: Optional[Path] = None
+    git_candidate: Optional[ReviewedCandidate] = None
 
     def __post_init__(self) -> None:
         if self.process_stop_triggered:
@@ -904,6 +906,8 @@ class TodoRunner:
             if not self.dry_run:
                 self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir,
                     push=git_push, executable=self._git_executable)
+                if any((self.workdir / path) == self.todo_workspace_file for path in self.git_selection.paths):
+                    raise ReviewedGitError("The controller task plan cannot be an automatic Git output selection.")
         # The run is allocated only after the authoritative plan lock is held.
         self.run_dir = self.runs_dir / timestamp_name(self.run_started_at)
         self.autobuild_runs_dir = self.run_dir
@@ -1907,7 +1911,7 @@ class TodoRunner:
             self.recorder.record(f"{todo.identifier}-git", "# explicit reviewed Git selection; no Git mutation")
             return
         self.plan_authority.check()
-        result = self.git_selection.commit(self._compose_git_commit_message(todo))
+        result = self.git_selection.commit(self._compose_git_commit_message(todo), candidate=outcome.git_candidate)
         if result:
             write_log_json(self.run_dir / ("git_" + todo.identifier.replace(".", "_") + ".json"), result)
             print("[info] Ausgewählte geprüfte Dateien committed; Push=" + str(result["pushed"]))
@@ -2316,6 +2320,8 @@ class TodoRunner:
         return batch
 
     def _run_parallel_group(self, seed_todo: TodoItem) -> bool:
+        if self.git_enabled and seed_todo.config.get("parallel"):
+            raise ReviewedGitError("Automatic Git publication requires serial tasks; parallel output ownership is not yet supported.")
         group = seed_todo.config.get("parallel")
         if not group:
             return False
@@ -3384,6 +3390,9 @@ class TodoRunner:
                 model=active_model, reasoning_effort=active_reasoning_effort,
                 process_stop_path=active_process_stop,
             )
+            git_request = (self.git_selection.begin_review(run=self.run_id, task=identifier,
+                attempt=f"{log_dir.name}.{attempt}") if self.git_enabled else None)
+            git_candidate = None
             context = AutoBuildContext(
                 task_source="todo", todo_identifier=identifier, decision_todo_file=active_todo_file,
                 decision_run_id=self.run_id, decision_attempt_id=f"{log_dir.name}.{attempt}",
@@ -3393,7 +3402,7 @@ class TodoRunner:
                 budget_directory=budget.directory, budget_root_id=budget.root_id,
                 allow_todo_modifications=self.allow_todo_modifications,
                 process_stop_paths=(self.process_stop_path, *getattr(self, "_active_parallel_stop_paths", ())),
-                launcher_workspace=self.workdir,
+                launcher_workspace=self.workdir, git_review=git_request,
             )
             try:
                 if use_cli_subprocess:
@@ -3403,6 +3412,9 @@ class TodoRunner:
                                               options=options, context=context)
                 validated_summary = validate_result(
                     autobuild_summary_document(summary) if not use_cli_subprocess else vars(summary))
+                if git_request is not None and validated_summary.get("completed"):
+                    git_candidate = self.git_selection.accept_review(git_request, validated_summary.get("git_review"),
+                        review_index=validated_summary.get("review_runs"))
             except ProcessStopActiveError as exc:
                 message = str(exc).strip() or "process_stop verhindert diesen Lauf."
                 outcome = TaskOutcome(
@@ -3459,6 +3471,7 @@ class TodoRunner:
             if summary.completed is True:
                 outcome = TaskOutcome(
                     completed=True,
+                    git_candidate=git_candidate,
                     message=last_message,
                     process_stop_triggered=bool(summary.process_stop_triggered),
                     process_stop_details=(stop_reason(getattr(summary, "process_stop_details", None))
