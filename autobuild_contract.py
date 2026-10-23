@@ -80,8 +80,12 @@ class AutoBuildContext:
     allow_todo_modifications: bool = False
     process_stop_paths: tuple[str | Path, ...] = ()
     launcher_workspace: str | Path | None = None
+    git_review: dict | None = None
 
     def __post_init__(self):
+        if self.git_review is not None:
+            from git_snapshot import validate_request
+            object.__setattr__(self, "git_review", json.loads(json.dumps(validate_request(self.git_review))))
         if self.launcher_workspace is not None:
             if (not isinstance(self.launcher_workspace, (str, Path))
                     or "\0" in str(self.launcher_workspace)

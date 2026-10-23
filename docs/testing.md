@@ -191,3 +191,12 @@ cases check complete capture and cleanup; intentional archive faults must remain
 visible. Keep the existing Windows/macOS/Linux and Python matrices, metadata and
 loopback-provider compatibility checks. These tests validate the controller,
 not a particular corporate network or live model/sandbox deployment.
+
+## Reviewed Git publication regressions
+
+`test_git_integrity.py` uses immutable candidates, real local Git ref/index
+transactions and disposable local bare remotes. Its controller tests include a
+real Python worker with a synthetic Codex executable. Older low-level selection
+tests use `git_review_fixture.py` to explicitly accept a synthetic candidate;
+this fixture is neither a real model judgment nor a runtime completion bypass.
+No external repository is pushed by these tests.

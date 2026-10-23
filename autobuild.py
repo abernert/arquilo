@@ -34,6 +34,7 @@ from review_contract import (
     review_requires_runner_handling, build_review_context_reference,
 )
 import codex_transport
+import git_snapshot
 from host_launcher import launcher_environment, trusted_path
 from runtime_config import environment_value, transport_timeout_values
 import codex_policy
@@ -258,6 +259,7 @@ class AutoBuildSummary:
     budget_exhausted: Optional[Dict[str, Any]] = None
     terminal_attempt: Optional[Dict[str, Any]] = None
     decision_history: List[RunResult] = field(default_factory=list)
+    git_review: Optional[Dict[str, Any]] = None
 
 
 def run_result_error(result: RunResult, phase: str) -> Optional[Dict[str, Any]]:
@@ -601,6 +603,8 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
     payload["process_stop_details"] = (stop_reason(summary.process_stop_details)
                                        if summary.process_stop_triggered else None)
     payload["review_findings"] = summary.review_findings
+    if summary.git_review is not None:
+        payload["git_review"] = summary.git_review
     payload["review_contract_version"] = AUTOBUILD_REVIEW_CONTRACT_VERSION
     payload["final_failure_contract_version"] = AUTOBUILD_FINAL_FAILURE_CONTRACT_VERSION
     payload["parent_review_contract_version"] = AUTOBUILD_PARENT_REVIEW_CONTRACT_VERSION
@@ -1055,6 +1059,9 @@ def start(
     def budget_phase(stage: str) -> str:
         return f"{decision_phase}:{stage}"
 
+    review_workspace = workspace
+    git_review_token = None
+
     def one_run(
         prompt: str,
         sandbox_override: Optional[str] = None,
@@ -1065,6 +1072,8 @@ def start(
             sandbox_override if sandbox_override is not None else sandbox
         )
         extra_args = list(base_extra_args)
+        if stage == "review" and context.git_review is not None and "--skip-git-repo-check" not in extra_args:
+            extra_args.append("--skip-git-repo-check")
         try:
             reason = process_stop_requested()
             if reason:
@@ -1073,7 +1082,7 @@ def start(
             append(pretty_log, f"[{ts()}] [call_budget] {json.dumps(claim, ensure_ascii=False)}\n")
             result = run_codex_exec_json(
                 prompt=prompt,
-                cwd=workspace,
+                cwd=review_workspace if stage == "review" else workspace,
                 sandbox=effective_sandbox,
                 output_last_message_path=None,
                 raw_log=raw_log,
@@ -1276,6 +1285,15 @@ def start(
             contract_path=review_contract_path,
             contract_text=review_contract_text, prompt_config=prompts,
         )
+        if context.git_review is not None:
+            try:
+                git_review_token, review_workspace = git_snapshot.capture(
+                    context.git_review, workspace, review_runs + 1)
+                review_prompt += git_snapshot.review_instructions(context.git_review, git_review_token)
+            except (OSError, ValueError) as exc:
+                runtime_error = execution_error(str(exc), code="git_review_snapshot_failed", phase="review")
+                completed = False
+                break
         print("Last answer:", last_answer)
         try:
             review_result = one_run(
@@ -1306,6 +1324,13 @@ def start(
             last_answer = note
             break
 
+        if context.git_review is not None:
+            try:
+                git_snapshot.verify(context.git_review, git_review_token, review_runs)
+            except (OSError, ValueError) as exc:
+                runtime_error = execution_error(str(exc), code="git_review_snapshot_changed", phase="review")
+                completed = False
+                break
         review_findings = review_result.end_answer
         latest_review_findings = review_findings
         latest_review_classification = parse_review_classification(review_findings)
@@ -1503,6 +1528,7 @@ def start(
     summary_obj.decision = decision_payload
     summary_obj.review_findings = latest_review_findings
     summary_obj.review_classification = latest_review_classification
+    summary_obj.git_review = git_review_token if completed else None
 
     def note_archive_failure(exc: Exception) -> None:
         summary_obj.completed = False
