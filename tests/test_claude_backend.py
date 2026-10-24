@@ -233,6 +233,66 @@ class ProtocolTests(Fixture):
                 self.assertNotIn("PRIVATE HOOK OUTPUT", str(cm.exception))
                 self.assertNotIn("PASSWORD=secret", str(cm.exception))
 
+    def test_native_thinking_token_progress_is_not_completion_or_model_output(self):
+        request = self.request(sandbox='read-only')
+        protocol = ct.ClaudeProtocol(request)
+        trace = RunResult()
+        protocol.accept(json.dumps(self.init(request)), trace)
+        for total, increment in ((64, 64), (112, 48)):
+            event = {'type': 'system', 'subtype': 'thinking_tokens',
+                     'session_id': request.session_id, 'uuid': request.session_id,
+                     'estimated_tokens': total, 'estimated_tokens_delta': increment}
+            if total == 112:
+                event['user_message_uuid'] = request.session_id
+            self.assertFalse(protocol.accept(json.dumps(event), trace))
+            self.assertFalse(trace.turn_completed)
+            self.assertEqual(trace.assistant_messages, [])
+            self.assertFalse(protocol.terminal)
+        self.assertTrue(protocol.accept(json.dumps({
+            'type': 'result', 'session_id': request.session_id,
+            'subtype': 'success', 'is_error': False, 'result': 'Done'}), trace))
+        self.assertTrue(trace.turn_completed)
+        self.assertEqual(trace.assistant_messages, ['Done'])
+
+    def test_thinking_token_progress_rejects_injected_or_malformed_fields(self):
+        request = self.request(sandbox='read-only')
+        valid = {'type': 'system', 'subtype': 'thinking_tokens',
+                 'session_id': request.session_id, 'uuid': request.session_id,
+                 'estimated_tokens': 64, 'estimated_tokens_delta': 16}
+        cases = [
+            {k: v for k, v in valid.items() if k != 'uuid'},
+            {k: v for k, v in valid.items() if k != 'estimated_tokens_delta'},
+            {**valid, 'hook_event': 'PreToolUse'},
+            {**valid, 'tool_name': 'Bash'},
+            {**valid, 'estimated_tokens': True},
+            {**valid, 'estimated_tokens_delta': -1},
+            {**valid, 'estimated_tokens_delta': '16'},
+            {**valid, 'estimated_tokens': 1e200},
+            {**valid, 'estimated_tokens': float('nan')},
+            {**valid, 'uuid': ''},
+            {**valid, 'user_message_uuid': None},
+        ]
+        for event in cases:
+            with self.subTest(event=event):
+                protocol = ct.ClaudeProtocol(request)
+                protocol.accept(json.dumps(self.init(request)), RunResult())
+                with self.assertRaisesRegex(ValueError, 'Claude thinking-token'):
+                    protocol.accept(json.dumps(event), RunResult())
+        with self.assertRaisesRegex(ValueError, 'before verified init'):
+            ct.ClaudeProtocol(request).accept(json.dumps(valid), RunResult())
+
+    def test_thinking_token_progress_after_terminal_remains_forbidden(self):
+        request = self.request()
+        protocol = ct.ClaudeProtocol(request)
+        trace = RunResult()
+        protocol.accept(json.dumps(self.init(request)), trace)
+        protocol.accept(json.dumps({'type': 'result', 'session_id': request.session_id,
+            'subtype': 'success', 'is_error': False, 'result': 'Done'}), trace)
+        with self.assertRaisesRegex(ValueError, 'after its terminal result'):
+            protocol.accept(json.dumps({'type': 'system', 'subtype': 'thinking_tokens',
+                'session_id': request.session_id, 'uuid': request.session_id,
+                'estimated_tokens': 64, 'estimated_tokens_delta': 16}), trace)
+
     def test_duplicate_init_and_post_terminal_fail(self):
         request=self.request();trace=RunResult();p=ct.ClaudeProtocol(request)
         p.accept(json.dumps(self.init(request)),trace)
@@ -283,6 +343,27 @@ class TransportTests(Fixture):
         self.assertEqual(out.execution.status, ExecutionStatus.FAILED)
         self.assertTrue(any('Unqualified Claude runtime component' in e.get('message', '')
                             for e in out.trace.stream_errors))
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_synthetic_thinking_progress_allows_complete_native_turn(self):
+        self.mode('thinking_tokens')
+        out = ct.execute(self.request())
+        self.assertTrue(out.execution.succeeded, str(out.execution))
+        self.assertTrue(out.trace.turn_completed)
+        self.assertEqual(len(self.rows()), 1)
+        raw = (out.trace.capture_dir / 'stdout.bin').read_text(encoding='utf-8')
+        progress = [json.loads(line) for line in raw.splitlines()
+                    if 'thinking_tokens' in line]
+        self.assertEqual(len(progress), 2)
+        self.assertEqual([e['estimated_tokens'] for e in progress], [64, 112])
+
+    def test_synthetic_thinking_progress_with_hook_metadata_fails_closed(self):
+        self.mode('thinking_tokens_extra_field')
+        out = ct.execute(self.request())
+        self.assertEqual(out.execution.status, ExecutionStatus.FAILED)
+        self.assertFalse(out.trace.turn_completed)
+        self.assertTrue(any('Malformed Claude thinking-token progress fields' in
+                            error.get('message', '') for error in out.trace.stream_errors))
         self.assertEqual(len(self.rows()), 1)
 
     def test_native_like_failures_never_succeed(self):
