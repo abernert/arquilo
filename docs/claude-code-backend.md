@@ -101,10 +101,16 @@ invocation, but post-event validation cannot undo a tool already executed.
 | Decide | No task tools; only the native structured-output mechanism when needed |
 
 Claude 2.1.303 emits a `ui_invalidate`/`ui.render` diagnostic before init.
-It is retained but never treated as success. Its two measured built-in components
-(`cc-plugin-agents-md`, `cc-plugin-plugin-authoring`) remain part of the trusted
-native CLI even in safe mode; unknown or installed plugin identities fail the
-acceptance check. This check is not a pre-execution interceptor. `disableAllHooks`
+It is retained but never treated as success. The exact observed built-in
+identities are `cc-plugin-agents-md@builtin` and
+`cc-plugin-plugin-authoring@builtin` (2.1.303), plus
+`cc-plugin-telemetry@builtin` (observed in 2.1.310 on macOS). For each, the
+`name`, `path=builtin`, and `source=name@builtin` fields must match exactly.
+Unknown, duplicate, malformed or installed plugin identities still fail closed;
+neither named MCPs nor new model tools are authorized by this update.
+The `cc-plugin-telemetry` component is built into Claude Code: accepting its
+metadata does **not** disable its telemetry behavior or certify provider privacy
+settings. This check is not a pre-execution interceptor. `disableAllHooks`
 does not disable bundled runtime components. A fresh user profile does not prove
 that every mandatory managed integration is absent.
 
@@ -201,8 +207,10 @@ messages**, not a native Claude model session. Tests poison Codex process and
 configuration entry points and install a sentinel executable for child-process
 regressions. They check production/review/fix/Decide, worker serialization,
 full task-list status, cancellation, timeouts, malformed output, archive failure,
-unsupported CLI contracts and independent model configuration. The maintained native fixture pins Claude Code 2.1.303 and uses a synthetic
-loopback provider, never a real model. Native CLI tests
+unsupported CLI contracts and independent model configuration. The maintained native fixture now pins Claude Code 2.1.310 and uses a synthetic
+loopback provider, never a real model. The earlier 2.1.303 qualification remains
+historical evidence. Offline protocol and subprocess fixtures also exercise the
+exact three built-in identities and reject untrusted substitutions. Native CLI tests
 and real-model/client-host tests are distinct levels; passing an offline suite
 does not establish native tool isolation or model quality.
 
