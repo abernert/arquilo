@@ -27,7 +27,7 @@ jobs:
       - name: Install Linux sandbox prerequisites (no policy relaxation)
         run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
       - name: Install exact official CLI in disposable directory
-        run: npm install --prefix "$RUNNER_TEMP/native-cli" @anthropic-ai/claude-code@2.1.303
+        run: npm install --prefix "$RUNNER_TEMP/native-cli" @anthropic-ai/claude-code@2.1.310
       - name: Native Claude against synthetic loopback provider (no real model or credentials)
         run: >-
           python -B experiments/claude_code/feasibility.py
