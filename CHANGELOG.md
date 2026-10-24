@@ -2,6 +2,11 @@
 
 ## Unreleased — experimental Claude Code backend
 
+- Recognize the `thinking_tokens` system progress event from owner-observed
+  Claude Code 2.1.310 runs. Validate only the documented numeric token estimates,
+  frame identity and exact allowed fields; never count this as tool permission,
+  model output, review success or a terminal result. Unknown hooks still fail closed.
+
 - Accept the exact built-in `cc-plugin-telemetry@builtin` identity reported by
   Claude Code 2.1.310 in addition to the previously qualified built-ins.
   Continue to reject unexpected plugins, tool expansions, malformed metadata,
