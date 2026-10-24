@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -322,6 +323,25 @@ class ClaudeProtocol:
                 elif block.get("type") not in {"text","thinking","redacted_thinking"}:
                     raise ValueError("Unknown assistant content type")
         elif kind == "system":
+            if event.get("subtype") == "thinking_tokens":
+                # Claude Code 2.1.310 emits bounded progress estimates while
+                # thinking. This is NOT a completion, tool, billing or review
+                # signal. Require exactly the SDK fields; reject attached hook
+                # instructions or arbitrary metadata rather than ignoring them.
+                required = {"type", "subtype", "session_id", "uuid",
+                            "estimated_tokens", "estimated_tokens_delta"}
+                allowed = required | {"user_message_uuid"}
+                if not required.issubset(event) or not set(event).issubset(allowed):
+                    raise ValueError("Malformed Claude thinking-token progress fields")
+                for key in ("uuid", "user_message_uuid"):
+                    if key in event and (not isinstance(event[key], str)
+                                         or not 1 <= len(event[key]) <= 128):
+                        raise ValueError("Malformed Claude thinking-token identifier")
+                for key in ("estimated_tokens", "estimated_tokens_delta"):
+                    value = event[key]
+                    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                        raise ValueError("Malformed Claude thinking-token estimate")
+                return False
             if event.get("subtype") not in {"api_retry", "compact_boundary", "status"}:
                 # Do not silently accept hooks/integration events. Report only
                 # a bounded subtype identifier, never hook output or commands,
