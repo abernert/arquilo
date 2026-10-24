@@ -203,6 +203,36 @@ class ProtocolTests(Fixture):
                 ct.ClaudeProtocol(request).accept(
                     json.dumps(self.init(request, plugins=plugins)), RunResult())
 
+    def test_unknown_system_event_reports_only_safe_subtype(self):
+        request = self.request(sandbox='read-only')
+        allowed = ("api_retry", "compact_boundary", "status")
+        for subtype in allowed:
+            protocol = ct.ClaudeProtocol(request)
+            trace = RunResult()
+            protocol.accept(json.dumps(self.init(request)), trace)
+            self.assertFalse(protocol.accept(json.dumps(
+                {"type": "system", "subtype": subtype,
+                 "session_id": request.session_id}), trace))
+        for subtype, expected in (
+            ("hook_started", "hook_started"),
+            ("hook_response", "hook_response"),
+            ("hook_progress", "hook_progress"),
+            ("new_native_notification", "new_native_notification"),
+            ("hook_started\\nPASSWORD=secret", "<invalid>"),
+        ):
+            with self.subTest(subtype=subtype):
+                protocol = ct.ClaudeProtocol(request)
+                trace = RunResult()
+                protocol.accept(json.dumps(self.init(request)), trace)
+                event = {"type": "system", "subtype": subtype,
+                         "session_id": request.session_id,
+                         "output": "PRIVATE HOOK OUTPUT MUST NOT LEAK"}
+                with self.assertRaisesRegex(ValueError, "Unexpected Claude system event") as cm:
+                    protocol.accept(json.dumps(event), trace)
+                self.assertIn("subtype=" + expected, str(cm.exception))
+                self.assertNotIn("PRIVATE HOOK OUTPUT", str(cm.exception))
+                self.assertNotIn("PASSWORD=secret", str(cm.exception))
+
     def test_duplicate_init_and_post_terminal_fail(self):
         request=self.request();trace=RunResult();p=ct.ClaudeProtocol(request)
         p.accept(json.dumps(self.init(request)),trace)
