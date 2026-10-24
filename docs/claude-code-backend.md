@@ -144,6 +144,25 @@ strictly validated legacy npm `claude.cmd`/`cli.js` layout; it does not interpre
 arbitrary `.cmd`, `.bat`, `.ps1` or command-string wrappers. If a newer npm layout
 is refused, use the official native executable, not an unsafe shell workaround.
 
+## Diagnosing unexpected system events
+
+If a current Claude CLI emits `Unexpected Claude system event: subtype=...`,
+ARQUILO has refused an event type outside the permitted protocol. In particular,
+`hook_started`, `hook_progress` and `hook_response` are **not** automatically
+treated as safe diagnostics: they can indicate actual user/managed hooks ran.
+The reported subtype is a bounded identifier; hook commands, output, arbitrary
+metadata and credentials are not included in the exception. Read the saved
+`001-production/stdout.bin` locally and extract only `type`, `subtype`,
+field names and, for hooks, the `hook_event` category. Do not paste the raw
+stdout/stderr archive into an issue; it may contain prompts and outputs.
+
+An interactive `claude` session and a native synthetic-provider CI run can
+have different managed/user hook settings. This adapter passes `disableAllHooks`
+and restricts tools/settings, but it cannot prove that all mandatory or bundled
+host hooks are disabled. If an actual hook is observed, investigate its source
+and policy rather than whitelisting `hook_*` events globally. No further model
+calls are necessary to classify already archived event metadata.
+
 ## Completion, cancellation and evidence
 
 Success requires correlated init and terminal result events from the selected
