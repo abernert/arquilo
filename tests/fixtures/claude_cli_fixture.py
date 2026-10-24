@@ -49,6 +49,15 @@ def main():
                     'source': 'unexpected-plugin@builtin'}]
     emit({'type':'system','subtype':'init','tools':tools,'mcp_servers':[], 'plugins':plugins,
           'permissionMode':'dontAsk','model':'fixture'})
+    if mode in {'thinking_tokens', 'thinking_tokens_extra_field'}:
+        # Headless 2.1.310 emits progress frames, not a tool call or answer.
+        # Deliberately vary the running estimate to exercise repeated frames.
+        for total, increment in ((64, 64), (112, 48)):
+            frame={'type':'system', 'subtype':'thinking_tokens', 'uuid':sid,
+                   'estimated_tokens':total, 'estimated_tokens_delta':increment}
+            if mode=='thinking_tokens_extra_field':
+                frame['hook_event']='PreToolUse'  # Must never be ignored.
+            emit(frame)
     if mode=='foreign':
         print(json.dumps({'type':'result','session_id':'foreign','subtype':'success','is_error':False,'result':'Done'}),flush=True)
         return 0
