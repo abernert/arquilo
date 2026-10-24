@@ -339,7 +339,11 @@ class ClaudeProtocol:
                         raise ValueError("Malformed Claude thinking-token identifier")
                 for key in ("estimated_tokens", "estimated_tokens_delta"):
                     value = event[key]
-                    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                    # Guard huge integers *before* calling math.isfinite:
+                    # converting an unbounded Python int to float may overflow.
+                    if (type(value) not in (int, float) or
+                            not 0 <= value <= (1 << 53) or
+                            (type(value) is float and not math.isfinite(value))):
                         raise ValueError("Malformed Claude thinking-token estimate")
                 return False
             if event.get("subtype") not in {"api_retry", "compact_boundary", "status"}:
