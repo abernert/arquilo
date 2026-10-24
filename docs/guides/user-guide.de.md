@@ -1,7 +1,7 @@
 # ARQUILO Benutzerhandbuch
 
 **Deutsch · Laufzeitversion 0.9.1 · Integrationsdokumentation 24.10.2026**
-[English](user-guide.en.md) · [Alle Handbücher](README.md) · [Fortgeschrittener Betrieb](operator-guide.en.md)
+[English](user-guide.en.md) · [Alle Handbücher](../README.md) · [Fortgeschrittener Betrieb](operator-guide.en.md)
 
 > **Unveröffentlichter Integrationsstand, nicht das veröffentlichte v0.9.1-ZIP.** Die Laufzeitversionsnummer bleibt 0.9.1. Diese Ausgabe kombiniert die Zustandsreparaturen aus PR #35, die Git-Integritätsreparaturen aus PR #36 und die Handbücher aus PR #33. Siehe [Umfang, Quellcommits und verbleibende Grenzen](../integration-status.md). Daraus folgt kein Merge nach `main`, neuer Tag oder Release.
 
@@ -68,11 +68,13 @@ codex login status
 
 Für die normale Codex-Anmeldung dient bei Bedarf `codex login`. Dein Unternehmen kann einen anderen freigegebenen Anmeldeweg vorgeben. Prüfe die Einrichtung in genau der Umgebung, in der ARQUILO laufen soll: Eine Windows-Installation ist nicht automatisch eine Ubuntu-/WSL-Installation. Vermische Windows-Python, Linux-Pfade und Linux-Codex nicht in einem Aufruf.
 
-### Funktioniert `codex` in `~/.local/bin` weiterhin?
+### Werkzeuge außerhalb des Arbeitsbereichs installieren
 
-Ja, sofern dieses Verzeichnis und das tatsächliche Programmziel außerhalb der ausgewählten Workspaces liegen und über einen absoluten Eintrag im `PATH` erreichbar sind. Du rufst ARQUILO unverändert auf. ARQUILO löst den Programmnamen intern auf; ein neuer Launcherparameter ist nicht nötig. Bei Symlinks wird das tatsächliche Ziel geprüft. Ein projektlokales `./codex` oder ein Link zurück ins Projekt wird abgewiesen. Dein gesamtes Home-Verzeichnis als Workspace würde auch `~/.local/bin` einschließen; wähle stattdessen ein engeres Projektverzeichnis.
+ARQUILO startet für seine Arbeit vertrauenswürdige Programme des Rechners. Installiere **Codex und Git außerhalb der Verzeichnisse, die eine Aufgabe verändern kann**, einschließlich ihrer Unterarbeitsbereiche. Andernfalls könnte ein Agent im Projekt ein Programm austauschen und den Controller dazu bringen, diese Ersatzdatei auszuführen. Der Installationsort ist deshalb eine Voraussetzung, kein zusätzlicher Aufrufparameter.
 
-Node ist nur bei Installationen erforderlich, die den unterstützten npm-Codex-Launcher verwenden. „Controller-Launcher“ bezeichnet das Programm, das ARQUILO startet, keinen zusätzlichen Befehl für dich. Weitere Details stehen in der [Installationsanleitung](../installation.md).
+Trenne drei Orte: die ARQUILO-Installation, den Projekt-Workspace mit Eingaben und Ergebnissen sowie den privaten Controller-Zustand. Eine benutzerspezifische Codex-Installation in `~/.local/bin` kann beispielsweise ein Projekt unter `~/projects/bericht` bearbeiten; innerhalb dieses Projekts darf sie nicht liegen. Verwende in `PATH` einen absoluten vertrauenswürdigen Verzeichnispfad. ARQUILO prüft die ausführbare Datei einschließlich möglicher Symlink-Ziele vor dem Start; der normale Aufruf über den Programmnamen bleibt gleich. Wähle mit `--workdir` ein Projektverzeichnis, nicht das gesamte Home-Verzeichnis.
+
+Git ist nur für Installation/Updates über Git oder ausdrücklich aktivierte Git-Automatik erforderlich. Node wird nur benötigt, wenn die gewählte Codex-Installation den unterstützten npm-Launcher verwendet. Auch diese Programme gehören außerhalb der beschreibbaren Aufgabenverzeichnisse.
 
 <a id="preview"></a>
 ## 4. Die erste sichere Vorschau
@@ -201,31 +203,73 @@ Lege `input.md` vor dem Start bereit. Benenne Ausgabedatei, erlaubte Eingaben, T
 
 Halte Aufgaben klein genug, um sie prüfen zu können. Gemeinsame Anforderungen gehören in die Präambel. Taskdirektiven gelten nur für die nächste Aufgabe; die `CFG` vor Aufgabe 1 konfiguriert nicht automatisch Aufgabe 2. Marker wie `Task`, `DONE`, `CFG`, `WAIT` und Optionsnamen sind Maschinensyntax und werden nicht mit dem Fließtext übersetzt.
 
-Bewahre für wiederkehrende Arbeiten eine saubere Vorlage separat auf. `--todo-template` initialisiert eine fehlende Arbeitsliste und überschreibt keine bestehende. Es kopiert nur die Liste, keine referenzierten Eingaben, und initialisiert auch mit `--dry-run`. Einzelheiten stehen im [Vorlagenrezept](../cookbook.md#initialize-a-working-task-list-from-a-template).
+Bewahre für wiederkehrende Arbeiten eine saubere Vorlage separat auf. `--todo-template` initialisiert eine fehlende Arbeitsliste und überschreibt keine bestehende. Es kopiert nur die Liste, keine referenzierten Eingaben, und initialisiert auch mit `--dry-run`. Einzelheiten stehen im [Vorlagenrezept](operator-guide.en.md#recipes).
 
 <a id="options"></a>
-## 9. Häufige Optionen ohne die gesamte Referenz
+## 9. Einen Lauf konfigurieren: die wichtigsten Optionen
 
-| Bedarf | Option und wichtige Grenze |
+Die Optionen des Aufgabenläufers stehen **nach `tasklist run`**. Die folgende Tabelle ist die Arbeitsreferenz für den Alltag. Der [Operator Guide enthält sämtliche Befehle und Konfigurationsoptionen](operator-guide.en.md#cli-reference), einschließlich seltenerer und separater Programme. Relative CLI-Dateipfade beziehen sich auf das aktuelle Terminalverzeichnis, nicht automatisch auf `--workdir`.
+
+| Parameter | Verwendung | Standard / wichtige Regel |
+| --- | --- | --- |
+| `--todo-file DATEI` | Arbeitskopie der Aufgabenliste auswählen. | Für einen echten Aufgabenlauf erforderlich; beim Fortsetzen denselben Pfad verwenden. |
+| `--workdir VERZEICHNIS` | Projekt-Workspace festlegen. | Ohne Angabe: Verzeichnis der Aufgabenliste. |
+| `--todo-template DATEI` | Eine Vorlage kopieren, wenn die Arbeitsliste noch fehlt. | Aus; bestehende Listen werden nie ersetzt. Ausdrückliches Kopieren erfolgt auch im Dry-run. |
+| `--model MODELL_ID` | Modell oder Deployment für den Lauf wählen. | Ohne Angabe geerbt; die Kennung muss beim eigenen Provider verfügbar sein. |
+| `--reasoning-effort STUFE` | Gewünschten Reasoning-Aufwand anfordern. | Ohne Angabe geerbt. Zulässige Zeichenketten: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `--agent PROFIL` | Ein vorhandenes natives Codex-Profil auswählen. | Kein laufweiter Override; `CFG agent` einer Aufgabe kann ihn überschreiben. Kein Agententeam. |
+| `--prompt-config default/de/en/DATEI` | Eingebaute Texte oder einen vollständigen eigenen TOML-Katalog wählen. | `default`; eigene Aufgaben und Ergebnissprache bleiben davon getrennt. |
+| `--max-calls N` | Aufrufversuche je oberstem Aufgabenbaum begrenzen. | **0 = unbegrenzt**; für einen begrenzten Versuch einen positiven Wert verwenden. |
+| `--max-steps N` | Produktions-/Korrekturschritte begrenzen. | 3; der Aufgabenläufer kombiniert dies mit `--max-retries` (Standard 2). |
+| `--start ID` / `--stop ID` | Startaufgabe und Grenze nach einer abgenommenen Aufgabe festlegen. | Alle verbleibenden ausgewählten Aufgaben; kein sofortiger Abbruch. |
+| `--dry-run` | Anweisungen ohne Modellaufruf vorab ansehen. | Aus. Prüft keine Anmeldung oder Rechte externer Werkzeuge. |
+| `--dry-run-file DATEI` | Vorschauziel festlegen. | `run_todos_dry_run.md`; neue Datei wählen, weil Überschreiben abgewiesen wird. |
+| `--project-id NAME` | Lesbaren Namen für die Loggruppe vergeben. | Automatische Identität; ein anderer Logname setzt kein Budget zurück. |
+| `--logs-in-workdir` | Sichtbare Diagnoseprotokolle im Workspace ablegen. | Aus; der maßgebliche Steuerzustand bleibt immer extern. |
+| `--state-dir VERZEICHNIS` | Privaten externen Zustandsordner auswählen. | Plattformstandard; über Neustarts hinweg beibehalten. |
+| `--network-access` | Shell-Netzwerkzugriff in der Sandbox freigeben. | Aus; Providerkommunikation, MCP und Websuche sind getrennte Wege. |
+| `--mcp NAMEN/none` | Explizite MCP-Serverauswahl begrenzen. | Ohne Angabe geerbt; die Server müssen bereits konfiguriert sein. |
+| `--review-mcp NAMEN/none` | Eine Teilmenge für den Reviewer festlegen. | Bei explizitem `--mcp` standardmäßig none; externe Leserechte brauchen serverseitige Begrenzung. |
+| `--skills NAMEN/none` / `--skill-dir VERZEICHNIS` | Verfahrensanweisungen binden und gegebenenfalls Suchwurzeln wählen. | Keine explizite Bindung; Suchwurzeln mehrfach angebbar. |
+| `--runtime-profile DATEI` | Freigegebene Domänenregeln und optionalen Host-Preflight laden. | Keines; vorher prüfen, weil Preflight Programme auf dem Rechner ausführen kann. |
+| `--todo-preamble auto/off/required` | Einbindung gemeinsamer Projektanweisungen steuern. | `auto`; mit `required` eine inhaltliche Präambel verlangen. |
+| `--process-stop-policy model/controller-only` | Festlegen, wer laut Anweisung Prozessstopps anfordert. | `model`; beide Modi beachten vorhandene Stopps. |
+| `--accept-plan-changes` | Bewusst geprüfte externe Planänderungen übernehmen. | Aus; kein allgemeines Mittel gegen einen ungeklärten Fehler. |
+| `--allow-todo-modifications` | Einer Planungsaufgabe Änderungen an der Hauptliste erlauben. | Aus; mit einer bewussten Grenze und anschließender menschlicher Prüfung verwenden. |
+| `--git`, `--git-path DATEI`, `--git-push` | Geprüfte Git-Commits und separat Push einschalten. | Aus. Vorher das Git-Kapitel lesen; aktuelle Snapshotgrenzen können den Review blockieren. |
+
+### Modell und Reasoning-Aufwand auswählen
+
+Ersetze `YOUR_MODEL_ID` sowie die beiden Pfade durch dein konfiguriertes Modell/Deployment und dein Projekt. Dies ist ein **echter Lauf**, keine Vorschau. Unter PowerShell verwendest du deinen installierten Python-Befehl und Windows-Pfade; die einzeilige Argumentanordnung bleibt gleich.
+
+<!-- example: model-and-effort -->
+```sh
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --model YOUR_MODEL_ID --reasoning-effort high --prompt-config en --max-calls 20
+```
+
+Reasoning-Aufwand ist eine Anforderung an das Modell beziehungsweise den Provider, keine Qualitätsgarantie. Eine höhere Stufe kann Arbeitsaufwand, Antwortdauer und Verbrauch erhöhen; wähle nur Werte, die dein Modell unterstützt. Eine unzulässige Kombination ist ein Fehler und keine Erlaubnis, still ein anderes Modell zu verwenden. Die Optionen ändern nicht deine native Codex-Konfigurationsdatei.
+
+### Herkunft und Vorrang der Einstellungen
+
+| Einstellung | Wirksame Reihenfolge |
 | --- | --- |
-| Experiment begrenzen | `--max-calls 8` oder ein anderes positives Limit, **je numerischem Wurzelaufgabenbaum**, nicht als Gesamtkostenlimit des Laufs. |
-| Verfügbares Modell auswählen | `--model MODEL_ID`; die konkrete ID stammt aus deiner freigegebenen Anbieterumgebung. Es wird keine Modellberechtigung zugesagt. |
-| Sprache der eingebauten Prompts wählen | `--prompt-config de` oder `en`; Standard ist `default`. Aufgabentext, CLI-Meldungen und Protokollschlüssel werden nicht automatisch übersetzt. |
-| Ergebnissprache festlegen | Schreibe die Sprache in Aufgabe oder Präambel und prüfe das Ergebnis; die Promptsprachauswahl allein garantiert sie nicht. |
-| Aufgabenbereich begrenzen | `--start 2 --stop 3`; dies wählt bewusst einen Bereich und ist kein sicherer Weg, eine ungeklärte frühere Aufgabe zu umgehen. |
-| Lesbare Projektlogs gruppieren | `--project-id demo`; die ID ist an Workspace/Plan gebunden und erzeugt kein neues Budget. |
-| Sichtbare Logs im Workspace ablegen | `--logs-in-workdir`; private Plan- und Budgetdaten bleiben extern. |
+| Modell | `--model` → `ARQUILO_CODEX_MODEL` → `CFG model` der Aufgabe → native Codex-Konfiguration. Eine globale Modellwahl hat also Vorrang vor Aufgabenmodellen. |
+| Reasoning-Aufwand | `--reasoning-effort` → `ARQUILO_CODEX_REASONING_EFFORT` → native Konfiguration. Ein aufgabenbezogenes `CFG reasoning_effort` gibt es in diesem Stand nicht. |
+| Natives Profil | `CFG agent` der Aufgabe → laufweites `--agent` → native Standardkonfiguration. |
+| Eingebaute Prompttexte | Explizites `--prompt-config` oder `default`; keine automatische Suche nach einem Projektkatalog. |
+| Domänenregeln | `--runtime-profile` → `ARQUILO_RUNTIME_PROFILE`; getrennt vom nativen Profil und Promptkatalog. |
+| Gemeinsame Aufgabenanweisungen | Text vor der ersten echten Aufgabe, gesteuert durch `--todo-preamble`; konkrete Anforderungen stehen in der Aufgabe. |
 
-**Das Standard-Aufruflimit ist 0: unbegrenzt.** Wird ein zuvor endlich begrenzter Plan ohne `--max-calls` fortgesetzt, kann sein Limit auf unbegrenzt wechseln; der Verbrauch bleibt erhalten. Gib das gewünschte endliche Limit bei jeder Fortsetzung erneut an. Ein Codex-Aufruf kann mehrere interne Modellanfragen umfassen; die Zähler sind keine Token-, Geld- oder Zeitlimits.
+ARQUILO benötigt weder eine eigene YAML-Konfiguration noch eine automatisch geladene Workspace-`.env`. Für wiederverwendbare Modellvorgaben kannst du die beiden genannten Umgebungsvariablen in der startenden Shell setzen oder ein freigegebenes natives Profil verwenden. Zugangstoken gehören nicht in Aufgaben oder Handbücher. Für MCP und Skills gelten Rechteobergrenzen statt einer einfachen Überschreibungsreihenfolge; lies dazu den Operator Guide.
 
-Für deine normale externe `codex`-Installation brauchst du keine zusätzliche Option. Lasse Shell-Netzwerkzugriff und automatische Git-Veröffentlichung in den Einstiegsbeispielen ausgeschaltet. Lies vor fortgeschrittener Ressourcennutzung oder automatischer Veröffentlichung den [Operator Guide](operator-guide.en.md).
+**Beim Fortsetzen einen endlichen `--max-calls`-Wert erneut angeben.** Ohne Angabe kann eine frühere endliche Grenze auf unbegrenzt wechseln; verbrauchte Versuche bleiben erhalten. Ein Codex-Aufruf kann mehrere interne Modellanfragen enthalten. Der Zähler ist deshalb kein Zeit-, Token- oder Geldlimit. Lass die automatische Git-Veröffentlichung für die Einstiegsbeispiele ausgeschaltet.
 
 <a id="results"></a>
 ## 10. Ergebnisse, Status und Logs lesen
 
 Betrachte immer drei Dinge gemeinsam: **das tatsächliche Ergebnis**, **Aufgabenliste und Ergebnisbericht** sowie **die Ausführungs- und Reviewnachweise des Controllers**. Eine überzeugend klingende Abschlussmeldung reicht nicht.
 
-Standardorte des Controller-State sind `~/Library/Application Support/ARQUILO/controller` unter macOS, `~/.local/state/arquilo/controller` unter Linux/WSL und `%LOCALAPPDATA%\ARQUILO\controller` unter Windows. Den konkreten Lauf findest du am zuverlässigsten über den ausgegebenen Laufpfad. Eine lesbare Projekt-ID verändert die Logzuordnung, nicht die dauerhafte Budgetidentität. [Logstruktur](../project-logs.md)
+Standardorte des Controller-State sind `~/Library/Application Support/ARQUILO/controller` unter macOS, `~/.local/state/arquilo/controller` unter Linux/WSL und `%LOCALAPPDATA%\ARQUILO\controller` unter Windows. Den konkreten Lauf findest du am zuverlässigsten über den ausgegebenen Laufpfad. Eine lesbare Projekt-ID verändert die Logzuordnung, nicht die dauerhafte Budgetidentität. [Logstruktur](operator-guide.en.md#logs-reference)
 
 Häufige Exitcodes des Runners:
 
@@ -267,7 +311,7 @@ Starte mit **demselben Workspace, Aufgabenpfad und State-Verzeichnis**, dem beab
 
 Lösche keinen State, benenne keinen Plan für ein neues Budget um und setze `DONE` nicht manuell zur Fehlerbehebung. Historische DONE-Werte, die als erste Eigentümervorgabe eingelesen wurden, beweisen keinen früheren Review. Version 0.9.1 repariert historisch falsch akzeptierte Läufe nicht automatisch.
 
-Es gibt ein eng begrenztes [Verfahren zur reinen Review-Wiederaufnahme](../review-resume.md): für einen abgeschlossenen Produktionslauf, der früher ausschließlich wegen einer fälschlich als fatal behandelten, tatsächlich überwundenen Reconnect-Meldung abgewiesen wurde. Es verlangt vollständige passende Nachweise und einen neuen Review. Das ist kein allgemeiner Force-resume-Schalter; verwende das Verfahren nur unter seinen dokumentierten Voraussetzungen.
+Es gibt ein eng begrenztes [Verfahren zur reinen Review-Wiederaufnahme](operator-guide.en.md#recovery-reference): für einen abgeschlossenen Produktionslauf, der früher ausschließlich wegen einer fälschlich als fatal behandelten, tatsächlich überwundenen Reconnect-Meldung abgewiesen wurde. Es verlangt vollständige passende Nachweise und einen neuen Review. Das ist kein allgemeiner Force-resume-Schalter; verwende das Verfahren nur unter seinen dokumentierten Voraussetzungen.
 
 <a id="plan-changes"></a>
 ## 13. Einen bestehenden Plan absichtlich ändern
@@ -290,9 +334,9 @@ Im strikten Standardmodus dürfen Anforderungen und akzeptierter Zustand nicht s
 | Gutes Artefakt, aber Aufgabe offen | Review oder abschließende Controllerannahme können gescheitert sein. Dokumentierte Phase lesen; DONE nicht manuell setzen. |
 | Windows-Zugriffsfehler bei paralleler Projektregistrierung | Fehler und vollständige Pending-Datei erhalten, konkurrierende Läufe stoppen. Dieser Integrationsstand enthält die Reparatur aus PR #35 für Issue #32; das veröffentlichte v0.9.1-ZIP nicht. Ein erneuter Fehler muss untersucht werden; State nicht löschen. |
 
-Weitere Hilfe bieten [Troubleshooting](../troubleshooting.md) und die [bekannten Grenzen](operator-guide.en.md#limitations). Löse Installationsfehler nicht durch routinemäßigen Administrator-/Rootbetrieb oder das Abschalten des Plattformschutzes.
+Weitere Hilfe bieten [Troubleshooting](operator-guide.en.md#troubleshooting-reference) und die [bekannten Grenzen](operator-guide.en.md#limitations). Löse Installationsfehler nicht durch routinemäßigen Administrator-/Rootbetrieb oder das Abschalten des Plattformschutzes.
 
-Bei automatischer Git-Veröffentlichung werden nur ausdrücklich ausgewählte Ausgabedateien aus einem verifizierten Vorab-Prüfstand committed. Verwende serielle Aufgaben; wähle weder `tasks.md` noch nachträglich ergänzte Ergebnisberichte aus. Eine verlinkte virtuelle Umgebung oder eine zu große Kontextdatei kann weiterhin **nach der Produktion, vor dem Review** abgewiesen werden. Prüfe den Workspace vorher oder veröffentliche manuell mit Git. Siehe [Git-Veröffentlichung](../git-publication.md).
+Bei automatischer Git-Veröffentlichung werden nur ausdrücklich ausgewählte Ausgabedateien aus einem verifizierten Vorab-Prüfstand committed. Verwende serielle Aufgaben; wähle weder `tasks.md` noch nachträglich ergänzte Ergebnisberichte aus. Eine verlinkte virtuelle Umgebung oder eine zu große Kontextdatei kann weiterhin **nach der Produktion, vor dem Review** abgewiesen werden. Prüfe den Workspace vorher oder veröffentliche manuell mit Git. Siehe [Git-Veröffentlichung](operator-guide.en.md#git).
 
 <a id="updating"></a>
 ## 15. Aktualisieren, ohne Fortschritt zu verlieren
@@ -306,4 +350,4 @@ Lasse laufende Projektpfade und ihr State-Verzeichnis unverändert. Lies Changel
 
 Prüfe, ob der Workspace bewusst eingegrenzt ist, die Eingaben für den konfigurierten Anbieter freigegeben sind, die Aufgabe beobachtbare Abnahmekriterien besitzt, das Aufruflimit ausdrücklich gesetzt ist und Stopp sowie Wiederaufnahme verstanden sind. Kontrolliere Ergebnisse vor der Veröffentlichung unabhängig. Bewahre Logs angemessen auf, ohne vertrauliche Roharchive ungeprüft an Supportstellen zu senden.
 
-Der [Advanced / Operator Guide](operator-guide.en.md) vertieft Ressourcen, Profile, Parallelität und Betrieb. Der [Technical / Architecture Guide](technical-guide.en.md) erklärt die Interna. Die [Konfigurationsreferenz](../../documents/CONFIGURATION.md) und [Direktivenreferenz](../../documents/todo_directives.md) bleiben die detaillierten Nachschlagewerke für die installierte Version.
+Der [Advanced / Operator Guide](operator-guide.en.md) vertieft Ressourcen, Profile, Parallelität und Betrieb. Der [Technical / Architecture Guide](technical-guide.en.md) erklärt die Interna. Die [Konfigurationsreferenz](operator-guide.en.md#cli-reference) und [Direktivenreferenz](operator-guide.en.md#task-directive-reference) bleiben die detaillierten Nachschlagewerke für die installierte Version.

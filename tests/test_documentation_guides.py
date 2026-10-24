@@ -67,7 +67,7 @@ class DocumentationGuideTests(unittest.TestCase):
         self.assertEqual(len(names), len(set(names)))
         self.assertEqual(self.package["runtime_file_count"], len(names))
         required = set(self.guides) | set(self.manifest["synthetic_examples"]) | {
-            "docs/guides/README.md", "docs/guides/manifest.json", "docs/documentation-maintenance.md"}
+            "docs/README.md", "docs/guides/manifest.json", "docs/guides/cli-reference.json"}
         self.assertTrue(required.issubset(names), sorted(required - set(names)))
         self.assertNotIn("tests/test_documentation_guides.py", names)
 
@@ -115,10 +115,10 @@ class DocumentationGuideTests(unittest.TestCase):
             "--allow-todo-modifications", "--accept-plan-changes"])
         self.assertEqual(parsed.max_calls, 8)
         self.assertEqual(parsed.agent, "example-profile")
-        config = (ROOT / "documents/CONFIGURATION.md").read_text(encoding="utf-8")
+        config = (ROOT / "docs/guides/operator-guide.en.md").read_text(encoding="utf-8")
         for flag in self.manifest["runner_selectors"]:
             # Some core controls have their canonical reference in linked safety/operator pages.
-            self.assertIn(flag, config + (ROOT / "docs/controller-safety.md").read_text(encoding="utf-8"))
+            self.assertIn(flag, config + (ROOT / "docs/guides/technical-guide.en.md").read_text(encoding="utf-8"))
 
     def test_synthetic_tasklists_lint_and_dry_run_without_dispatch(self):
         with tempfile.TemporaryDirectory() as temporary:

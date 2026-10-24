@@ -101,7 +101,7 @@
   controller, plan and DONE gates intact. Refuse unsafe or ambiguous recovery,
   keep task bounds strict, and do not silently mark a task complete.
 - Document prerequisites, exact command, evidence checks and limitations in
-  [review-only recovery guidance](docs/review-resume.md). Add offline
+  [review-only recovery guidance](docs/guides/operator-guide.en.md#recovery-reference). Add offline
   regressions for stream diagnostics and recovery. Public-preview status,
   model-provider policies and runtime sandbox boundaries are unchanged.
 

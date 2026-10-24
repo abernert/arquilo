@@ -1,6 +1,6 @@
 # Historical migration notes — former DORA runtime
 
-DORA is the historical project name, not an active ARQUILO product or mode. The settings and development identifiers below describe retired predecessor features. They are rejected, not supported configuration examples. Current configuration is documented in [CONFIGURATION.md](CONFIGURATION.md).
+DORA is the historical project name, not an active ARQUILO product or mode. The settings and development identifiers below describe retired predecessor features. They are rejected, not supported configuration examples. Current configuration is documented in [CONFIGURATION.md](../docs/guides/operator-guide.en.md#cli-reference).
 
 ## Archived notes for removed features
 
@@ -24,6 +24,6 @@ For direct `TodoRunner` use, the first 15 positional parameters remain. Old posi
 
 AutoBuild queue and HTTP/Prometheus services have been removed since 1033. `autobuild.py queue`, including `enqueue`, `list`, `show`, `cancel`, and `run-worker`, exits with code 2 before any file or model access. The same applies to `--queue-state`, `--prometheus-port`, `--poll-interval`, and `--max-jobs`. Python/worker/CFG/profile fields `queue`, `queue_state`, `prometheus_port`, `poll_interval`, and `max_jobs` are rejected even when `False`, `None`, zero, or empty. Former Python exports `queue_main`, `QueuedJob`, `QueueState`, `QueueWorker`, and `TelemetryMetrics` are no longer available; access through `autobuild` produces an explanatory `ImportError`.
 
-The old services did not have their own environment-variable evaluation. For corresponding wrappers, `DORA_QUEUE_STATE` and `DORA_PROMETHEUS_PORT` are rejected whenever present, including during profile preflight. Existing queue state remains untouched. Standalone AutoBuild, direct `autobuild.start`, parallel CFG with Python workers, full logs, mandatory reviews, process stopping, and shared budgets remain available. `--max-retries` remains the separate runner option described in [WORKFLOW_LIMITS.md](WORKFLOW_LIMITS.md).
+The old services did not have their own environment-variable evaluation. For corresponding wrappers, `DORA_QUEUE_STATE` and `DORA_PROMETHEUS_PORT` are rejected whenever present, including during profile preflight. Existing queue state remains untouched. Standalone AutoBuild, direct `autobuild.start`, parallel CFG with Python workers, full logs, mandatory reviews, process stopping, and shared budgets remain available. `--max-retries` remains the separate runner option described in [WORKFLOW_LIMITS.md](../docs/guides/operator-guide.en.md#limits-reference).
 
 The former API-key/base-URL variables for DORA Decide are no longer evaluated. Removed Evidence, Logician, YOLO, and No-Check switches continue to be explicitly rejected. Old alias names are a migration path only; new configurations use current ARQUILO options.

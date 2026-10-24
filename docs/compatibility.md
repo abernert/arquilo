@@ -11,7 +11,7 @@ external-source compatibility), runtime profiles, call budgets, state roots,
 and command aliases are unchanged. `capabilities` advertises the additive
 `features["run_todos.todo_template"] = 1` contract. Update the whole runtime
 package, including the new `todo_template.py` module. See the
-[template recipe](cookbook.md#initialize-a-working-task-list-from-a-template).
+[template recipe](guides/operator-guide.en.md#recipes).
 
 ## Reconnect and cancellation reporting (ARQUILO 0.7.2)
 
@@ -28,7 +28,7 @@ work. No state/budget reset or Codex reconfiguration is required. Existing
 archives are not rewritten and a stop never becomes a reviewed DONE. Inspect
 partial results and deliberately clear applicable stop instructions before
 restarting. No automatic task replay or broader reconnect suppression is added.
-See [troubleshooting](troubleshooting.md) for the supported event and log fields.
+See [troubleshooting](guides/operator-guide.en.md#troubleshooting-reference) for the supported event and log fields.
 
 ## Hardening compatibility (ARQUILO 0.7.1)
 
@@ -37,7 +37,7 @@ not executable tasks. Keep executable entries at zero to three leading
 spaces. Automatic reviewed Git pushes no longer include unrequested
 annotated tags via `push.followTags`. No authentication or controller-state
 reset is needed. See [the changelog](../CHANGELOG.md) and
-[task syntax](../documents/todo_directives.md).
+[task syntax](guides/operator-guide.en.md#task-directive-reference).
 
 ## Task-list command namespace (ARQUILO 0.7.0)
 
@@ -50,7 +50,7 @@ and `package` are unchanged. `tasklist --help` shows the command group;
 `tasklist run --help` shows the existing runner options.
 
 No pipeline command is implemented by this migration. The
-[pipeline proposal](pipeline-mvp-concept.md) is not an executable schema.
+[pipeline proposal](https://github.com/abernert/arquilo/blob/integration/hardening-guides-091-20261024/design/pipeline-mvp-concept.md) is not an executable schema.
 
 ## Current names (ARQUILO 0.9.1)
 
@@ -107,11 +107,11 @@ read new output unchanged. Update readers that match schema strings, the doctor
 version key, direct Python imports or old prompt markers. Existing `run_todos.py`,
 `autobuild.py`, `decide.py` and Markdown task syntax stay intact.
 Runner control records/logs moved outside the workspace in 0.3.0; see
-[controller state and migration](controller-safety.md).
+[controller state and migration](guides/technical-guide.en.md#controller-reference).
 Doctor logs now use `.codex_runs/arquilo_doctor`; old diagnostic folders remain.
 
 Removed predecessor features are still rejected, including both old and renamed
-spellings where applicable. See the [historical migration notes](../documents/HISTORICAL_MIGRATION.md).
+spellings where applicable. See the [historical migration notes](https://github.com/abernert/arquilo/blob/integration/hardening-guides-091-20261024/documents/HISTORICAL_MIGRATION.md).
 
 ## Codex and preview policy
 
@@ -129,7 +129,7 @@ The 0.2.1–0.3.1 feature-negotiation policy is historical. Decide now uses the
 trusted Codex user/managed configuration and inherited process environment.
 It omits model/provider/profile/effort unless explicitly selected. User config,
 rules and integrations are no longer discarded or disabled with bulk feature
-flags. See [Decide configuration and trust boundary](decide-configuration.md).
+flags. See [Decide configuration and trust boundary](guides/operator-guide.en.md#decide-reference).
 
 Only required Exec flags are checked (`--version` and `exec --help` in Doctor,
 `exec --help` at the actual Decide start). Older CLIs are not rejected merely
@@ -145,7 +145,7 @@ result validation is unchanged. Old archives and release tags remain untouched.
 
 `--project-id` adds a workspace-bound readable log namespace while retaining
 existing plan journals and budgets at their canonical paths. Keep the same
-state root for an existing plan. See [project logs](project-logs.md).
+state root for an existing plan. See [project logs](guides/operator-guide.en.md#logs-reference).
 New `run.json` uses `arquilo.run_log.v2`; `run_log.json` remains a v1-compatible
 snapshot. Capture paths are numbered phase folders, not `.jsonl.calls/call-*`.
 Use captured path metadata instead of hard-coded directory patterns. Old
@@ -165,5 +165,5 @@ default. Run metadata adds `logs_location`, `todo_policy`, `plan_mutations`,
 `reviewed_this_run`, `stop_id` and `completion_scope`. The compatible run_log
 remains; model-written task statuses are not reviewed completions. A generated
 plan can remain in the original task file and halt with `--stop 2` for human
-inspection. See [operator controls](operator-controls.md) for exact semantics.
+inspection. See [operator controls](guides/operator-guide.en.md#operator-controls-reference) for exact semantics.
 These controls do not restore other removed predecessor modules.

@@ -105,3 +105,7 @@ Integrations-PR ist ein Prüfstand, kein automatischer Sammelmergeauftrag.
 Prozessaufsicht, allgemeine Ausgabequoten/Deadlines, strengere Kontrollstreams,
 weiteres Recovery-/Ressourcenhardening und ein dauerhaftes Release-Gate bleiben
 außerhalb dieses Auftrags. Keine Behauptung, dass alle 42 Auditbefunde geschlossen sind.
+
+## Ergänzung aus dem Dokumentationsreview vom 24. Oktober 2026
+
+Die Handbücher werden als zusammenhängende Anleitungen mit vollständiger Operator-Referenz konsolidiert. Frühere Einzelreferenzen sind eingearbeitet; die Retirement-Liste steht in `maintenance/documentation_consolidation.md`. Die vorgeschlagene frühere Größenprüfung allein löst den inzwischen festgestellten Produktkonflikt nicht: optionale Git-Veröffentlichung und fachlicher Review sollen entkoppelt werden. Diese Codeänderung ist weiterhin offen; die hier beschriebenen Tests bestätigen noch den bisherigen Ablauf und sind keine Freigabe für das gewünschte neue Verhalten.

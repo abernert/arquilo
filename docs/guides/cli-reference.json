@@ -1,0 +1,1535 @@
+{
+  "schema_version": "arquilo.cli_reference.v1",
+  "commands": {
+    "arquilo": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--version"
+        ],
+        "destination": "version",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Print the runtime version and exit. For development checkouts also record the commit."
+      },
+      {
+        "names": [
+          "command"
+        ],
+        "destination": "command",
+        "default": null,
+        "choices": [
+          "tasklist",
+          "run",
+          "resume-review",
+          "doctor",
+          "capabilities",
+          "package"
+        ],
+        "required": false,
+        "nargs": "?",
+        "repeatable": false,
+        "flag": false,
+        "description": "Select a subcommand. Options belong after their owning subcommand."
+      }
+    ],
+    "tasklist": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "command"
+        ],
+        "destination": "command",
+        "default": null,
+        "choices": [
+          "run",
+          "resume-review"
+        ],
+        "required": false,
+        "nargs": "?",
+        "repeatable": false,
+        "flag": false,
+        "description": "Select a subcommand. Options belong after their owning subcommand."
+      }
+    ],
+    "tasklist run": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--todo-syntax"
+        ],
+        "destination": "todo_syntax",
+        "default": "auto",
+        "choices": [
+          "auto",
+          "legacy",
+          "marked-en"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Choose the spelling used when writing new task headers; existing supported spellings remain readable. CLI overrides ARQUILO_TODO_SYNTAX."
+      },
+      {
+        "names": [
+          "--todo-preamble"
+        ],
+        "destination": "todo_preamble",
+        "default": "auto",
+        "choices": [
+          "auto",
+          "off",
+          "required"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Include the visible project preamble when present (auto), omit it (off), or require it (required). CLI overrides ARQUILO_TODO_PREAMBLE."
+      },
+      {
+        "names": [
+          "--todo-file"
+        ],
+        "destination": "todo_file",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Working UTF-8 Markdown task list. Required for execution; not needed for help/capabilities. An existing list is resumed, not replaced."
+      },
+      {
+        "names": [
+          "--todo-template"
+        ],
+        "destination": "todo_template",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Initialize a missing task list from this local template. Never overwrite an existing list. The destination must be inside the workspace. Explicit initialization also writes in dry-run mode."
+      },
+      {
+        "names": [
+          "--workdir"
+        ],
+        "destination": "workdir",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Workspace. In the task runner, defaults to the task-list directory; Doctor uses the task-list directory or current directory. Use a narrow project directory, not your entire home."
+      },
+      {
+        "names": [
+          "--start"
+        ],
+        "destination": "start_id",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Start selection at this task ID, for example 3 or 3.1. Already terminal tasks are not rerun. Earlier tasks lie outside the explicitly selected scope."
+      },
+      {
+        "names": [
+          "--stop"
+        ],
+        "destination": "stop_id",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Stop scheduling after this task and its required acceptance. It is not cancellation of the current model call."
+      },
+      {
+        "names": [
+          "--max-depth"
+        ],
+        "destination": "max_depth",
+        "default": 3,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Maximum numeric task depth; 3 includes IDs such as 2.1.1. This does not disable a STOP barrier."
+      },
+      {
+        "names": [
+          "--max-retries"
+        ],
+        "destination": "max_retries",
+        "default": 2,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Continuation multiplier for production/correction steps: max-steps times max-retries. It is not whole-task replay after a technical failure."
+      },
+      {
+        "names": [
+          "--max-calls"
+        ],
+        "destination": "max_calls",
+        "default": 0,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Persistent invocation budget per top-level task tree, shared with descendants/reviews/Decide; 0 means unlimited. Counts attempts, not tokens, money or all internal provider requests."
+      },
+      {
+        "names": [
+          "--breakdown-policy"
+        ],
+        "destination": "breakdown_policy",
+        "default": "minimal",
+        "choices": [
+          "minimal",
+          "legacy",
+          "off"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Decompose unfinished work using a minimal residual contract, the legacy free decomposition, or no automatic decomposition."
+      },
+      {
+        "names": [
+          "--breakdown-max-children"
+        ],
+        "destination": "breakdown_max_children",
+        "default": 4,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Maximum direct children in minimal decomposition. Valid range: 1 to 12."
+      },
+      {
+        "names": [
+          "--breakdown-max-rounds"
+        ],
+        "destination": "breakdown_max_rounds",
+        "default": 2,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Maximum focused decomposition/repair rounds including the first child wave. Valid range: 1 to 8."
+      },
+      {
+        "names": [
+          "--process-stop-policy"
+        ],
+        "destination": "process_stop_policy",
+        "default": "model",
+        "choices": [
+          "model",
+          "controller-only"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "model allows the task to request a stop; controller-only instructs it to return structured feedback and leave stop decisions to the controller. Existing stop signals still apply."
+      },
+      {
+        "names": [
+          "--max-steps"
+        ],
+        "destination": "max_steps",
+        "default": 3,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget."
+      },
+      {
+        "names": [
+          "--sandbox"
+        ],
+        "destination": "sandbox",
+        "default": "workspace-write",
+        "choices": [
+          "workspace-write"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Explicit execution policy. The task runner only accepts workspace-write; standalone AutoBuild also accepts read-only. Mandatory review/Decide remain read-only."
+      },
+      {
+        "names": [
+          "--network-access"
+        ],
+        "destination": "network_access",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Grant shell-network access within workspace-write. A task may restrict this grant, not create it. Does not control provider, MCP or web-search traffic."
+      },
+      {
+        "names": [
+          "--model"
+        ],
+        "destination": "model",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide."
+      },
+      {
+        "names": [
+          "--reasoning-effort"
+        ],
+        "destination": "reasoning_effort",
+        "default": null,
+        "choices": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide."
+      },
+      {
+        "names": [
+          "--skip-codex-preflight"
+        ],
+        "destination": "skip_codex_preflight",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Skip the runner workspace-write functional probe only after that environment has been checked separately. Does not skip mandatory task reviews."
+      },
+      {
+        "names": [
+          "--dry-run"
+        ],
+        "destination": "dry_run",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Lint and render planned work without model calls. Explicit --todo-template can still create the missing list. Does not certify provider permissions or Git snapshot suitability."
+      },
+      {
+        "names": [
+          "--dry-run-file"
+        ],
+        "destination": "dry_run_file",
+        "default": "run_todos_dry_run.md",
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "New output file for the dry-run report, relative to the invocation directory. Existing output is refused rather than overwritten."
+      },
+      {
+        "names": [
+          "--simulate-incomplete"
+        ],
+        "destination": "simulate_incomplete",
+        "default": [],
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": true,
+        "flag": false,
+        "description": "In dry run only, mark the supplied task ID as incomplete for simulation; repeat for multiple IDs."
+      },
+      {
+        "names": [
+          "--run-id"
+        ],
+        "destination": "run_id",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Optional run identifier; a new identifier is generated when omitted. Changing the identifier does not reset task state or consumed budgets."
+      },
+      {
+        "names": [
+          "--git"
+        ],
+        "destination": "git",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Enable reviewed commits for explicit --git-path selections; no implicit push. Read the Git chapter before enabling: this branch still couples Git snapshots to mandatory review."
+      },
+      {
+        "names": [
+          "--git-path"
+        ],
+        "destination": "git_path",
+        "default": [],
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": true,
+        "flag": false,
+        "description": "One literal relative output filename per occurrence, not a glob or directory. Requires --git. Do not select task plans, rewritten reports or controller logs."
+      },
+      {
+        "names": [
+          "--git-push"
+        ],
+        "destination": "git_push",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Additionally publish reviewed commits to the approved existing upstream. Requires --git and the documented remote/serial-execution conditions."
+      },
+      {
+        "names": [
+          "--state-dir"
+        ],
+        "destination": "state_dir",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Trusted external controller-state root. Defaults: ~/Library/Application Support/ARQUILO/controller on macOS, ~/.local/state/arquilo/controller on Linux/WSL, LOCALAPPDATA/ARQUILO/controller on Windows. Keep the same root when resuming."
+      },
+      {
+        "names": [
+          "--project-id"
+        ],
+        "destination": "project_id",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Readable log grouping identifier, 1 to 48 characters, validated as a portable name. Bound to workspace/plan; does not merge independent budgets."
+      },
+      {
+        "names": [
+          "--logs-in-workdir"
+        ],
+        "destination": "logs_in_workdir",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Place new diagnostic run logs under .codex_runs/run_todos in the workspace. Authoritative journals, budgets and worker returns remain external."
+      },
+      {
+        "names": [
+          "--allow-todo-modifications"
+        ],
+        "destination": "allow_todo_modifications",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Explicitly permit and record valid primary-plan edits during this run. Model-written statuses are not independent review evidence. Permission is not sticky across runs."
+      },
+      {
+        "names": [
+          "--accept-plan-changes"
+        ],
+        "destination": "accept_plan_changes",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Adopt owner-inspected external plan changes on restart. Preserve consumption/history. Not a generic repair for an unexplained integrity failure."
+      },
+      {
+        "names": [
+          "--runtime-profile"
+        ],
+        "destination": "runtime_profile",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Load an operator-trusted JSON runtime profile. CLI precedes ARQUILO_RUNTIME_PROFILE. A real run may execute its host preflight command."
+      },
+      {
+        "names": [
+          "--print-capabilities"
+        ],
+        "destination": "print_capabilities",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Print the core capability/contract JSON without model execution; also available through arquilo.py capabilities."
+      },
+      {
+        "names": [
+          "--prompt-config"
+        ],
+        "destination": "prompt_config",
+        "default": "default",
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector."
+      },
+      {
+        "names": [
+          "--mcp"
+        ],
+        "destination": "mcp",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none."
+      },
+      {
+        "names": [
+          "--review-mcp"
+        ],
+        "destination": "review_mcp",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Subset of production MCP servers for review, or none. Explicit --mcp defaults review to none. Local read-only policy does not make remote tools read-only."
+      },
+      {
+        "names": [
+          "--skills"
+        ],
+        "destination": "skills",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Comma-separated skill names, or none for no explicit bindings. Instruction snapshots, not permission grants. Does not disable native implicit discovery."
+      },
+      {
+        "names": [
+          "--skill-dir"
+        ],
+        "destination": "skill_dirs",
+        "default": [],
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": true,
+        "flag": false,
+        "description": "Approved root containing skill directories with SKILL.md; repeatable. Explicit roots replace default discovery roots."
+      },
+      {
+        "names": [
+          "--agent"
+        ],
+        "destination": "agent",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Native Codex profile name and agent hint, not a team definition. Local CFG agent can override the run default."
+      }
+    ],
+    "doctor": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--workdir"
+        ],
+        "destination": "workdir",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Workspace. In the task runner, defaults to the task-list directory; Doctor uses the task-list directory or current directory. Use a narrow project directory, not your entire home."
+      },
+      {
+        "names": [
+          "--todo-file"
+        ],
+        "destination": "todo_file",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Working UTF-8 Markdown task list. Required for execution; not needed for help/capabilities. An existing list is resumed, not replaced."
+      },
+      {
+        "names": [
+          "--json"
+        ],
+        "destination": "json",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Emit the Doctor report as JSON on stdout, including failures; not a request for model-generated JSON."
+      },
+      {
+        "names": [
+          "--check-decide"
+        ],
+        "destination": "check_decide",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Opt in to one live diagnostic model call after metadata checks; may incur provider charges. Default Doctor is metadata-only."
+      },
+      {
+        "names": [
+          "--model"
+        ],
+        "destination": "model",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide."
+      },
+      {
+        "names": [
+          "--model-provider"
+        ],
+        "destination": "model_provider",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Existing native provider identifier for the live Doctor probe; does not define a URL, credentials or model. Requires --check-decide."
+      },
+      {
+        "names": [
+          "--profile"
+        ],
+        "destination": "config_profile",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Existing native Codex profile for the live Doctor probe. Requires --check-decide. This option is not accepted by tasklist run; use --agent there."
+      },
+      {
+        "names": [
+          "--reasoning-effort"
+        ],
+        "destination": "reasoning_effort",
+        "default": null,
+        "choices": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide."
+      },
+      {
+        "names": [
+          "--decide-timeout"
+        ],
+        "destination": "decide_timeout",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Positive finite timeout for the live Doctor probe. Effective default is 120 seconds, plus metadata/cleanup. Requires --check-decide."
+      },
+      {
+        "names": [
+          "--prompt-config"
+        ],
+        "destination": "prompt_config",
+        "default": "default",
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector."
+      }
+    ],
+    "tasklist resume-review": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--todo"
+        ],
+        "destination": "todo",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator."
+      },
+      {
+        "names": [
+          "--capture-dir"
+        ],
+        "destination": "capture_dir",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient."
+      }
+    ],
+    "package": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "destination"
+        ],
+        "destination": "destination",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": "?",
+        "repeatable": false,
+        "flag": false,
+        "description": "Optional NEW ZIP filename. Default: dist/arquilo-VERSION.zip. Both archive and checksum must be absent. Building does not tag or publish a release."
+      }
+    ],
+    "review_confidence.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "summary"
+        ],
+        "destination": "summary",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Existing AutoBuild summary JSON or structured review JSON. Print advisory confidence; do not modify the file or infer a new PASS."
+      }
+    ],
+    "autobuild.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--task"
+        ],
+        "destination": "task",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Standalone assignment text. Supply exactly one of --task or --task-file."
+      },
+      {
+        "names": [
+          "--task-file"
+        ],
+        "destination": "task_file",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "UTF-8 file containing the standalone assignment; mutually exclusive with --task."
+      },
+      {
+        "names": [
+          "--workdir"
+        ],
+        "destination": "workdir",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Workspace. In the task runner, defaults to the task-list directory; Doctor uses the task-list directory or current directory. Use a narrow project directory, not your entire home."
+      },
+      {
+        "names": [
+          "--file"
+        ],
+        "destination": "file",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Standalone single-file mode in an isolated workspace, mutually exclusive with --workdir. Inspect the returned output path; do not assume in-place publication."
+      },
+      {
+        "names": [
+          "--sandbox"
+        ],
+        "destination": "sandbox",
+        "default": "workspace-write",
+        "choices": [
+          "workspace-write",
+          "read-only"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Explicit execution policy. The task runner only accepts workspace-write; standalone AutoBuild also accepts read-only. Mandatory review/Decide remain read-only."
+      },
+      {
+        "names": [
+          "--network-access"
+        ],
+        "destination": "network_access",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Grant shell-network access within workspace-write. A task may restrict this grant, not create it. Does not control provider, MCP or web-search traffic."
+      },
+      {
+        "names": [
+          "--codex-profile"
+        ],
+        "destination": "config_profile",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent."
+      },
+      {
+        "names": [
+          "--mcp"
+        ],
+        "destination": "mcp",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none."
+      },
+      {
+        "names": [
+          "--review-mcp"
+        ],
+        "destination": "review_mcp",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Subset of production MCP servers for review, or none. Explicit --mcp defaults review to none. Local read-only policy does not make remote tools read-only."
+      },
+      {
+        "names": [
+          "--skills"
+        ],
+        "destination": "skills",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Comma-separated skill names, or none for no explicit bindings. Instruction snapshots, not permission grants. Does not disable native implicit discovery."
+      },
+      {
+        "names": [
+          "--skill-dir"
+        ],
+        "destination": "skill_dirs",
+        "default": [],
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": true,
+        "flag": false,
+        "description": "Approved root containing skill directories with SKILL.md; repeatable. Explicit roots replace default discovery roots."
+      },
+      {
+        "names": [
+          "--prompt-config"
+        ],
+        "destination": "prompt_config",
+        "default": "default",
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector."
+      },
+      {
+        "names": [
+          "--model"
+        ],
+        "destination": "model",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide."
+      },
+      {
+        "names": [
+          "--reasoning-effort"
+        ],
+        "destination": "reasoning_effort",
+        "default": null,
+        "choices": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide."
+      },
+      {
+        "names": [
+          "--extra-arg"
+        ],
+        "destination": "extra_arg",
+        "default": [],
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": true,
+        "flag": false,
+        "description": "Repeatable validated additional Codex argument for standalone use. Policy-changing or conflicting arguments are rejected; not a sandbox bypass."
+      },
+      {
+        "names": [
+          "--logfile"
+        ],
+        "destination": "logfile",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Standalone readable log path; omitted paths are allocated for the run."
+      },
+      {
+        "names": [
+          "--rawlog"
+        ],
+        "destination": "rawlog",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Standalone raw event log path; raw content can contain sensitive data."
+      },
+      {
+        "names": [
+          "--summary-json"
+        ],
+        "destination": "summary_json",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Optional standalone machine-readable result path. A workspace summary is diagnostic, not a private worker-authority channel."
+      },
+      {
+        "names": [
+          "--process-stop"
+        ],
+        "destination": "process_stop",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Optional standalone stop-signal path. Inspect an existing stop before explicitly resuming."
+      },
+      {
+        "names": [
+          "--todo-identifier"
+        ],
+        "destination": "todo_identifier",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Task identity attached to standalone diagnostics and decision context, when integrating with a controller."
+      },
+      {
+        "names": [
+          "--decision-todo-file"
+        ],
+        "destination": "decision_todo_file",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Task-list reference for standalone decision context; not permission to replace the original task contract."
+      },
+      {
+        "names": [
+          "--decision-run-id"
+        ],
+        "destination": "decision_run_id",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Run identity for standalone decision context; does not create a new shared budget."
+      },
+      {
+        "names": [
+          "--max-steps"
+        ],
+        "destination": "max_steps",
+        "default": 3,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget."
+      },
+      {
+        "names": [
+          "--max-calls"
+        ],
+        "destination": "max_calls",
+        "default": 0,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Persistent invocation budget per top-level task tree, shared with descendants/reviews/Decide; 0 means unlimited. Counts attempts, not tokens, money or all internal provider requests."
+      },
+      {
+        "names": [
+          "--auto-continue"
+        ],
+        "destination": "auto_continue",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Compatibility/progress flag: in this implementation it adds an automatic-continuation log message; it does not change the correction loop or require/skip a confirmation. Mandatory review and limits remain in force."
+      },
+      {
+        "names": [
+          "--print-end-answer"
+        ],
+        "destination": "print_end_answer",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Also print the final standalone assistant answer."
+      },
+      {
+        "names": [
+          "--verbose"
+        ],
+        "destination": "verbose",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Print detailed standalone progress. Keep potentially sensitive output private."
+      }
+    ]
+  },
+  "maintenance_commands": {
+    "scripts/check_release.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--source"
+        ],
+        "destination": "source",
+        "default": "<checkout-root>",
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Source checkout or extracted runtime to validate offline; defaults to this script's checkout root. No model or network call."
+      }
+    ],
+    "scripts/stage_lean.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "destination"
+        ],
+        "destination": "destination",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required NEW output directory, or ZIP path with --zip."
+      },
+      {
+        "names": [
+          "--zip"
+        ],
+        "destination": "zip",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Stage an allowlisted ZIP rather than a new directory; this lower-level utility does not publish a release."
+      }
+    ],
+    "scripts/install_test_codex.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "version"
+        ],
+        "destination": "version",
+        "default": null,
+        "choices": [
+          "0.154.0",
+          "0.159.1"
+        ],
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required exact test-binary version from the listed choices, not a model name. The downloader uses the upstream release service and verifies its digest."
+      },
+      {
+        "names": [
+          "destination"
+        ],
+        "destination": "destination",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required NEW destination directory."
+      }
+    ],
+    "scripts/check_codex_configuration.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--codex"
+        ],
+        "destination": "codex",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required path to the trusted Codex binary used by the synthetic compatibility check. Not a task runner option; no production credentials are needed."
+      }
+    ],
+    "scripts/check_codex_provider.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--codex"
+        ],
+        "destination": "codex",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required path to the trusted Codex binary used by the synthetic compatibility check. Not a task runner option; no production credentials are needed."
+      }
+    ],
+    "scripts/check_resource_configuration.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--codex"
+        ],
+        "destination": "codex",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required path to the trusted Codex binary used by the synthetic compatibility check. Not a task runner option; no production credentials are needed."
+      }
+    ],
+    "scripts/documentation_reference.py": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--write"
+        ],
+        "destination": "write",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Regenerate the documentation CLI catalog and tables after reviewing an intentional parser change; modifies documentation files only."
+      },
+      {
+        "names": [
+          "--check"
+        ],
+        "destination": "check",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Verify the generated documentation against the parsers without writing; this is also the default."
+      }
+    ]
+  },
+  "aliases": {
+    "run": "tasklist run",
+    "resume-review": "tasklist resume-review",
+    "capabilities": "tasklist run --print-capabilities",
+    "run_todos.py": "tasklist run",
+    "arquilo_doctor.py": "doctor",
+    "scripts/build_runtime_zip.py": "package"
+  },
+  "scope": "Public options in this checkout. Private worker IPC and rejection-only historical flags are not supported user configuration."
+}

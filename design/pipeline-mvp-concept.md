@@ -521,7 +521,7 @@ The current task-list preamble already supplies shared project intent and
 quality criteria. `todo_context.augment_with_preamble` captures it for one
 handoff, and AutoBuild reuses that captured context for review and repair. The
 next handoff rereads the live task list. A standalone AutoBuild invocation does
-not implicitly receive a task-list preamble. See [Task preambles](../documents/TODO_PREAMBLE.md).
+not implicitly receive a task-list preamble. See [Task preambles](../docs/guides/operator-guide.en.md#task-format-reference).
 
 Therefore an AGENTS.md is **optional**, not a second mandatory place to maintain
 the same instructions. Prefer:
@@ -716,9 +716,9 @@ stdlib-only; do not write a new YAML parser.
 
 ### Reference boundaries
 
-Current runtime behavior: [Architecture](architecture.md),
-[Controller safety](controller-safety.md), [Task preambles](../documents/TODO_PREAMBLE.md),
-[Decide configuration](decide-configuration.md), and `removed_features.py`.
+Current runtime behavior: [Architecture](../docs/guides/technical-guide.en.md#system),
+[Controller safety](../docs/guides/technical-guide.en.md#controller-reference), [Task preambles](../docs/guides/operator-guide.en.md#task-format-reference),
+[Decide configuration](../docs/guides/operator-guide.en.md#decide-reference), and `removed_features.py`.
 
 External driver references, checked 2026-10-06:
 [Codex AGENTS.md](https://developers.openai.com/codex/guides/agents-md) and

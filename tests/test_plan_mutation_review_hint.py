@@ -192,7 +192,7 @@ class ReviewHintTests(unittest.TestCase):
         self.assertFalse(result.completed)
 
     def test_documentation_describes_narrow_recovery_without_changing_stop_policy(self):
-        doc = (Path(__file__).resolve().parents[1] / 'docs/troubleshooting.md').read_text(encoding='utf-8')
+        doc = (Path(__file__).resolve().parents[1] / 'docs/guides/operator-guide.en.md').read_text(encoding='utf-8')
         for fragment in ('Review passed, but an edited task plan blocks DONE',
                          '--accept-plan-changes', 'sole plan',
                          'ARQUILO has not', 'Existing run logs are not rewritten'):

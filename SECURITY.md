@@ -42,7 +42,7 @@ not have a separate maintenance commitment.
   tool/unknown events, but this is an acceptance gate, not a pre-tool interceptor.
   Configured tools, MCP servers, hooks and auth/notification commands may start
   under Codex's own rules. Do not treat config inheritance as zero side effects
-  or a blanket tool-disable mechanism. See [Decide configuration](docs/decide-configuration.md).
+  or a blanket tool-disable mechanism. See [Decide configuration](docs/guides/operator-guide.en.md#decide-reference).
   Never populate its host settings/environment from model-controlled input.
 - Shell network access and Git operations are explicit opt-ins. Disabling shell
   networking does not disable model-provider communication or prove that every
@@ -81,7 +81,7 @@ Do not edit the selected files, Git index or branch concurrently with a run.
 The allowlist is not a content/secret scanner or proof that every output is
 correct. Inspect sensitive deliverables before publishing.
 
-See [controller safety](docs/controller-safety.md) for migration and recovery.
+See [controller safety](docs/guides/technical-guide.en.md#controller-reference) for migration and recovery.
 
 ## Operational baseline
 
@@ -108,4 +108,4 @@ tamper-proof evidence. Authoritative plan/budget/worker IPC stays external.
 statuses/removal. It does not certify those edits as reviewed work. Use the
 original-assignment `reviewed_this_run` and recorded plan mutations, and perform
 human review of generated plans. Both switches are off by default and neither
-changes Codex permission settings. See [details](docs/operator-controls.md).
+changes Codex permission settings. See [details](docs/guides/operator-guide.en.md#operator-controls-reference).

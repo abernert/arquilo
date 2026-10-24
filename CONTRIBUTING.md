@@ -52,7 +52,7 @@ a contribution does not imply future maintenance obligations.
 ## Documentation changes
 
 User-facing changes need matching guide/reference changes. Follow
-[documentation maintenance](docs/documentation-maintenance.md), preserve German/English
+[documentation maintenance](docs/guides/technical-guide.en.md#documentation-reference), preserve German/English
 User Guide parity, add new runtime documents to the package allowlist and run
 `python3 -B -m unittest discover -s tests -p test_documentation_guides.py -v`.
 A documentation-only change does not require a runtime version bump or tag.

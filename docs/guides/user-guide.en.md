@@ -1,7 +1,7 @@
 # ARQUILO User Guide
 
 **English · runtime 0.9.1 · integration documentation 2026-10-24**
-[Deutsch](user-guide.de.md) · [All guides](README.md) · [Advanced operation](operator-guide.en.md)
+[Deutsch](user-guide.de.md) · [All guides](../README.md) · [Advanced operation](operator-guide.en.md)
 
 > **Unreleased integration checkout, not the published v0.9.1 ZIP.** The runtime version string remains 0.9.1. This edition combines the state-I/O repairs from PR #35, Git-integrity repairs from PR #36 and handbooks from PR #33. See [scope, source commits and remaining limits](../integration-status.md). No merge to `main`, new tag or release is implied.
 
@@ -68,11 +68,13 @@ codex login status
 
 For a standard Codex login, use `codex login` when required. An organization may provide a different approved authentication method. Verify setup in the same environment in which ARQUILO will run: a Windows installation is not automatically an Ubuntu/WSL installation. Do not mix Windows Python, Linux paths and Linux Codex in one invocation.
 
-### Does `codex` in `~/.local/bin` still work?
+### Install tools outside the task workspace
 
-Yes, provided that directory and the actual executable target are outside the selected workspaces and reachable through an absolute entry in `PATH`. You still call ARQUILO normally. ARQUILO resolves the command name internally; you do not need to add a new launcher parameter. Symlinks are checked against their actual target. A project-local `./codex` or a link back into the project is refused. Selecting your entire home directory as the workspace would also include `~/.local/bin`; select a narrower project directory instead.
+ARQUILO starts trusted host tools to perform the job. Install **Codex and Git outside the directories the task can modify**, including task subworkspaces. Otherwise an agent could replace a program in its project and cause the controller to execute that replacement. This is why executable location is a prerequisite, not a new command-line option.
 
-Node is needed only for installations that use the supported npm Codex launcher. “Controller launcher” means the program ARQUILO starts; it is not another command you need to run. See [installation](../installation.md) for additional setup details.
+Keep three locations separate: the ARQUILO installation, the project workspace containing inputs/outputs, and the private controller state. For example, a user-level Codex installation in `~/.local/bin` can serve a project under `~/projects/report`; it must not be inside that project. Use an absolute trusted directory in `PATH`. ARQUILO resolves the executable and any symlink target before launch; ordinary command-name invocation remains unchanged. Select a project directory rather than your entire home directory as `--workdir`.
+
+Git is required only for Git-based installation/update or explicitly enabled Git automation. Node is needed only when the chosen Codex installation uses the supported npm launcher. Keep those host installations outside writable task directories as well.
 
 <a id="preview"></a>
 ## 4. First safe preview
@@ -201,31 +203,73 @@ Provide `input.md` before starting. Specify the output filename, permissible inp
 
 Keep tasks small enough to inspect. Put requirements shared by all tasks in the preamble. Task directives apply to the next task only; do not assume the `CFG` above task 1 also configures task 2. Markers such as `Task`, `DONE`, `CFG`, `WAIT` and option names are machine syntax and are not translated with prose.
 
-For repeatable jobs keep a clean template separately. `--todo-template` initializes a missing working list and does not overwrite an existing one. It copies only that list, not referenced inputs, and performs initialization even with `--dry-run`. See the [template recipe](../cookbook.md#initialize-a-working-task-list-from-a-template).
+For repeatable jobs keep a clean template separately. `--todo-template` initializes a missing working list and does not overwrite an existing one. It copies only that list, not referenced inputs, and performs initialization even with `--dry-run`. See the [template recipe](operator-guide.en.md#recipes).
 
 <a id="options"></a>
-## 9. Everyday options, without the full reference
+## 9. Configure a run: the options you will use most
 
-| Need | Option and important limitation |
+Place runner options **after `tasklist run`**. The following table is a working reference for everyday use; the [Operator Guide contains the complete command and configuration reference](operator-guide.en.md#cli-reference), including less common and standalone commands. File paths passed on the CLI are relative to the terminal's current directory unless absolute; they are not automatically rebased to `--workdir`.
+
+| Parameter | Use | Default / practical rule |
+| --- | --- | --- |
+| `--todo-file FILE` | Select the working task list. | Required for a real task-list run; preserve this path for continuation. |
+| `--workdir DIR` | Select the project workspace. | Task-list directory when omitted. |
+| `--todo-template FILE` | Copy a template when the working list does not yet exist. | Off; existing lists are never replaced. Explicit copying also occurs in dry run. |
+| `--model MODEL_ID` | Choose the model or deployment used for the run. | Inherit unless set; use an identifier available through your own provider. |
+| `--reasoning-effort LEVEL` | Request a reasoning-effort level. | Inherit unless set. Accepted strings: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `--agent PROFILE` | Select an existing native Codex profile. | No run-level profile override; a task's `CFG agent` can override it. Not an agent team. |
+| `--prompt-config default/de/en/FILE` | Select built-in wording or a complete custom TOML catalog. | `default`; user instructions and output language remain separate. |
+| `--max-calls N` | Limit attempts in each top-level task tree. | **0 = unlimited**; use a positive limit for a bounded trial. |
+| `--max-steps N` | Bound production/correction steps. | 3; the runner combines this with `--max-retries` (default 2). |
+| `--start ID` / `--stop ID` | Select a starting task and a boundary after an accepted task. | All remaining selected tasks; not immediate cancellation. |
+| `--dry-run` | Preview instructions without model execution. | Off. Does not verify authentication or remote-tool permissions. |
+| `--dry-run-file FILE` | Choose the preview output. | `run_todos_dry_run.md`; choose a new filename, because overwrite is refused. |
+| `--project-id NAME` | Give the log group a readable name. | Automatic identity; changing log names does not reset budgets. |
+| `--logs-in-workdir` | Keep visible diagnostic logs in the workspace. | Off; authoritative state always remains external. |
+| `--state-dir DIR` | Select a private external state root. | Platform default; keep it stable across restarts. |
+| `--network-access` | Permit sandboxed shell-network access. | Off; provider communication, MCP and web search are separate. |
+| `--mcp NAMES/none` | Restrict explicit MCP server selection. | Omission inherits; names must already be configured. |
+| `--review-mcp NAMES/none` | Select a subset for the reviewer. | Explicit `--mcp` defaults review to none; remote read-only requires server permissions. |
+| `--skills NAMES/none` / `--skill-dir DIR` | Bind selected procedure instructions and optionally choose discovery roots. | No explicit binding; roots are repeatable. |
+| `--runtime-profile FILE` | Load approved domain rules and optional host preflight. | None; inspect it before use because preflight can execute host code. |
+| `--todo-preamble auto/off/required` | Control inclusion of shared project instructions. | `auto`; use `required` when a substantive preamble is mandatory. |
+| `--process-stop-policy model/controller-only` | Choose who is instructed to request process stops. | `model`; neither mode ignores an existing stop. |
+| `--accept-plan-changes` | Adopt plan edits you have deliberately reviewed. | Off; not a generic workaround for an unexplained failure. |
+| `--allow-todo-modifications` | Permit a planning task to modify the primary task list. | Off; use together with a deliberate boundary and later human review. |
+| `--git`, `--git-path FILE`, `--git-push` | Opt in to reviewed Git commits and, separately, push. | Off. Read the Git chapter first; current snapshot limits can block review. |
+
+### Choose model and reasoning effort
+
+Replace `YOUR_MODEL_ID` and the two paths below with your configured model/deployment and project paths before running. This is a **real run**, not a preview. In PowerShell use your installed Python command and native paths; the single-line argument layout is the same.
+
+<!-- example: model-and-effort -->
+```sh
+python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --model YOUR_MODEL_ID --reasoning-effort high --prompt-config en --max-calls 20
+```
+
+Reasoning effort is a request to the chosen provider/model, not a quality guarantee. A higher setting may increase work, response time and usage; only select values supported by that model. An unsupported combination is an error, not permission for ARQUILO to choose a different model. These options do not edit your native Codex configuration.
+
+### Understand where settings come from
+
+| Setting | Effective order |
 | --- | --- |
-| Bound an experiment | `--max-calls 8` or another positive limit, **per numeric root-task tree**, not a whole-run cost cap. |
-| Select available model | `--model MODEL_ID`; obtain the actual ID from your approved provider setup. No model entitlement is implied. |
-| Select built-in prompt language | `--prompt-config de` or `en`; default is `default`. Task text, CLI messages and protocol keys are not automatically translated. |
-| Set output language | Write the required language in the task/preamble and verify the artifact; a prompt-language selector alone is not a guarantee. |
-| Limit task range | `--start 2 --stop 3`; this deliberately selects a range and is not a safe way to evade an unresolved earlier task. |
-| Group readable logs | `--project-id demo`; the ID is bound to the workspace/plan, not a new budget. |
-| Keep visible logs in the workspace | `--logs-in-workdir`; private plan and budget records remain external. |
+| Model | `--model` → `ARQUILO_CODEX_MODEL` → task `CFG model` → native Codex configuration. A global model therefore wins over task models. |
+| Reasoning effort | `--reasoning-effort` → `ARQUILO_CODEX_REASONING_EFFORT` → native configuration. There is no task `CFG reasoning_effort` in this checkout. |
+| Native profile | Task `CFG agent` → run `--agent` → native default configuration. |
+| Prompt wording | Explicit `--prompt-config` or `default`; no automatic project catalog lookup. |
+| Domain rules | `--runtime-profile` → `ARQUILO_RUNTIME_PROFILE`; separate from the native profile and prompt catalog. |
+| Shared task instructions | Text before the first real task, controlled by `--todo-preamble`; task-specific requirements belong in the task. |
 
-**The default call limit is 0: unlimited.** When continuing a previously finite plan, omitting `--max-calls` can change its limit to unlimited while preserving consumed calls. Repeat your intended finite limit on every continuation. One Codex execution can contain several internal model requests; counters are not token, currency or time caps.
+No ARQUILO YAML configuration file or automatically loaded workspace `.env` is required. For reusable model defaults, set the two named environment variables in the launching shell or use an approved native profile. Do not store access tokens in task text or handbooks. MCP/skill selections use ceilings, not ordinary last-value-wins precedence; consult the Operator Guide before narrowing resources per task.
 
-No additional option is required merely to use your ordinary external `codex` installation. Leave shell-network access and automatic Git publication off for the introductory examples. Read the [Operator Guide](operator-guide.en.md) before using advanced resources or automatic publication.
+**Repeat a finite `--max-calls` on continuation.** Omitting it can change an older finite limit to unlimited while preserving used attempts. One Codex invocation may contain multiple internal model requests, so this is not a time, token or currency cap. Leave automatic Git off for the introductory examples.
 
 <a id="results"></a>
 ## 10. Reading results, status and logs
 
 Look at three things together: **the actual artifact**, **the task/result report**, and **the controller's execution/review evidence**. A nice final message is not enough.
 
-Default controller-state roots are `~/Library/Application Support/ARQUILO/controller` on macOS, `~/.local/state/arquilo/controller` on Linux/WSL and `%LOCALAPPDATA%\ARQUILO\controller` on Windows. The printed run path is the best way to find a specific run. A readable project ID changes the log namespace, not the persistent budget identity. [Log layout](../project-logs.md)
+Default controller-state roots are `~/Library/Application Support/ARQUILO/controller` on macOS, `~/.local/state/arquilo/controller` on Linux/WSL and `%LOCALAPPDATA%\ARQUILO\controller` on Windows. The printed run path is the best way to find a specific run. A readable project ID changes the log namespace, not the persistent budget identity. [Log layout](operator-guide.en.md#logs-reference)
 
 Common runner exit codes are:
 
@@ -267,7 +311,7 @@ Run with the **same workspace, task-file path and state root**, plus the intende
 
 Do not delete state, rename the plan to obtain a new budget, or manually set `DONE` to resolve an error. Historical DONE values supplied as an initial owner baseline are not retrospective proof of a review. Version 0.9.1 does not automatically repair incorrectly accepted historical runs.
 
-There is a narrow [review-only recovery procedure](../review-resume.md) for a completed production turn formerly rejected solely because a recovered reconnect was misclassified. It requires complete matching evidence and a fresh review. It is not a general force-resume switch; use the dedicated procedure only when its conditions hold.
+There is a narrow [review-only recovery procedure](operator-guide.en.md#recovery-reference) for a completed production turn formerly rejected solely because a recovered reconnect was misclassified. It requires complete matching evidence and a fresh review. It is not a general force-resume switch; use the dedicated procedure only when its conditions hold.
 
 <a id="plan-changes"></a>
 ## 13. Deliberately changing an established plan
@@ -290,9 +334,9 @@ In the default strict mode, requirements and accepted state cannot silently chan
 | Good artifact but open task | Review or final controller acceptance may have failed. Read the recorded phase; do not set DONE manually. |
 | Windows access denied during parallel project registration | Preserve the error and pending recovery file; stop competing runs. This integration includes the PR #35 repair for Issue #32; the published v0.9.1 ZIP does not. A recurring failure still requires investigation, not state deletion. |
 
-See [Troubleshooting](../troubleshooting.md) and [known limitations](operator-guide.en.md#limitations). Do not solve an installation error by routinely running as Administrator/root or disabling platform protection.
+See [Troubleshooting](operator-guide.en.md#troubleshooting-reference) and [known limitations](operator-guide.en.md#limitations). Do not solve an installation error by routinely running as Administrator/root or disabling platform protection.
 
-For automatic Git publication, only explicitly selected output files are committed from a verified pre-review snapshot. Use serial tasks; never select `tasks.md` or rewritten result reports. A linked virtual environment or an oversized context file can still be rejected **after production, before review**. Check the workspace first or use manual Git. See [Git publication](../git-publication.md).
+For automatic Git publication, only explicitly selected output files are committed from a verified pre-review snapshot. Use serial tasks; never select `tasks.md` or rewritten result reports. A linked virtual environment or an oversized context file can still be rejected **after production, before review**. Check the workspace first or use manual Git. See [Git publication](operator-guide.en.md#git).
 
 <a id="updating"></a>
 ## 15. Updating without losing progress
@@ -306,4 +350,4 @@ Keep ongoing project paths and their state root unchanged. Read the changelog an
 
 Confirm that the workspace is deliberately scoped, inputs are approved for the configured provider, the task has observable acceptance criteria, the call limit is explicit, and the stop/recovery process is understood. Check outputs independently before publication. Preserve logs appropriately without sending raw confidential archives to support.
 
-Continue with the [Advanced / Operator Guide](operator-guide.en.md) for resources, profiles, parallelism and operations, or the [Technical / Architecture Guide](technical-guide.en.md) for internals. The [configuration reference](../../documents/CONFIGURATION.md) and [directive reference](../../documents/todo_directives.md) remain the detailed references for the installed version.
+Continue with the [Advanced / Operator Guide](operator-guide.en.md) for resources, profiles, parallelism and operations, or the [Technical / Architecture Guide](technical-guide.en.md) for internals. The [configuration reference](operator-guide.en.md#cli-reference) and [directive reference](operator-guide.en.md#task-directive-reference) remain the detailed references for the installed version.

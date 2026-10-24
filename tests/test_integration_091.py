@@ -210,10 +210,10 @@ class IntegrationDocumentationTests(unittest.TestCase):
 
     def test_combined_package_keeps_both_pr_additions(self):
         package = json.loads((ROOT / 'documents/lean_package.json').read_text(encoding='utf-8'))
-        required = {'git_snapshot.py', 'docs/git-publication.md', 'docs/integration-status.md',
+        required = {'git_snapshot.py', 'docs/guides/cli-reference.json', 'docs/integration-status.md',
                     'docs/guides/user-guide.de.md', 'docs/guides/user-guide.en.md',
                     'docs/guides/operator-guide.en.md', 'docs/guides/technical-guide.en.md',
-                    'docs/guides/manifest.json', 'docs/documentation-maintenance.md',
+                    'docs/guides/manifest.json', 'docs/README.md',
                     'examples/python_function_todo.md'}
         self.assertTrue(required.issubset(package['runtime_files']))
         self.assertEqual(len(set(package['runtime_files'])), package['runtime_file_count'])

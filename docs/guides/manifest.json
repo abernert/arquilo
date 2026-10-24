@@ -60,7 +60,8 @@
     "document-prepare",
     "software-prepare",
     "software-check",
-    "stop-posix"
+    "stop-posix",
+    "model-and-effort"
   ],
   "synthetic_examples": [
     "examples/minimal_todo.md",
@@ -87,5 +88,8 @@
     "33": "0e57df59ea067596b0ab0db987347aa31e7870de",
     "35": "557f4f1b9b1959002a0677315f809426de1aab9b",
     "36": "48331c7210d63787c578bf925ade41da9eb806a8"
-  }
+  },
+  "reference_inventory": "docs/guides/cli-reference.json",
+  "documentation_edition": "handbook-consolidation-2026-10-24",
+  "navigation": "docs/README.md"
 }

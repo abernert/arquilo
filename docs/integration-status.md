@@ -14,8 +14,8 @@ published assets is part of this work.
 
 This integration preserves the PR #36 runtime code, prompt catalogs and workflows
 byte for byte. It reconciles documentation and package lists and adds offline
-integration acceptance tests. The runtime version/citation/changelog remain
-unchanged. The original PR branches remain independent review units. Use the
+integration acceptance tests. Runtime version, citation and release entries remain unchanged; one historical
+documentation link in CHANGELOG is retargeted to the handbook. The original PR branches remain independent review units. Use the
 integration checkout's commit and test results for deployment/review decisions;
 a green result on a parent alone is not acceptance of the combined tree.
 
@@ -31,7 +31,7 @@ rewritten reports. Snapshot restrictions apply to the full captured context,
 not only selected outputs; `.gitignore` is not a snapshot exclusion mechanism.
 There is no general early workspace preflight: an unsuitable linked environment
 or large context file may stop the run after production, before review. Preserve
-partial work and diagnose rather than deleting state. See [Git publication](git-publication.md).
+partial work and diagnose rather than deleting state. See [Git publication](guides/operator-guide.en.md#git).
 
 A Git failure can leave an accepted task and reviewed local commit in a failed
 run. Remote acceptance may be uncertain after a transport error. Inspect local
@@ -54,4 +54,8 @@ quality or production credentials.
 [User Guide English](guides/user-guide.en.md) ·
 [Operator Guide](guides/operator-guide.en.md) ·
 [Technical Guide](guides/technical-guide.en.md) ·
-[Testing](testing.md) · [Documentation maintenance](documentation-maintenance.md)
+[Testing](guides/technical-guide.en.md#test-reference) · [Documentation maintenance](guides/technical-guide.en.md#documentation-reference)
+
+## Handbook consolidation edition
+
+The PR #37 documentation revision consolidates overlapping instruction pages into four handbooks and a single index. The User Guides include an everyday configuration reference; the Operator Guide includes the complete generated CLI inventory and all current ARQUILO configuration layers. This documentation change does not implement the requested Git/ordinary-review separation. It changes no runtime, prompt catalog, version or product workflow. See the repository-only consolidation map for retired page locations.

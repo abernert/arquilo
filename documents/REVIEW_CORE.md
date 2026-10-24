@@ -1,6 +1,6 @@
 # Mandatory task-bound review
 
-Every successful production or correction attempt receives its own Codex Exec review in the same workspace with `read-only`. The reviewer checks the original task, the effective preamble, previous result reports, and the actual current artifacts. The normal production prompt remains the reference task from the ToDo file. Narratives, analyses, and other domain tasks do not acquire an additional evidence-ledger requirement.
+Every successful production or correction attempt receives its own Codex Exec review with `read-only`. Without automatic Git, the review uses the task workspace; with `--git` in this integration checkout, it uses the private pre-review snapshot described in the Operator Guide. The reviewer checks the original task, the effective preamble, previous result reports, and the actual current artifacts. The normal production prompt remains the reference task from the ToDo file. Narratives, analyses, and other domain tasks do not acquire an additional evidence-ledger requirement.
 
 The pure rules, JSON validation, and prompt fragments live in [`review_contract.py`](../review_contract.py). AutoBuild and parent acceptance use the same rules; runtime profiles add to them. An empty list of additional profile rules does not remove the general rules.
 
@@ -180,4 +180,4 @@ python3 -B scripts/check_release.py
 
 Tests in the public development repository use the standard library and simulated Codex results. They cover, among other things, propagation of the original contract, bounded corrections, and archive failures. The runtime ZIP does not contain the tests; package validation and CLI help remain available there.
 
-The CI matrix in `.github/workflows/ci.yml` checks Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. The actual result of the specific run is authoritative. Fakes do not demonstrate the judgement quality of a real model or native Codex sandbox enforcement. See [Testing](../docs/testing.md) and [Architecture](../docs/architecture.md).
+The CI matrix in `.github/workflows/ci.yml` checks Python 3.11, 3.12, and 3.13 on Linux, Windows, and macOS. The actual result of the specific run is authoritative. Fakes do not demonstrate the judgement quality of a real model or native Codex sandbox enforcement. See [Testing](../docs/guides/technical-guide.en.md#test-reference) and [Architecture](../docs/guides/technical-guide.en.md#system).
