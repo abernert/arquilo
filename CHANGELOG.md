@@ -2,6 +2,13 @@
 
 ## Unreleased — experimental Claude Code backend
 
+- Accept the exact built-in `cc-plugin-telemetry@builtin` identity reported by
+  Claude Code 2.1.310 in addition to the previously qualified built-ins.
+  Continue to reject unexpected plugins, tool expansions, malformed metadata,
+  and additional MCP services; this does not change Claude telemetry settings.
+- Add native 2.1.310 qualification and synthetic protocol/subprocess regressions
+  for known versus unqualified built-in components.
+
 - Add run-wide `--backend {codex,claude-code}`; Codex remains the default.
 - Route production, fixes, review, parent review, Decide, doctor/preflight and
   parallel worker payloads without a Codex executable/authentication dependency
