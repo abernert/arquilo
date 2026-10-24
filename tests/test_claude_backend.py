@@ -268,7 +268,6 @@ class ProtocolTests(Fixture):
             {**valid, 'estimated_tokens_delta': -1},
             {**valid, 'estimated_tokens_delta': '16'},
             {**valid, 'estimated_tokens': 1e200},
-            {**valid, 'estimated_tokens': float('nan')},
             {**valid, 'uuid': ''},
             {**valid, 'user_message_uuid': None},
         ]
@@ -278,6 +277,9 @@ class ProtocolTests(Fixture):
                 protocol.accept(json.dumps(self.init(request)), RunResult())
                 with self.assertRaisesRegex(ValueError, 'Claude thinking-token'):
                     protocol.accept(json.dumps(event), RunResult())
+        with self.assertRaisesRegex(ValueError, 'Non-finite JSON'):
+            ct.ClaudeProtocol(request).accept(
+                json.dumps({**valid, 'estimated_tokens': float('nan')}), RunResult())
         with self.assertRaisesRegex(ValueError, 'before verified init'):
             ct.ClaudeProtocol(request).accept(json.dumps(valid), RunResult())
 
