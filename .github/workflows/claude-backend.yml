@@ -4,7 +4,7 @@ on:
     branches: [feat/claude-code-backend]
   pull_request:
     branches: [main]
-    paths: ['agent_*.py', 'claude_*.py', 'autobuild*.py', 'run_todos.py', 'decision*.py', 'arquilo_doctor.py', 'task_resources.py', 'prompt_config.py', 'prompts/**', 'tests/test_claude*.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
+    paths: ['agent_*.py', 'claude_*.py', 'autobuild*.py', 'run_todos.py', 'decision*.py', 'arquilo_doctor.py', 'task_resources.py', 'host_launcher.py', 'safe_io.py', 'controller_state.py', 'review_contract.py', 'tests/test_backend_security_091.py', 'prompt_config.py', 'prompts/**', 'tests/test_claude*.py', 'tests/fixtures/claude_cli_fixture.py', 'experiments/claude_code/**', '.github/workflows/claude-backend.yml']
 permissions:
   contents: read
 concurrency:
@@ -46,7 +46,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: claude-native-fixture
+          name: claude-native-fixture-${{ matrix.os }}-${{ matrix.claude }}
           path: |
             ${{ runner.temp }}/claude-native-fixture/report.json
             ${{ runner.temp }}/claude-native-fixture/provider-requests.json

@@ -10,6 +10,7 @@ from __future__ import annotations
 import codecs
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import queue
 import re
@@ -31,6 +32,24 @@ class AgentProcessError(RuntimeError):
         self.result, self.error = result, error
         result.execution_error = error
         super().__init__(error["message"])
+
+def read_stop_signal(path: Path | None) -> str | None:
+    """Presence cancels even if the contents are opaque; never follow a link.
+
+    Only the explanation is optional. A disappearance after observing the path
+    does not retract that observation. Bound the diagnostic text separately.
+    """
+    if path is None or not os.path.lexists(path):
+        return None
+    from runtime_failure import stop_reason
+    try:
+        with safe_io.open_file(path, "rb") as stream:
+            data = stream.read(65537)
+        text = data.decode("utf-8", errors="replace").strip() if len(data) <= 65536 else None
+    except (OSError, ValueError):
+        text = None
+    return stop_reason(text)
+
 
 def fatal_run_error(trace):
     if trace.execution_error:
@@ -267,9 +286,8 @@ def _collect_process(request, acc: RunResult, prompt_bytes: bytes,
             cleanup = _terminate_process_group(proc, grace_seconds=kill_grace, reason=reason)
 
     def read_cancellation() -> str | None:
-        if request.process_stop_path is not None and request.process_stop_path.exists():
-            return safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
-        return request.cancel_requested() if request.cancel_requested is not None else None
+        return read_stop_signal(request.process_stop_path) or (
+            request.cancel_requested() if request.cancel_requested is not None else None)
 
     def record_io_error(payload: Dict[str, Any]) -> None:
         # The main queue and its final drain must apply exactly the same rule.

@@ -21,8 +21,9 @@ from uuid import uuid4
 
 import safe_io
 from agent_types import RunResult, TransportResult, TransportTimeouts, FileChange, CommandExec
-from agent_process import _collect_process, AgentProcessError, observe_stop
+from agent_process import _collect_process, AgentProcessError, observe_stop, read_stop_signal
 from claude_launcher import resolve_launcher
+from host_launcher import launcher_environment
 from process_tree import ProcessTree, finish_cleanup
 from project_logs import numbered_directory
 from runtime_contracts import ExecutionResult, ExecutionStatus, Failure, FailureKind
@@ -69,6 +70,7 @@ class ClaudeRequest:
     session_id: str = field(default_factory=lambda: str(uuid4()))
     timeouts: TransportTimeouts = field(default_factory=TransportTimeouts)
     process_stop_path: Path | None = None
+    launcher_workspace: Path | None = None
     cancel_requested: Callable[[], str | None] | None = None
     verbose: bool = False
     console_todo_id: str | None = None
@@ -102,11 +104,17 @@ class ClaudeRequest:
         object.__setattr__(self, "env", MappingProxyType(env))
         cwd = native_path(self.cwd, label="Claude cwd")
         object.__setattr__(self, "cwd", cwd)
+        if self.launcher_workspace is not None:
+            root = Path(self.launcher_workspace)
+            if not root.is_absolute():
+                raise ValueError("Claude launcher workspace must be absolute")
+            object.__setattr__(self, "launcher_workspace", native_path(root, label="Claude launcher workspace"))
         outputs = []
         for name in ("raw_log", "pretty_log", "output_schema", "output_last_message", "process_stop_path"):
             value = getattr(self, name)
             if value is not None:
-                path = safe_io.check_path(cwd / Path(value))
+                path = (safe_io.lexical_path(cwd / Path(value)) if name == "process_stop_path"
+                        else safe_io.check_path(cwd / Path(value)))
                 object.__setattr__(self, name, path)
                 if name != "process_stop_path":
                     outputs.append(path)
@@ -158,12 +166,17 @@ def build_command(request: ClaudeRequest) -> list[str]:
     return command
 
 
-def _start(command, cwd, env):
-    launcher = resolve_launcher(command[0], cwd=cwd, env=env)
+def _start(command, cwd, env, *, launcher_workspace=None, resolved_launcher=None):
+    root = launcher_workspace if launcher_workspace is not None else cwd
+    environment = launcher_environment(launcher_environment(env, workspace=root), workspace=cwd)
+    launcher = resolved_launcher or resolve_launcher(command[0], cwd=cwd, env=environment,
+        workspace=root, additional_workspace=cwd)
+    environment = launcher_environment(launcher_environment(environment, workspace=root,
+        executable=launcher.argv[0]), workspace=cwd, executable=launcher.argv[0])
     argv = [*launcher.argv, *command[1:]]
     tree, proc = ProcessTree(), None
     try:
-        proc = subprocess.Popen(argv, cwd=str(cwd), env=dict(env), shell=False,
+        proc = subprocess.Popen(argv, cwd=str(cwd), env=environment, shell=False,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=False, bufsize=0, **tree.popen_options)
         proc.arquilo_process_tree, proc.arquilo_launcher, proc.arquilo_argv = tree, launcher.metadata(), argv
@@ -174,12 +187,18 @@ def _start(command, cwd, env):
         raise
 
 
-def probe_cli(*, cwd: Path, env: Mapping[str,str], timeout=10.0, require_schema=False, require_effort=False):
+def probe_cli(*, cwd: Path, env: Mapping[str,str], timeout=10.0, require_schema=False,
+              require_effort=False, launcher_workspace=None, resolved_launcher=None):
     report = {"status":"FAIL", "backend":"claude-code", "version":None, "probes":[], "flags":{}, "model_calls":0}
     name = env.get("ARQUILO_CLAUDE_CODE_COMMAND", "claude")
     try:
+        root = launcher_workspace if launcher_workspace is not None else cwd
+        environment = launcher_environment(launcher_environment(env, workspace=root), workspace=cwd)
+        selected = resolved_launcher or resolve_launcher(name, cwd=cwd, env=environment,
+            workspace=root, additional_workspace=cwd)
         for kind, args in (("version", ["--version"]), ("help", ["--help"])):
-            proc = _start([name, *args], cwd, env)
+            proc = _start([name, *args], cwd, environment,
+                          launcher_workspace=root, resolved_launcher=selected)
             try:
                 out, err = proc.communicate(timeout=timeout)
                 code = proc.returncode
@@ -213,8 +232,21 @@ class ClaudeProtocol:
         self.request, self.initialized, self.terminal = request, False, False
         self.tools = set(selected_tools(request))
         self.structured = None
+        self.failed = False
 
     def accept(self, line, trace):
+        # The collector still drains and archives raw bytes after an error.
+        # Do not let later well-formed output revive a rejected invocation or
+        # populate its accepted answer/completion fields.
+        if self.failed:
+            return False
+        try:
+            return self._accept(line, trace)
+        except (ValueError, TypeError, KeyError, OverflowError):
+            self.failed = True
+            raise
+
+    def _accept(self, line, trace):
         event = _strict_json(line)
         if not isinstance(event, dict) or not isinstance(event.get("type"), str):
             raise ValueError("Malformed Claude event")
@@ -392,8 +424,14 @@ def execute(request: ClaudeRequest) -> TransportResult:
         if reason:
             observe_stop(trace,reason)
         else:
-            compat = probe_cli(cwd=request.cwd,env=request.env,require_schema=request.output_schema is not None,
-                               require_effort=request.reasoning_effort is not None)
+            root = request.launcher_workspace or request.cwd
+            environment = launcher_environment(launcher_environment(request.env, workspace=root),
+                                               workspace=request.cwd)
+            selected = resolve_launcher(command[0], cwd=request.cwd, env=environment,
+                                        workspace=root, additional_workspace=request.cwd)
+            compat = probe_cli(cwd=request.cwd,env=environment,require_schema=request.output_schema is not None,
+                               require_effort=request.reasoning_effort is not None,
+                               launcher_workspace=root, resolved_launcher=selected)
             trace.capture["decision_cli_compatibility"] = compat
             trace.capture["decision_cli_version"] = compat["version"]
             reason = _cancel(request)
@@ -404,7 +442,8 @@ def execute(request: ClaudeRequest) -> TransportResult:
             else:
                 with safe_io.open_file(request.pretty_log,"a",encoding="utf-8") as f:
                     f.write(f"[claude-code] phase={request.phase} session={request.session_id} capture={trace.capture_dir}\n")
-                proc = _start(command,request.cwd,request.env)
+                proc = _start(command,request.cwd,environment, launcher_workspace=root,
+                              resolved_launcher=selected)
                 _collect_process(request,trace,payload,proc,protocol=protocol)
                 if trace.execution_error is None and not trace.process_stop_triggered and request.output_last_message:
                     # Only the correlated native structured result can become the
@@ -432,9 +471,8 @@ def execute(request: ClaudeRequest) -> TransportResult:
 
 
 def _cancel(request):
-    if request.process_stop_path is not None and request.process_stop_path.exists():
-        return safe_io.read_text(request.process_stop_path).strip() or "process_stop active"
-    return request.cancel_requested() if request.cancel_requested else None
+    return read_stop_signal(request.process_stop_path) or (
+        request.cancel_requested() if request.cancel_requested else None)
 
 
 def _finish_archive(request, trace):

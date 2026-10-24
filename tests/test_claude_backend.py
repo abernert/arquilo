@@ -295,10 +295,31 @@ class ProtocolTests(Fixture):
                 'session_id': request.session_id, 'uuid': request.session_id,
                 'estimated_tokens': 64, 'estimated_tokens_delta': 16}), trace)
 
+    def test_protocol_failure_cannot_be_revived_by_later_success(self):
+        request = self.request()
+        protocol = ct.ClaudeProtocol(request)
+        trace = RunResult()
+        protocol.accept(json.dumps(self.init(request)), trace)
+        with self.assertRaises(ValueError):
+            protocol.accept(json.dumps({'type': 'system', 'subtype': 'hook_started',
+                'session_id': request.session_id}), trace)
+        self.assertTrue(protocol.failed)
+        self.assertFalse(protocol.accept(json.dumps({'type': 'result',
+            'session_id': request.session_id, 'subtype': 'success',
+            'is_error': False, 'result': 'must not be accepted'}), trace))
+        self.assertFalse(trace.turn_completed)
+        self.assertEqual(trace.assistant_messages, [])
+        self.assertFalse(protocol.terminal)
+
     def test_duplicate_init_and_post_terminal_fail(self):
         request=self.request();trace=RunResult();p=ct.ClaudeProtocol(request)
         p.accept(json.dumps(self.init(request)),trace)
         with self.assertRaises(ValueError):p.accept(json.dumps(self.init(request)),trace)
+        self.assertTrue(p.failed)
+        # A rejected invocation stays rejected. Test post-terminal rejection
+        # with a fresh otherwise valid invocation, never revive the old one.
+        p, trace = ct.ClaudeProtocol(request), RunResult()
+        p.accept(json.dumps(self.init(request)), trace)
         event=dict(type='result',session_id=request.session_id,subtype='success',is_error=False,result='done')
         self.assertTrue(p.accept(json.dumps(event),trace))
         with self.assertRaises(ValueError):p.accept(json.dumps(event),trace)

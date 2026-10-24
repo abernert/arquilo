@@ -82,3 +82,13 @@ apply. `claude_doctor.py` has no Codex checks. Backend selection travels through
 `AutoBuildOptions` and the worker JSON contract; it is not a task-text directive.
 See [Claude Code backend](claude-code-backend.md) for deliberately different
 permissions, native isolation limits and the still-Codex-specific reconnect recovery.
+
+## Backend security parity on the unreleased Claude branch
+
+The Claude path now shares 0.9.1 accepted-plan/review/DONE controls and PR #35's
+state-I/O fixes. `host_launcher.py` supplies the trust policy for both launchers;
+Claude execution, metadata checks, Decide and private workers preserve the
+original workspace boundary and STOP context. A rejected Claude protocol stream
+cannot be revived by later terminal output. See
+[Claude backend qualification](claude-code-backend.md) for the deliberately
+restricted tool/sandbox model and the distinction from the published release.

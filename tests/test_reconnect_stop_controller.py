@@ -21,31 +21,58 @@ from runtime_failure import execution_error, stop_reason
 from test_reconnect_stop import Fixture, RECONNECT, ANSWER, COMPLETE, WORK, STOP, PASS, FAIL, answer
 
 PLAN = "1. ***TASK***: Create a synthetic output.\n2. ***TASK***: Inspect the next output.\n"
-# This wrapper substitutes only the model CLI inside a real, separately spawned
+# This wrapper substitutes the model CLI inside a real, separately spawned
 # AutoBuild worker. Its request and response still cross the private JSON boundary.
 WORKER = r'''
-import json, os, sys
+import json, os, sys, time
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import autobuild, codex_transport as transport
 from dataclasses import replace
 script, config, request = map(Path, sys.argv[2:5])
 settings = json.loads(config.read_text(encoding="utf-8"))
+error_barrier = settings["error_barrier"]
+settings = settings["scenarios"]
 call = json.loads(request.read_text(encoding="utf-8"))
+if error_barrier is not None:
+    # Both real collectors must have observed their intended failure before a
+    # shared STOP can cancel a slower peer. Publishing STOP immediately from one
+    # CLI stub races the other worker's startup, especially on Windows.
+    original_collect = transport._collect_process
+    class ObservedErrors(list):
+        def append(self, diagnostic):
+            super().append(diagnostic)
+            if diagnostic.get("type") != error_barrier["type"]:
+                return
+            directory = Path(error_barrier["directory"])
+            (directory / str(os.getpid())).write_text("observed", encoding="utf-8")
+            deadline = time.monotonic() + 5
+            while len(list(directory.iterdir())) < 2:
+                if time.monotonic() >= deadline:
+                    raise AssertionError("Both parallel collectors did not observe their expected failure")
+                time.sleep(.01)
+            Path(call["options"]["process_stop_path"]).write_text(
+                "Synthetic operator pause: inspect the result.", encoding="utf-8")
+    def collect(request, acc, *args, **kwargs):
+        acc.stream_errors = ObservedErrors(acc.stream_errors)
+        return original_collect(request, acc, *args, **kwargs)
+    transport._collect_process = collect
 original_start = transport._start_process
 index = 0
-def start(command, *, cwd, env):
+def start(command, *, cwd, env, launcher_workspace=None):
     global index
     if index >= len(settings):
         raise AssertionError("Unexpected worker phase")
     scenario = dict(settings[index])
     scenario["ready"] = str(config.parent / ("ready-"+str(os.getpid())+"-"+str(index)))
     if scenario.get("stop") is True:
-        scenario.update(stop=call["options"]["process_stop_path"], reason="Synthetic operator pause: inspect the result.")
+        scenario.update(stop=False if error_barrier else call["options"]["process_stop_path"],
+                        reason="Synthetic operator pause: inspect the result.")
     index += 1
     path = config.parent / ("worker-scenario-"+str(os.getpid())+"-"+str(index)+".json")
     path.write_text(json.dumps(scenario), encoding="utf-8")
-    return original_start([sys.executable,"-B",str(script),str(path)],cwd=cwd,env=env)
+    return original_start([sys.executable,"-B",str(script),str(path)],cwd=cwd,env=env,
+                          launcher_workspace=launcher_workspace)
 transport._start_process = start
 original_run = autobuild.run_codex_exec_json
 def invoke(**kwargs):
@@ -71,9 +98,13 @@ class ControllerFixture(Fixture):
         return result
 
     @contextmanager
-    def native_worker(self, scenarios):
+    def native_worker(self, scenarios, *, error_barrier=None):
         wrapper = self.base/'worker_wrapper.py'; wrapper.write_text(WORKER,encoding='utf-8')
-        spec = self.base/'worker_scenarios.json'; spec.write_text(json.dumps(scenarios),encoding='utf-8')
+        if error_barrier is not None:
+            observed = self.base/'parallel_observed_errors'; observed.mkdir()
+            error_barrier = {'type':error_barrier, 'directory':str(observed)}
+        spec = self.base/'worker_scenarios.json'
+        spec.write_text(json.dumps({'scenarios':scenarios, 'error_barrier':error_barrier}),encoding='utf-8')
         original = subprocess.run
         calls = []
         def launch(command, *args, **kwargs):
@@ -87,13 +118,13 @@ class ControllerFixture(Fixture):
         with patch.object(run_todos.subprocess, 'run', side_effect=launch):
             yield calls
 
-    def run_scenarios(self, scenarios, *, worker=False, parallel=False):
+    def run_scenarios(self, scenarios, *, worker=False, parallel=False, error_barrier=None):
         runner = self.runner(logs_in_workdir=True)
         if worker:
             execute = runner._execute_todo_autobuild
             def worker_execute(todo, **kwargs):
                 return execute(todo, **{**kwargs, 'use_cli_subprocess':True})
-            with self.native_worker(scenarios) as workers, \
+            with self.native_worker(scenarios, error_barrier=error_barrier) as workers, \
                  patch.object(runner, '_execute_todo_autobuild', side_effect=worker_execute), \
                  redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
                 runner.run()
@@ -177,9 +208,14 @@ class ControllerTests(ControllerFixture):
                             '***CFG workspace=two parallel=pair***\n2. ***TASK***: Synthetic parallel two.\n'
                             '3. ***TASK***: Must not run.\n',encoding='utf-8')
         runner,_,calls = self.run_scenarios([{'events':[RECONNECT,{'type':'error','message':'Synthetic fatal'}],
-                                            'mode':'wait','stop':True}],worker=True,parallel=True)
+                                            'mode':'wait','stop':True}],worker=True,parallel=True,error_barrier='error')
         self.assertEqual(calls,2)
         self.verify_logs(runner,code=7,terminal_phase='task',index=1,next_id='3')
+        for record in runner.task_log_records.values():
+            summary = json.loads((record.log_dir/'autobuild_summary.json').read_text(encoding='utf-8'))
+            capture = json.loads((Path(summary['terminal_attempt']['capture_directory'])/'capture.json').read_text(encoding='utf-8'))
+            self.assertEqual(summary['execution_error']['code'],'codex_stream_error')
+            self.assertIn({'type':'error','message':'Synthetic fatal'},capture['stream_errors'])
 
     def test_dedup_is_per_attempt_and_thread_safe(self):  # T101-29
         runner = self.runner()

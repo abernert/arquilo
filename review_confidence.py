@@ -120,8 +120,8 @@ def confidence_prompt_rules(*, prompt_config: PromptConfig | None = None) -> str
 def format_review_confidence(classification: dict[str, Any]) -> str:
     """Render a validated review, escaping untrusted strings for terminal display."""
     # Local import keeps the validation helpers usable by review_contract itself.
-    from review_contract import parse_review_classification
-    review = parse_review_classification(json.dumps(classification, allow_nan=False))
+    from review_contract import validate_review_classification
+    review = validate_review_classification(classification)
     if not review["valid"]:
         raise ValueError(review["short_summary"])
     score = review["confidence"]

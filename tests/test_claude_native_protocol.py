@@ -46,6 +46,9 @@ class NativeProtocolTests(unittest.TestCase):
     def test_ui_exception_is_narrow_and_session_bound(self):
         for extra in ({'event':'tool.run'}, {'tool':'Bash'}, {'uuid':None},
                       {'session_id':'foreign'}, {'subtype':'unknown'}):
+            # Independent negative streams; rejection latches per invocation.
+            self.protocol = ClaudeProtocol(self.request)
+            self.trace = RunResult()
             with self.subTest(extra=extra), self.assertRaises(ValueError):
                 self.send(self.ui(**extra))
         self.assertFalse(self.protocol.initialized)
@@ -81,6 +84,8 @@ class NativeProtocolTests(unittest.TestCase):
         self.send(self.ui())
         with self.assertRaisesRegex(ValueError, 'before verified init'):
             self.send({'type':'result','subtype':'success','is_error':False,'result':'not authorized'})
+        self.assertTrue(self.protocol.failed)
+        self.protocol = ClaudeProtocol(self.request)
         with self.assertRaisesRegex(ValueError, 'foreign session'):
             self.send({'type':'result','is_error':True,'session_id':'other'})
         self.assertFalse(self.trace.turn_completed)

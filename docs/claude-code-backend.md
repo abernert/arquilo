@@ -7,13 +7,45 @@ preflight, configuration-home lookup, or fallback is used on that path. Shared
 Python result/policy helpers retain some historical names; that is not a Codex
 process or provider dependency. OpenCode is reserved, **not implemented**.
 
-This is unreleased backend work integrated with **ARQUILO 0.9.0** (including
-the 0.8.0 resource contracts and 0.9.0 prompt catalogs). Do not treat it as client-production
-qualification or as a data-residency guarantee. `VERSION` was not released or
-retagged for this feature branch: `VERSION` is 0.9.0; the released `v0.9.0` tag
-and `main` remain unchanged.
+This is unreleased backend work on **ARQUILO 0.9.1 plus the state-I/O repairs
+from PR #35**. The original Claude branch is retained in ancestry, including the
+owner-tested native 2.1.310 compatibility fixes. `VERSION` is 0.9.1, but this
+checkout is not the already published v0.9.1 ZIP. No release tag, `main`, or
+existing release asset is changed by this integration. Review and apply #35
+before merging this backend update into the stable main line.
 
-## Compatibility with ARQUILO 0.9.0
+## Security baseline and shared acceptance
+
+Both backends use the same controller rules for original-task capture, accepted
+plan bytes, physical state identity, spent budgets, mandatory review and final
+DONE. FAIL or blocking findings veto completion even when a later Decide
+response says COMPLETE. Opaque STOP sentinels still stop work; root and peer
+signals, and the original launcher workspace, cross the private worker boundary.
+
+The Claude launcher now uses the shared external-host path policy. Empty,
+relative, project-local and physical aliases back into any writable workspace
+cannot select `claude`, Node, npm entry points or a Decide executable. Trusted
+absolute host PATH entries are retained; child PATH is sanitized and one resolved
+launcher is used for version/help and that invocation. Normal `~/.local/bin`
+installations are supported when outside the workspace; no additional CLI flag
+is needed. Selecting your whole home directory as the workspace includes that
+installation and is intentionally refused.
+
+A rejected native stream stays rejected. The adapter continues draining and
+archiving bytes, but a later well-formed terminal event cannot populate an
+accepted answer or restore completion. This fixes the negative test introduced
+with `thinking_tokens`; it is not solved by skipping or weakening its assertion.
+Legacy prose must explicitly state no issues; ambiguous prose does not gain an
+extra permissive Decide call. Valid no-issue prose still uses Claude Decide.
+
+Metadata recognition is not pre-execution confinement. Native Claude roles and
+sandbox limitations remain as documented below: no reviewer Bash, no named MCPs,
+no automatic Codex fallback. More general process/output supervision, additional
+resource isolation and the Git publication work in PR #36 are **not** included.
+Use this backend qualification without automatic Git publication; integration
+with that separate package needs its own corrected review/publication tests.
+
+## Compatibility with ARQUILO 0.9.1
 
 - `--prompt-config default|de|en|FILE` works across production, fixes, reviews,
   parent-review calls, Decide, doctor and worker serialization. Omission selects

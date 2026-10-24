@@ -2,6 +2,18 @@
 
 ## Unreleased — experimental Claude Code backend
 
+- Integrate the full 0.9.1 controller safety basis and the state metadata/lock
+  repairs from PR #35, preserving their ancestry, existing state keys and budgets.
+- Apply shared external-host launcher rules to Claude/Node, Decide and private
+  workers. Propagate original workspace/peer STOP context and cancel on opaque
+  sentinels. Pin one resolved CLI for metadata and each model invocation.
+- Latch rejected Claude event streams so later terminal events cannot revive
+  completion. Preserve strict FAIL/blocker vetoes and explicit legacy no-issue
+  semantics; add backend-paired controller and native-process regressions.
+- Keep Codex as default; no new tag/release, named MCP support or Git-package
+  integration. Native host sandbox and model-quality qualification remain
+  separate from synthetic/offline checks.
+
 - Recognize the `thinking_tokens` system progress event from owner-observed
   Claude Code 2.1.310 runs. Validate only the documented numeric token estimates,
   frame identity and exact allowed fields; never count this as tool permission,
@@ -24,13 +36,44 @@
 - Keep the released version/tag unchanged; this branch needs explicit host/model
   qualification before client use.
 
-- Integrate the released 0.9.0 base without modifying `main` or release tags.
+- Earlier integration introduced the 0.9.0 prompt/resource contracts; this update
+  retains them on the newer safety basis without modifying `main` or release tags.
 - Preserve prompt catalogs/snapshots through Claude execution, correction,
   reviews, worker payloads and doctor/Decide; preserve Codex defaults.
 - Bind explicit skill instructions with backend-specific roots, never looking
   up Codex home for Claude. Accept explicit empty MCP selections; reject named
   MCP selections before execution rather than silently ignoring them.
 - Add 0.9.0 integration regressions and an isolated owner smoke-test recipe.
+
+## 0.9.1 — 2026-10-23 (public preview; foundational control repairs)
+
+- Derive review provenance from the actual input format. A failed review or
+  any blocking issue vetoes completion before Decide, at AutoBuild completion,
+  and at the private worker-result boundary. Preserve legitimate legacy review
+  compatibility and its required semantic decision.
+- Bind DONE and breakdown adoption to the exact accepted/validated plan bytes.
+  DONE may change only the selected open task's command token. Capture original
+  contracts from accepted plan evidence; use bounded no-follow input reads.
+- Preserve existing state keys and spent budgets. Register physical plan
+  identity under an allocation lock; reject alternate path spellings that would
+  create a second state or put controller state inside the model workspace.
+  Incomplete legacy budget-only state still requires the original paths.
+- Enforce STOP before selection filters, during WAIT, before startup preflights
+  and at final acceptance. Share root/peer sentinels with Python workers and
+  publish a validated worker stop before output copying. Opaque stop sentinels
+  still cancel; they do not authorize reading linked targets. Reject overlapping
+  parallel workspaces, including a parallel workspace equal to the root.
+- Resolve controller Codex/Git launchers through absolute external host paths,
+  sanitize child PATH, retain the supported Windows npm launcher, and pin Git
+  selection for the run. Project-local or relative controller launchers are no
+  longer accepted. Linked decision input files are also refused.
+- Add offline regressions with real plan journals, restart, synchronized file
+  mutation, real Python workers and synthetic host programs. Historical DONE
+  entries and spent budgets are not rewritten. Git review-snapshot/push binding
+  and broader process supervision remain separate work.
+- Update the controller and Python workers together; keep the same workspace,
+  task-file and state-root paths. Normal host installations such as
+  `~/.local/bin/codex` remain supported when outside the selected workspaces.
 
 ## 0.9.0 — 2026-10-21 (public preview)
 

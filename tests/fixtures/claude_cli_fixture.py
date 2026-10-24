@@ -95,7 +95,8 @@ def main():
             marker=audit.with_suffix('.reviewed')
             first=not marker.exists();marker.touch()
             if mode=='review_fails' or first: text=json.dumps(FAIL)
-        if mode=='legacy_review': text='The actual file has been inspected; all requirements are satisfied.'
+        if mode=='legacy_review': text='No issues; the actual file has been inspected and all requirements are satisfied.'
+        if mode=='ambiguous_legacy_review': text='The actual file has been inspected; all requirements are satisfied.'
         if mode=='review_missing_result': return 0
     event={'type':'result','subtype':'success','is_error':False,'result':text,'permission_denials':[],
            'usage':{'input_tokens':1,'output_tokens':1},'num_turns':1}

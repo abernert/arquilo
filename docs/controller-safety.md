@@ -17,6 +17,14 @@ The same plan journal is checked on restart. A pending approved status write can
 recover from its journal; an unrelated third value is rejected. Two controllers
 cannot concurrently own the same plan. Parallel worker copies are also checked.
 
+Completion changes only the selected open task's command to `DONE` on the
+accepted revision. Child adoption persists the exact bytes that passed its
+validation. A concurrent workspace write cannot become journal authority through
+an unchecked second read; a later differing workspace revision is refused at the
+next integrity check. Original review contracts use accepted plan bytes, and
+copied task evidence must match the original task and preamble. Decision input
+files use bounded no-follow reads too.
+
 For deliberate owner edits, stop the runner, inspect the changes, and run once
 with `--accept-plan-changes`. The preceding baseline is archived. This flag is
 an explicit owner override, not an automatic repair for an integrity alert.
@@ -51,6 +59,21 @@ The model does not need write access to any of them. Review contracts still go
 inline in the review prompt. Diagnostic copies may contain confidential input;
 external storage does not encrypt or anonymize them.
 
+State allocation also records `identity.json` under a short root-level
+`identity.lock`. Existing directory keys and spent call counters are retained.
+Physical workspace/state overlap is rejected even through native case or Unicode
+aliases. If another spelling of the same task would select a second directory,
+the runner refuses it and reports the original paths. Continue with those paths;
+do not delete or merge journals/counters automatically. Legacy `plan.json`
+records are checked before allocating an alternate identity. Private project/run
+metadata can also identify an old directory for alias refusal; it never replaces
+a missing plan journal or restores counters. Old budget-only directories with no
+identity record, readable plan journal or private identity metadata cannot be
+mapped to a different spelling automatically (including older standalone
+AutoBuild budgets). Keep the original invocation paths and inspect that state
+manually. Missing task paths with ambiguous case/Unicode spellings are refused
+conservatively until distinct files exist.
+
 The Doctor retains its own `.codex_runs/arquilo_doctor` diagnostics. Standalone
 AutoBuild logging options also remain separate from runner log placement.
 
@@ -65,6 +88,31 @@ separate and remains effective. This counts attempts, not tokens or currency.
 ## Legacy migration from 0.2.x
 
 Old 0.2.x workspace archives are retained and never rewritten or automatically trusted as authority. If a plan or workspace was last used with 0.2.x, manually inspect it before establishing its current controller baseline and use a fresh disposable smoke workspace first. This is a historical migration path; current installations do not need a special 0.3.0 upgrade step. Migrating a legacy numeric-claim budget explicitly in trusted state uses the highest claim number, not the number of remaining files.
+
+## Stop and final acceptance
+
+An owner `***STOP***` before a task is a scheduling barrier before status and
+depth filtering. A DONE/OBSOLETE or too-deep task cannot hide that barrier from
+later tasks. An explicit `--start` still defines the selected range, and
+`--stop` remains a boundary after the selected task.
+
+A physical `process_stop` is checked before startup preflights, during WAIT,
+before dispatch and immediately before completion acceptance. Its contents are
+diagnostic only: empty, unreadable or unsafe sentinels also stop the run. The
+controller does not follow a linked sentinel to read its target. An observed
+stop is latched for the current run, even if its file is subsequently removed.
+
+Parallel Python workers receive the root and peer stop paths. A validated worker
+stop is published for peers before potentially slow result/log copying. Active
+Codex calls receive the cancellation callback, and pending batch results cannot
+become DONE after the controller observes a stop. Existing partial artifacts are
+retained for inspection. Parallel workspaces must be separate, non-overlapping
+subdirectories; neither may equal the root workspace.
+
+These are cooperative controller/transport gates, not an OS-wide supervisor.
+They do not promise immediate termination of arbitrary trusted preflight
+commands or detached descendants. Inspect partial outputs before an explicit
+resume; a new run still needs its normal completion review.
 
 ## Filesystem boundaries
 
@@ -112,7 +160,7 @@ An automatic push requires exactly one configured push destination. The runner
 records its resolved URL at startup and refuses a changed destination before
 committing or pushing. Do not edit the repository's remote configuration while
 the run is active; the comparison is not an atomic lock against another local
-process. A failed push can leave the reviewed commit locally while the run is
+process. A failed push can leave the local commit while the run is
 reported as failed. Inspect the local commit and remote ref before retrying;
 completed tasks do not automatically replay the Git step on restart.
 
