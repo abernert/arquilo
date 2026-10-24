@@ -252,20 +252,27 @@ class ClaudeProtocol:
                 if event.get(field):
                     raise ValueError("Claude unexpectedly loaded or attempted an integration")
             # --safe-mode disables installed mods, not the CLI's own bundled
-            # components. These two exact native 2.1.303 identities were measured
-            # in a fresh home. Metadata validation is NOT pre-execution isolation.
+            # components. Two identities were measured in native 2.1.303;
+            # 2.1.310 also reports cc-plugin-telemetry@builtin. Only these exact
+            # builtin identities are admitted. This metadata check is NOT a
+            # pre-execution interceptor or a promise that telemetry is disabled.
             plugins = event.get("plugins", [])
-            known = {"cc-plugin-agents-md", "cc-plugin-plugin-authoring"}
+            known = {"cc-plugin-agents-md", "cc-plugin-plugin-authoring",
+                     "cc-plugin-telemetry"}
             if not isinstance(plugins, list):
                 raise ValueError("Malformed Claude component metadata")
             seen = set()
             for plugin in plugins:
+                name = plugin.get("name") if isinstance(plugin, dict) else None
                 if (not isinstance(plugin, dict) or set(plugin) != {"name", "path", "source"}
-                        or plugin.get("name") not in known or plugin["name"] in seen
+                        or not isinstance(name, str) or name not in known or name in seen
                         or plugin.get("path") != "builtin"
-                        or plugin.get("source") != plugin["name"] + "@builtin"):
-                    raise ValueError("Unqualified Claude runtime component")
-                seen.add(plugin["name"])
+                        or plugin.get("source") != name + "@builtin"):
+                    safe_name = (name if isinstance(name, str) and
+                                 re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", name)
+                                 else "<invalid>")
+                    raise ValueError("Unqualified Claude runtime component: " + safe_name)
+                seen.add(name)
             self.initialized = True
             trace.capture["verified_init"] = True
             trace.capture["runtime_components"] = plugins
