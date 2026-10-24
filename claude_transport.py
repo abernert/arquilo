@@ -323,7 +323,15 @@ class ClaudeProtocol:
                     raise ValueError("Unknown assistant content type")
         elif kind == "system":
             if event.get("subtype") not in {"api_retry", "compact_boundary", "status"}:
-                raise ValueError("Unexpected Claude system event (hooks and integration events are prohibited)")
+                # Do not silently accept hooks/integration events. Report only
+                # a bounded subtype identifier, never hook output or commands,
+                # so users can diagnose a native CLI change from archived JSONL.
+                subtype = event.get("subtype")
+                safe_subtype = (subtype if isinstance(subtype, str) and
+                                re.fullmatch(r"[a-z][a-z0-9_]{0,63}", subtype)
+                                else "<invalid>")
+                raise ValueError("Unexpected Claude system event: subtype=" +
+                                 safe_subtype + " (hooks and integration events are prohibited)")
         elif kind == "user":
             if event.get("parent_tool_use_id") is not None:
                 raise ValueError("Unexpected subagent message")
