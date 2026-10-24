@@ -1,0 +1,91 @@
+{
+  "schema_version": "arquilo.documentation.v1",
+  "runtime_version": "0.9.1",
+  "source_commit": "48331c7210d63787c578bf925ade41da9eb806a8",
+  "reviewed_date": "2026-10-24",
+  "guides": [
+    {
+      "id": "user",
+      "language": "en",
+      "audience": "user",
+      "path": "docs/guides/user-guide.en.md"
+    },
+    {
+      "id": "user",
+      "language": "de",
+      "audience": "user",
+      "path": "docs/guides/user-guide.de.md"
+    },
+    {
+      "id": "operator",
+      "language": "en",
+      "audience": "operator",
+      "path": "docs/guides/operator-guide.en.md"
+    },
+    {
+      "id": "technical",
+      "language": "en",
+      "audience": "developer",
+      "path": "docs/guides/technical-guide.en.md"
+    }
+  ],
+  "user_chapters": [
+    "purpose",
+    "concepts",
+    "installation",
+    "preview",
+    "first-run",
+    "documents",
+    "software",
+    "authoring",
+    "options",
+    "results",
+    "stopping",
+    "continuing",
+    "plan-changes",
+    "troubleshooting",
+    "updating",
+    "checklist"
+  ],
+  "shared_user_examples": [
+    "prerequisites-posix",
+    "prerequisites-windows",
+    "smoke-prepare-posix",
+    "smoke-prepare-windows",
+    "doctor-posix",
+    "doctor-windows",
+    "smoke-run-posix",
+    "smoke-run-windows",
+    "smoke-check-posix",
+    "document-prepare",
+    "software-prepare",
+    "software-check",
+    "stop-posix"
+  ],
+  "synthetic_examples": [
+    "examples/minimal_todo.md",
+    "examples/document_review_todo.md",
+    "examples/python_function_todo.md",
+    "examples/planning_todo.md"
+  ],
+  "runner_selectors": [
+    "--agent",
+    "--mcp",
+    "--review-mcp",
+    "--skills",
+    "--skill-dir",
+    "--prompt-config",
+    "--max-calls",
+    "--process-stop-policy",
+    "--allow-todo-modifications",
+    "--accept-plan-changes"
+  ],
+  "status": "unreleased-integration",
+  "release_baseline": "0c4de8a76d40821578a9aa6f544dcf5fb45d26d5",
+  "documentation_base_commit": "0e57df59ea067596b0ab0db987347aa31e7870de",
+  "integrated_pull_requests": {
+    "33": "0e57df59ea067596b0ab0db987347aa31e7870de",
+    "35": "557f4f1b9b1959002a0677315f809426de1aab9b",
+    "36": "48331c7210d63787c578bf925ade41da9eb806a8"
+  }
+}

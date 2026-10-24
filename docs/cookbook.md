@@ -4,6 +4,11 @@ Common ARQUILO operating patterns. This complements the [quick start](quickstart
 
 Commands use `python3` on macOS/Linux. On Windows, use the corresponding `py -3.11 -B .\arquilo.py ...` form and native paths.
 
+For a continuous introduction see the [User Guide](guides/user-guide.en.md).
+Automatic Git still has an open review-snapshot/publication boundary in 0.9.1;
+read the [Operator Guide caveat](guides/operator-guide.en.md#git) before enabling
+`--git` or `--git-push` on a real project.
+
 ## Run one task
 
 ```md

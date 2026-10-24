@@ -200,3 +200,23 @@ real Python worker with a synthetic Codex executable. Older low-level selection
 tests use `git_review_fixture.py` to explicitly accept a synthetic candidate;
 this fixture is neither a real model judgment nor a runtime completion bypass.
 No external repository is pushed by these tests.
+
+## Documentation regression checks
+
+The [handbooks](guides/README.md) have a repository-only offline suite in
+`tests/test_documentation_guides.py`. It checks the guide manifest/version,
+German/English chapter and command parity, packaged links, supported example
+options, a sample runtime profile, and dry runs of the synthetic task lists.
+It performs no billed model calls and does not prove translation semantics or
+real model output correctness. See [maintenance instructions](documentation-maintenance.md).
+
+## Combined state/Git/handbook acceptance
+
+`tests/test_integration_091.py` exercises the actual guide document/software tasks
+with synthetic answers, real controller journals and local Git commits. It checks
+retained unrelated staging, no-Git behavior, setup/batch refusals, and the existing
+late rejection of linked/oversized contexts. Those timing tests document a limit,
+not a new preflight guarantee. No live provider or external push is involved.
+The [integration baseline](integration-status.md) distinguishes the tested
+checkout from the unchanged v0.9.1 release. Run these tests together with the
+original state-I/O, Git, worker and documentation suites on native platforms.

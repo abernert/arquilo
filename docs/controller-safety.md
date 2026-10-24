@@ -154,6 +154,8 @@ private transport, explicit leases, host credentials and recovery after a local
 commit or uncertain push. This describes an unreleased repair checkout, not a
 replacement of the already published 0.9.1 package. No new version tag is implied.
 
+For a step-by-step explanation, see the [Operator Guide](guides/operator-guide.en.md#git).
+
 ## Smaller error cases
 
 A dry-run report is created exclusively; existing files, including the task file

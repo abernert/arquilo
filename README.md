@@ -1,5 +1,17 @@
 # ARQUILO
 
+> **Unreleased integration checkout:** PR #35/#36 repairs plus PR #33 handbooks; version 0.9.1 and published assets are unchanged. See [integration baseline](docs/integration-status.md).
+
+## Handbooks
+
+Start with the [User Guide (English)](docs/guides/user-guide.en.md) or
+[Benutzerhandbuch (Deutsch)](docs/guides/user-guide.de.md). For complex workflows
+read the [Advanced / Operator Guide](docs/guides/operator-guide.en.md); for
+implementation and extension work read the [Technical / Architecture Guide](docs/guides/technical-guide.en.md).
+The [guide index](docs/guides/README.md) explains audiences and documented scope.
+These documentation additions do not change the 0.9.1 runtime or replace its
+already published release ZIP.
+
 **Turn Markdown tasks into reviewed results.**
 
 [![CI](https://github.com/abernert/arquilo/actions/workflows/ci.yml/badge.svg)](https://github.com/abernert/arquilo/actions/workflows/ci.yml)

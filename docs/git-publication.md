@@ -5,6 +5,8 @@ This page describes the **unreleased Git-integrity repair checkout based on
 identity, not just the unchanged preview version string, to distinguish this
 checkout from that release.
 
+[Exact integration baseline](integration-status.md) · [Operator Guide](guides/operator-guide.en.md#git)
+
 ## Scope and normal use
 
 Git remains optional. Without `--git`, task execution neither needs Git nor uses
@@ -130,6 +132,10 @@ followed. The limits are 32 MiB per file, 128 MiB total copied contents, 20,000
 entries, depth 64 and an 8 MiB manifest. A workspace containing linked virtual
 environments or very large dependency trees should use a smaller dedicated
 worktree or manual Git publication; no silent context omission is promised.
+Full-context checks happen at snapshot capture after production, not in a
+complete startup preflight. A linked or oversized unselected file can therefore
+consume a production call before refusal; a dry run does not establish snapshot
+suitability. Preserve partial artifacts and resolve the context before retrying.
 
 Git history transfer is limited to 128 MiB of pack output, 64 KiB of diagnostic
 output and 60 seconds per pack operation. This can reject a large repository
