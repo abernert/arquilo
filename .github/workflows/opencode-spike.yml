@@ -1,0 +1,53 @@
+name: OpenCode standalone feasibility
+on:
+  push:
+    branches: [spike/opencode-feasibility]
+    paths: ['experiments/opencode/**/*.py', '.github/workflows/opencode-spike.yml']
+permissions:
+  contents: read
+concurrency:
+  group: opencode-spike-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native-fixture:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Test the diagnostic harness without OpenCode
+        run: python -B -m unittest discover -s experiments/opencode -p "test_*.py" -v
+      - name: Download exact upstream OpenCode and verify published digest
+        env:
+          ARQUILO_SPIKE_GITHUB_TOKEN: ${{ github.token }}
+        run: python -B experiments/opencode/download_test_binary.py --destination "${{ runner.temp }}/opencode-test-bin"
+      - name: Exercise real OpenCode against a canned loopback provider
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          binary = root / 'opencode-test-bin' / ('opencode.exe' if os.name == 'nt' else 'opencode')
+          subprocess.run([sys.executable, '-B', 'experiments/opencode/feasibility.py',
+                          '--opencode', str(binary), '--out', str(root / 'opencode-spike')], check=True)
+      - name: Keep synthetic diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: opencode-spike-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/opencode-spike/report.json
+            ${{ runner.temp }}/opencode-spike/logs/**
+            ${{ runner.temp }}/opencode-spike/fixture-opencode.json
+            ${{ runner.temp }}/opencode-test-bin/download.json
+          if-no-files-found: warn
+          retention-days: 14
