@@ -144,6 +144,23 @@ strictly validated legacy npm `claude.cmd`/`cli.js` layout; it does not interpre
 arbitrary `.cmd`, `.bat`, `.ps1` or command-string wrappers. If a newer npm layout
 is refused, use the official native executable, not an unsafe shell workaround.
 
+## Claude Code 2.1.310 thinking progress
+
+Native 2.1.310 may emit `type=system, subtype=thinking_tokens` while the
+model is thinking. This is **progress metadata only**, not a tool, a review
+verdict, a final answer or authoritative token billing. An owner macOS run
+contained two such frames with exactly `type`, `subtype`, `session_id`,
+`uuid`, `estimated_tokens`, and `estimated_tokens_delta`. The Claude Agent
+SDK also defines optional `user_message_uuid` on this frame.
+
+ARQUILO admits this subtype **only after the correlated init and before a
+terminal result**. It validates an exact field set, bounded string identifiers,
+and finite non-negative numeric estimates; it does not grant new task tools,
+allow new hooks or change completion authority. Unrecognized extra fields,
+negative/non-numeric estimates, foreign sessions or post-result events fail
+closed. The raw frame is archived as before; the estimates are deliberately
+not treated as accepted model output or a billable usage counter.
+
 ## Diagnosing unexpected system events
 
 If a current Claude CLI emits `Unexpected Claude system event: subtype=...`,
