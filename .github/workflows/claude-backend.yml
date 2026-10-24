@@ -12,8 +12,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   native-fixture:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            claude: '2.1.303'
+          - os: macos-latest
+            claude: '2.1.310'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,9 +33,10 @@ jobs:
         with:
           node-version: '22'
       - name: Install Linux sandbox prerequisites (no policy relaxation)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
       - name: Install exact official CLI in disposable directory
-        run: npm install --prefix "$RUNNER_TEMP/native-cli" @anthropic-ai/claude-code@2.1.310
+        run: npm install --prefix "$RUNNER_TEMP/native-cli" @anthropic-ai/claude-code@${{ matrix.claude }}
       - name: Native Claude against synthetic loopback provider (no real model or credentials)
         run: >-
           python -B experiments/claude_code/feasibility.py
