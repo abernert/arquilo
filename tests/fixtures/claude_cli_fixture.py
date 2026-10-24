@@ -35,7 +35,19 @@ def main():
     def emit(event):
         event['session_id']=sid
         print(json.dumps(event),flush=True)
-    emit({'type':'system','subtype':'init','tools':tools,'mcp_servers':[], 'plugins':[],
+    # Synthetic 2.1.310 startup metadata. Only the runtime's known builtin
+    # identities are included; this does not execute native Claude plugins.
+    plugins = []
+    if mode == 'builtin_telemetry':
+        plugins = [
+            {'name': name, 'path': 'builtin', 'source': name + '@builtin'}
+            for name in ('cc-plugin-agents-md', 'cc-plugin-telemetry',
+                         'cc-plugin-plugin-authoring')
+        ]
+    elif mode == 'unqualified_builtin':
+        plugins = [{'name': 'unexpected-plugin', 'path': 'builtin',
+                    'source': 'unexpected-plugin@builtin'}]
+    emit({'type':'system','subtype':'init','tools':tools,'mcp_servers':[], 'plugins':plugins,
           'permissionMode':'dontAsk','model':'fixture'})
     if mode=='foreign':
         print(json.dumps({'type':'result','session_id':'foreign','subtype':'success','is_error':False,'result':'Done'}),flush=True)
