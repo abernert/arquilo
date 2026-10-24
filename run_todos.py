@@ -26,6 +26,7 @@ import codex_policy
 from task_resources import (RESOURCE_KEYS, TaskResources, SkillCatalog, selection, narrower,
     plan_resources, resolve_task_resources, bind_resources, add_resource_arguments)
 import codex_transport
+import agent_backend
 from runtime_logging import TaskLogRecord, LogWriteError, copy_log_files, write_log_json, write_log_text
 from removed_features import (reject_removed_options, add_removed_arguments,
                               check_removed_environment, reject_bridge_wait_conditions,
@@ -147,6 +148,7 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         "schema_version": ARQUILO_CAPABILITIES_SCHEMA_VERSION,
         "runtime_version": ARQUILO_RUNTIME_VERSION,
         "retained_core_options": ["CFG parallel", "runtime_profile", "--git"],
+        "backends": {"default": "codex", "available": ["codex", "claude-code"], "scope": "all-phases", "fallback": False},
         "operator_controls": {
             "default_max_calls": DEFAULT_MAX_CALLS, "unlimited_max_calls": 0,
             "default_logs_in_workdir": False, "default_allow_todo_modifications": False,
@@ -157,6 +159,9 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
             "run_todos.resources": 1,
             "run_todos.resource_defaults": 1,
             "codex.mcp_selection": 1,
+            "claude_code.mcp_selection": 0,
+            "claude_code.skill_bindings": 1,
+            "claude_code.prompt_config": 1,
             "run_todos.skill_bindings": 1,
             "run_todos.breakdown": RUN_TODOS_BREAKDOWN_CONTRACT_VERSION,
             "run_todos.final_failure": RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION,
@@ -789,6 +794,7 @@ class TodoRunner:
         network_access: bool = False,
         todo_preamble: str = "auto",
         max_calls: int = DEFAULT_MAX_CALLS,
+        backend: str = "codex",
         mcp: Optional[Sequence[str]] = None,
         review_mcp: Optional[Sequence[str]] = None,
         skills: Optional[Sequence[str]] = None,
@@ -804,6 +810,7 @@ class TodoRunner:
                 "Nachfolgende Optionen als Schlüsselwortargumente übergeben. "
                 + IACT_MIGRATION + " " + BRIDGE_MIGRATION
             )
+        self.backend = agent_backend.validate_backend(backend)
         reject_removed_options(removed_options, source="TodoRunner")
         self._prompts = load_prompt_config(prompt_config)
         check_removed_environment()
@@ -827,12 +834,15 @@ class TodoRunner:
         self.workdir = native_path(workdir, label="workdir")
         self.resource_caps = {"mcp": selection(mcp), "review_mcp": selection(review_mcp), "skills": selection(skills)}
         codex_policy.validate_config_profile(agent)
+        agent_backend.validate_options(self.backend, config_profile=agent)
+        agent_backend.validate_resources(self.backend, mcp=mcp, review_mcp=review_mcp)
         self.agent = agent
-        self.skill_catalog = SkillCatalog(workdir=self.workdir, roots=skill_dirs)
+        self.skill_catalog = SkillCatalog(workdir=self.workdir, roots=skill_dirs, backend=self.backend)
         self.initial_resource_plan = read_utf8(self.todo_file) if self.todo_file.is_file() else ""
         self.resource_mode = False
         for resource_id in plan_resources(self.initial_resource_plan)[1]:
             resource = resolve_task_resources(self.initial_resource_plan, resource_id, **self.resource_caps)
+            agent_backend.validate_resources(self.backend, mcp=resource.mcp, review_mcp=resource.review_mcp)
             self.skill_catalog.get(resource.skills)
             self.resource_mode = self.resource_mode or resource.explicit
         if self.todo_file.is_file():
@@ -885,16 +895,16 @@ class TodoRunner:
         )
         self.sandbox = sandbox
         self.git_enabled = git_enabled
-        self.model = _resolve_codex_model(model)
-        self.reasoning_effort = _resolve_codex_reasoning_effort(reasoning_effort)
+        self.model = agent_backend.resolve_model(model, backend=self.backend)
+        self.reasoning_effort = agent_backend.resolve_effort(reasoning_effort, backend=self.backend)
         self.git_repo_root: Optional[Path] = None
         self.run_id = self._resolve_run_id(run_id)
         # Reject stale/hostile workspace links even though control records now
         # live outside every model-writable workspace.
-        safe_io.check_path(self.workdir / ".codex_runs")
+        safe_io.check_path(self.workdir / agent_backend.logs_name(self.backend))
         self.state_dir = (state_directory(self.workdir, self.todo_workspace_file, state_dir)
                           if not self.dry_run else safe_io.lexical_path(state_dir or default_state_root()) / "dry-run")
-        self.runs_dir = (self.workdir / ".codex_runs" / "run_todos" if logs_in_workdir
+        self.runs_dir = (self.workdir / agent_backend.logs_name(self.backend) / "run_todos" if logs_in_workdir
                          else self.state_dir / "runs")
         self.git_selection = None
         if git_push and not git_enabled:
@@ -926,7 +936,7 @@ class TodoRunner:
                 self.project_id = self.project_logs.project_id
                 if self.logs_in_workdir:
                     self.project_logs = replace(self.project_logs,
-                        directory=self.workdir / ".codex_runs" / "run_todos", workspace_layout=True)
+                        directory=self.workdir / agent_backend.logs_name(self.backend) / "run_todos", workspace_layout=True)
                 self.runs_dir = self.project_logs.runs_directory
                 # Apply owner policy to existing budgets, including exhausted
                 # 0.5.x budgets, without resetting counts or moving state.
@@ -2034,7 +2044,7 @@ class TodoRunner:
                 continue
             if resolved in seen:
                 continue
-            if not resolved.is_file() or resolved.is_relative_to(self.workdir / ".codex_runs"):
+            if not resolved.is_file() or resolved.is_relative_to(self.workdir / agent_backend.logs_name(self.backend)):
                 continue
             seen.add(resolved)
             unique.append(resolved)
@@ -3268,17 +3278,18 @@ class TodoRunner:
                                                     resource_id, **resource_caps)
         resources = TaskResources(**{key: narrower(getattr(live_resources, key), getattr(original_resources, key),
                                       label=f"Task {resource_id}: {key}") for key in RESOURCE_KEYS})
+        agent_backend.validate_resources(self.backend, mcp=resources.mcp, review_mcp=resources.review_mcp)
         if resources.explicit:
-            catalog = getattr(self, "skill_catalog", None) or SkillCatalog(workdir=self.workdir)
+            catalog = getattr(self, "skill_catalog", None) or SkillCatalog(workdir=self.workdir, backend=self.backend)
             task_text = bind_resources(task_text, resources, catalog, prompt_config=self.prompts)
-        active_model = _resolve_codex_model(
-            model_override if model_override is not None else self.model
+        active_model = agent_backend.resolve_model(
+            model_override if model_override is not None else self.model, backend=self.backend
         )
-        active_reasoning_effort = _resolve_codex_reasoning_effort(
-            reasoning_effort_override
-            if reasoning_effort_override is not None
-            else self.reasoning_effort
+        active_reasoning_effort = agent_backend.resolve_effort(
+            reasoning_effort_override if reasoning_effort_override is not None else self.reasoning_effort,
+            backend=self.backend
         )
+        agent_backend.validate_options(self.backend, config_profile=config_profile, extra_args=extra_args)
         active_extra_args = list(extra_args or [])
         active_process_stop = process_stop_override or self.process_stop_path
         session_stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -3312,7 +3323,7 @@ class TodoRunner:
             log_dir, attempt=1, ensure_directories=False)
         command_preview = (
             f"autobuild.start(task=<Referenzprompt>, workdir={str(active_workdir)!r}, "
-            f"options=AutoBuildOptions(sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
+            f"options=AutoBuildOptions(backend={self.backend!r}, sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
             f"model={active_model!r}, reasoning_effort={active_reasoning_effort!r}, "
             f"mcp={resources.mcp!r}, review_mcp={resources.review_mcp!r}, skills={resources.skills!r}, "
             f"max_steps={self.max_steps * self.max_retries}, max_calls={self.max_calls}, summary_json={str(preview_summary)!r}), "
@@ -3375,6 +3386,7 @@ class TodoRunner:
             )
             print(f"[exec] (1/1, Fortsetzungsschritte={self.max_steps * self.max_retries}) {task_text}")
             options = AutoBuildOptions(
+                backend=self.backend,
                 sandbox=active_sandbox, network_access=active_network_access,
                 config_profile=config_profile, extra_arg=active_extra_args,
                 prompt_config=self.prompts,
@@ -3564,6 +3576,7 @@ class TodoRunner:
                 "todo_preamble": self.todo_preamble,
             },
         }
+        payload["backend"] = self.backend
         payload["prompt_config"] = self.prompts.metadata()
         if self.model:
             payload["model"] = self.model
@@ -3883,6 +3896,7 @@ class TodoRunner:
         codex_policy.reject_policy_keys(cfg, source="CFG")
         network_access = codex_policy.effective_network_access(self.network_access, cfg.get("network_access"))
         codex_policy.validate_config_profile(cfg.get("agent"))
+        agent_backend.validate_options(getattr(self, "backend", "codex"), config_profile=cfg.get("agent"))
         workdir = self.workdir
         if "workspace" in cfg and cfg["workspace"].strip():
             workdir = self._resolve_directive_workspace(cfg["workspace"])
@@ -4602,6 +4616,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "Wird pro Invocation übergeben und verändert config.toml nicht."
         ),
     )
+    agent_backend.add_backend_argument(parser)
+    parser.add_argument("--skip-backend-preflight", action="store_true", help="Skip the selected runtime preflight; does not select another backend.")
     parser.add_argument(
         "--skip-codex-preflight",
         action="store_true",
@@ -4779,6 +4795,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 logs_in_workdir=args.logs_in_workdir,
                 allow_todo_modifications=args.allow_todo_modifications,
                 model=args.model,
+                backend=args.backend,
                 reasoning_effort=args.reasoning_effort,
                 breakdown_policy=args.breakdown_policy,
                 breakdown_max_children=args.breakdown_max_children,
@@ -4802,11 +4819,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if os.path.lexists(workdir / "process_stop"):
                 runner.run()
                 return RUN_TODOS_EXIT_PROCESS_STOP
-            if not args.skip_codex_preflight:
-                run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
-                    model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts,
-                    workdir=workdir,
-                    **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
+            if args.skip_codex_preflight and args.backend != "codex":
+                raise ValueError("--skip-codex-preflight is Codex-only; use --skip-backend-preflight.")
+            if not args.skip_backend_preflight:
+                if args.backend == "codex" and not args.skip_codex_preflight:
+                    run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
+                        model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts, workdir=workdir,
+                        **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
+                elif args.backend == "claude-code" and not args.dry_run:
+                    from claude_transport import probe_cli
+                    probe = probe_cli(cwd=workdir, env=dict(os.environ), require_schema=True,
+                                      require_effort=args.reasoning_effort is not None)
+                    if probe["status"] != "PASS":
+                        raise RuntimeError(probe.get("detail", "Claude Code preflight failed"))
+                    print("[preflight] Claude Code CLI verified; no Codex and no preflight model call.")
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:
             try:

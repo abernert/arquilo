@@ -1,7 +1,8 @@
 # Architecture
 
-ARQUILO is a Python controller around Codex Exec, not a replacement model or a
-web service. The code uses only the Python standard library.
+ARQUILO is a Python controller around an agent runtime, not a replacement model
+or a web service. Codex Exec remains the default; `--backend claude-code` selects
+the independent Claude Code adapter for every phase (including Decide). The code uses only the Python standard library.
 
 ## Execution flow
 
@@ -68,3 +69,26 @@ and the OS. A runtime profile may add domain-specific context and checks; it
 must not disable controller security or forge a successful run state.
 
 See [SECURITY.md](../SECURITY.md) and the [compatibility policy](compatibility.md).
+
+## Experimental backend boundary
+
+`agent_backend.py` resolves run-wide selection and native model defaults;
+`agent_types.py` holds shared evidence without provider imports. The legacy Codex
+transport remains intact. `claude_transport.py`, `claude_launcher.py` and
+`agent_process.py` handle native Claude stream-json and owned process I/O.
+`claude_decision.py` emits a fresh adapter-owned response only from a correlated
+native structured terminal result; the common decision validator/archive still
+apply. `claude_doctor.py` has no Codex checks. Backend selection travels through
+`AutoBuildOptions` and the worker JSON contract; it is not a task-text directive.
+See [Claude Code backend](claude-code-backend.md) for deliberately different
+permissions, native isolation limits and the still-Codex-specific reconnect recovery.
+
+## Backend security parity on the unreleased Claude branch
+
+The Claude path now shares 0.9.1 accepted-plan/review/DONE controls and PR #35's
+state-I/O fixes. `host_launcher.py` supplies the trust policy for both launchers;
+Claude execution, metadata checks, Decide and private workers preserve the
+original workspace boundary and STOP context. A rejected Claude protocol stream
+cannot be revived by later terminal output. See
+[Claude backend qualification](claude-code-backend.md) for the deliberately
+restricted tool/sandbox model and the distinction from the published release.

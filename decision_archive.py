@@ -43,7 +43,7 @@ def file_state(path: Path, directory: Path) -> dict:
 def initial_manifest(request, settings, *, decision_id: str, number: int,
                      retry_of: str | None, retry_reason: str | None) -> dict:
     """Only deliberately selected, non-secret host settings are recorded."""
-    from codex_transport import TransportTimeouts
+    from agent_types import TransportTimeouts
 
     return {
         "schema_version": "arquilo.decision_attempt.v2",
@@ -56,6 +56,8 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
                   "reason": retry_reason, "scheduled": False,
                   "policy": "only decision_invalid_response after successful execution; at most one replay"},
         "settings": {
+            "backend": settings.backend,
+            "response_source": "native_terminal_result" if settings.backend == "claude-code" else "cli_owned_file",
             "model": request.model, "reasoning_effort": request.reasoning_effort,
             "max_input_bytes": request.max_input_bytes,
             "timeouts": asdict(settings.timeouts or TransportTimeouts(total=120)),
@@ -63,10 +65,12 @@ def initial_manifest(request, settings, *, decision_id: str, number: int,
             "model_provider": settings.model_provider, "config_profile": settings.config_profile,
             "configuration_policy": "inherit-trusted-host",
             "enforced_cli_arguments": None,
-            "requested_policy_arguments": codex_policy.decision_arguments(
-                network_access=False, config_profile=settings.config_profile, extra_args=()),
+            "requested_policy_arguments": (codex_policy.decision_arguments(
+                network_access=False, config_profile=settings.config_profile, extra_args=())
+                if settings.backend == "codex" else ["--tools", "", "--permission-mode", "dontAsk", "--safe-mode", "--strict-mcp-config"]),
             "environment": "trusted host environment inherited; values are not archived",
-            "auth": "Codex configuration/CODEX_HOME inherited; credentials not read or copied",
+            "auth": ("Codex configuration/CODEX_HOME inherited; credentials not read or copied" if settings.backend == "codex"
+                     else "Claude user authentication/provider environment inherited; no Codex configuration"),
         },
         "cli_version": None, "cwd": None,
         "cleanup_policy": "retain workdir; explicit cleanup only after all attempts are archived",
@@ -122,7 +126,7 @@ def finish_manifest(manifest: dict, *, directory: Path, result: DecisionResult,
               else result.execution.status.value)
     settings = dict(manifest["settings"])
     compatibility = capture.get("decision_cli_compatibility", {})
-    if compatibility.get("status") == "PASS":
+    if compatibility.get("status") == "PASS" and settings.get("backend", "codex") == "codex":
         settings["enforced_cli_arguments"] = codex_policy.decision_arguments(
             network_access=False, config_profile=settings.get("config_profile"), extra_args=())
     return manifest | {

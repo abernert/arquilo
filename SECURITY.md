@@ -109,3 +109,14 @@ statuses/removal. It does not certify those edits as reviewed work. Use the
 original-assignment `reviewed_this_run` and recorded plan mutations, and perform
 human review of generated plans. Both switches are off by default and neither
 changes Codex permission settings. See [details](docs/operator-controls.md).
+
+## Experimental Claude Code backend
+
+`--backend claude-code` has its own execution path. Its read-only roles exclude
+Bash/write tools and Decide excludes task tools. Its production Bash requires
+Claude native sandbox availability without an unsandboxed escape. Native file
+tools and mandatory managed configuration are not a whole-process sandbox;
+trusted host/user permissions and provider behavior still matter. Review event
+validation is not a pre-tool interceptor. Use isolated client environments and
+read [the backend-specific limits](docs/claude-code-backend.md). Neither this
+backend nor a green offline test is a data-residency or production certification.

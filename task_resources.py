@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
+from agent_backend import validate_backend
 
 from dataclasses import dataclass
 import hashlib
@@ -162,7 +163,7 @@ def resolve_task_resources(text: str, identifier: str, *, mcp=None, review_mcp=N
 
 def add_resource_arguments(parser, *, skill_dirs: bool = True) -> None:
     parser.add_argument("--mcp", type=selection, default=None, metavar="NAME[,NAME]|none",
-                        help="Exclusive MCP selection and ceiling; omitted inherits Codex configuration.")
+                        help="Exclusive MCP selection and ceiling; omitted inherits Codex configuration. Claude Code supports none only.")
     parser.add_argument("--review-mcp", type=selection, default=None, metavar="NAME[,NAME]|none",
                         help="MCP subset for review; explicit --mcp defaults review to none. Not a remote read-only guarantee.")
     parser.add_argument("--skills", type=selection, default=None, metavar="NAME[,NAME]|none",
@@ -187,11 +188,21 @@ class SkillCatalog:
     precedence lottery. Linked roots selected by the operator may be resolved;
     linked entries and files below a root are rejected by safe_io.
     """
-    def __init__(self, *, workdir: Path, roots: Sequence[str | Path] = (), env: Mapping[str, str] | None = None):
+    def __init__(self, *, workdir: Path, roots: Sequence[str | Path] = (),
+                 env: Mapping[str, str] | None = None, backend: str = "codex"):
+        validate_backend(backend)
         env = os.environ if env is None else env
         home = Path(env.get("USERPROFILE" if os.name == "nt" else "HOME", str(Path.home())))
-        codex_home = Path(env.get("CODEX_HOME", str(home / ".codex")))
-        choices = list(roots) if roots else [workdir / ".agents/skills", home / ".agents/skills", codex_home / "skills"]
+        if roots:
+            choices = list(roots)
+        elif backend == "claude-code":
+            # Explicit instruction snapshots only: never inspect CODEX_HOME or
+            # enable Claude's native skill/tool discovery.
+            choices = [workdir / ".agents/skills", home / ".agents/skills",
+                       workdir / ".claude/skills", home / ".claude/skills"]
+        else:
+            codex_home = Path(env.get("CODEX_HOME", str(home / ".codex")))
+            choices = [workdir / ".agents/skills", home / ".agents/skills", codex_home / "skills"]
         self.roots = tuple(dict.fromkeys(str(Path(p).expanduser().resolve()) for p in choices))
         self._snapshots: dict[str, list[SkillSnapshot]] = {}
         self._loaded = False
