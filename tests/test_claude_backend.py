@@ -169,6 +169,40 @@ class ProtocolTests(Fixture):
             with self.subTest(field=field),self.assertRaises(ValueError):
                 ct.ClaudeProtocol(request).accept(json.dumps(event),RunResult())
 
+    def test_claude_2_1_310_builtin_metadata_is_accepted(self):
+        request = self.request(sandbox='read-only')
+        plugins = [
+            {'name': name, 'path': 'builtin', 'source': name + '@builtin'}
+            for name in ('cc-plugin-agents-md', 'cc-plugin-telemetry',
+                         'cc-plugin-plugin-authoring')
+        ]
+        event = self.init(request, plugins=plugins)
+        trace = RunResult()
+        self.assertFalse(ct.ClaudeProtocol(request).accept(json.dumps(event), trace))
+        self.assertTrue(trace.capture['verified_init'])
+        self.assertEqual(trace.capture['runtime_components'], plugins)
+        self.assertEqual(trace.capture['effective_tools'], list(ct.selected_tools(request)))
+
+    def test_claude_builtin_metadata_keeps_exact_identity_checks(self):
+        request = self.request(sandbox='read-only')
+        valid = {'name': 'cc-plugin-telemetry', 'path': 'builtin',
+                 'source': 'cc-plugin-telemetry@builtin'}
+        invalid = [
+            [{'name': 'unknown-component', 'path': 'builtin',
+              'source': 'unknown-component@builtin'}],
+            [{**valid, 'path': '/tmp/unsafe'}],
+            [{**valid, 'source': 'cc-plugin-telemetry@user'}],
+            [{**valid, 'extra': True}],
+            [valid, valid],
+            [{'name': ['cc-plugin-telemetry'], 'path': 'builtin',
+              'source': 'cc-plugin-telemetry@builtin'}],
+        ]
+        for plugins in invalid:
+            with self.subTest(plugins=plugins), self.assertRaisesRegex(
+                    ValueError, 'Unqualified Claude runtime component'):
+                ct.ClaudeProtocol(request).accept(
+                    json.dumps(self.init(request, plugins=plugins)), RunResult())
+
     def test_duplicate_init_and_post_terminal_fail(self):
         request=self.request();trace=RunResult();p=ct.ClaudeProtocol(request)
         p.accept(json.dumps(self.init(request)),trace)
@@ -202,6 +236,24 @@ class TransportTests(Fixture):
         self.assertNotIn('--model',self.rows()[0]['argv'])
         self.assertNotIn('--effort',self.rows()[0]['argv'])
         with self.assertRaises(ValueError):ct.execute(request)
+
+    def test_synthetic_claude_2_1_310_full_transport_accepts_known_builtins(self):
+        self.mode('builtin_telemetry')
+        out = ct.execute(self.request())
+        self.assertTrue(out.execution.succeeded, str(out.execution))
+        self.assertEqual(
+            [p['name'] for p in out.trace.capture['runtime_components']],
+            ['cc-plugin-agents-md', 'cc-plugin-telemetry', 'cc-plugin-plugin-authoring'])
+        self.assertTrue(out.trace.turn_completed)
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_unknown_builtin_still_fails_full_transport(self):
+        self.mode('unqualified_builtin')
+        out = ct.execute(self.request())
+        self.assertEqual(out.execution.status, ExecutionStatus.FAILED)
+        self.assertTrue(any('Unqualified Claude runtime component' in e.get('message', '')
+                            for e in out.trace.stream_errors))
+        self.assertEqual(len(self.rows()), 1)
 
     def test_native_like_failures_never_succeed(self):
         for mode in ('foreign','invalid_json','duplicate_key','tool_violation','missing_result','bad_utf8',
