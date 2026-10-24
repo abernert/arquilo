@@ -207,10 +207,13 @@ messages**, not a native Claude model session. Tests poison Codex process and
 configuration entry points and install a sentinel executable for child-process
 regressions. They check production/review/fix/Decide, worker serialization,
 full task-list status, cancellation, timeouts, malformed output, archive failure,
-unsupported CLI contracts and independent model configuration. The maintained native fixture now pins Claude Code 2.1.310 and uses a synthetic
-loopback provider, never a real model. The earlier 2.1.303 qualification remains
-historical evidence. Offline protocol and subprocess fixtures also exercise the
-exact three built-in identities and reject untrusted substitutions. Native CLI tests
+unsupported CLI contracts and independent model configuration. The maintained native fixture tests Claude Code 2.1.303 on Linux and
+2.1.310 on macOS, against a synthetic loopback provider rather than a real model.
+The Linux GitHub-hosted runner does not currently support 2.1.310's sandboxed
+Bash under its AppArmor/user-namespace restrictions: this is reported as a
+native environment limitation, not solved by disabling the required sandbox.
+Offline protocol and subprocess fixtures exercise the exact three built-in
+identities and reject untrusted substitutions. Native CLI tests
 and real-model/client-host tests are distinct levels; passing an offline suite
 does not establish native tool isolation or model quality.
 
