@@ -1,6 +1,22 @@
 # Documentation guide
 
+> This checkout combines the state/Git repairs and handbooks without a release. Read [integration baseline and limits](integration-status.md) before assuming published v0.9.1 behavior.
+
 This page is the map of ARQUILO's documentation. Start with the path that matches what you are trying to do.
+
+## Handbooks by audience
+
+| Audience | Handbook |
+| --- | --- |
+| Anwender | [Benutzerhandbuch Deutsch](guides/user-guide.de.md) |
+| User | [User Guide English](guides/user-guide.en.md) |
+| Power user / operator | [Advanced / Operator Guide](guides/operator-guide.en.md) |
+| Developer / technical integrator | [Technical / Architecture Guide](guides/technical-guide.en.md) |
+
+The manuals give a continuous learning path; the pages below remain focused
+recipes and references. See the [guide index](guides/README.md) for version scope
+and [documentation maintenance](documentation-maintenance.md) for bilingual
+parity, example checks and package inclusion. Existing reference URLs remain valid.
 
 ## First run
 
@@ -21,6 +37,7 @@ ARQUILO's core is a Python 3.11+ controller around a separately installed and au
 | Understand the controller and review flow | [Architecture](architecture.md) |
 | Understand trust boundaries before real use | [Security](../SECURITY.md) |
 | Diagnose setup or runtime failures | [Troubleshooting](troubleshooting.md) |
+| Publish exact reviewed outputs with the unreleased Git repair | [Git publication](git-publication.md) |
 | Understand plan authority, state, recovery, or Git safeguards | [Controller safety](controller-safety.md) |
 | Generate a plan and pause before executing it | [Operator controls](operator-controls.md) |
 | Find project run logs | [Project logs](project-logs.md) |

@@ -4,6 +4,11 @@ Common ARQUILO operating patterns. This complements the [quick start](quickstart
 
 Commands use `python3` on macOS/Linux. On Windows, use the corresponding `py -3.11 -B .\arquilo.py ...` form and native paths.
 
+For a continuous introduction see the [User Guide](guides/user-guide.en.md).
+Automatic Git still has an open review-snapshot/publication boundary in 0.9.1;
+read the [Operator Guide caveat](guides/operator-guide.en.md#git) before enabling
+`--git` or `--git-push` on a real project.
+
 ## Run one task
 
 ```md
@@ -228,3 +233,11 @@ Only add `--check-decide` when you intentionally want the live restricted-model 
 - Safety and recovery: [Controller safety](controller-safety.md)
 - Testing: [Testing](testing.md)
 - More task files: [Examples](../examples/README.md)
+
+## Git-integrity repair checkout
+
+The unreleased repair based on 0.9.1 changes automatic Git acceptance to use a
+pre-review snapshot and a pinned publisher. Keep the task plan and rewritten
+reports out of `--git-path`; use serial tasks and an ordinary (not split) index.
+See [the Git publication reference](git-publication.md) for exact limits and
+recovery. Existing published release ZIPs are not changed by this documentation.

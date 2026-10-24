@@ -1,4 +1,6 @@
-# Prompt configuration — 0.9.0
+# Prompt configuration
+
+Introduced in 0.9.0; applicable to the documented 0.9.1 runtime.
 
 **Public preview.** This feature moves ARQUILO's
 built-in model-facing instruction texts into complete, editable TOML catalogs.

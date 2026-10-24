@@ -1,64 +1,106 @@
 # ARQUILO Runtime Profile API v1
 
-## Grundsatz
+Applicable to the documented **0.9.1** runtime. A runtime profile contributes
+operator-trusted domain instructions and preflight behavior. It cannot directly
+set controller run state, approve a review or authorize task completion. JSON
+runtime profiles are part of the core; no additional Python package is needed.
 
-Ein Runtime-Profil darf ARQUILO nur um domänenspezifische Kontext- und
-Prüfregeln ergänzen. Es darf keine ARQUILO-Sicherheitskontrolle abschalten, keinen
-Runzustand setzen und keinen Review oder Aufgabenabschluss als erfolgreich markieren.
-JSON-Runtime-Profile gehören zum Lean-Kern und benötigen kein Zusatzpaket.
-Entfernte Funktionsfelder werden auch hier abgewiesen; siehe
-[Konfiguration](documents/CONFIGURATION.md) und [Migration](documents/MIGRATION.md).
+## Activation
 
-## Aktivierung
-
-```text
-python3 run_todos.py --todo-file /projekt/aufgaben.md --workdir /projekt --runtime-profile /projekt/profil.json
+```sh
+python3 -B arquilo.py tasklist run --todo-file /project/tasks.md --workdir /project --runtime-profile /approved/profile.json
 ```
 
-In PowerShell entsprechend `py -3.11` und native Windows-Pfade verwenden.
-Alternativ setzt ein Controller `ARQUILO_RUNTIME_PROFILE` in der Umgebung des
-Kindprozesses. Die öffentliche CLI-Option hat Vorrang.
+On native Windows substitute an installed Python interpreter and native paths.
+The public CLI option precedes `ARQUILO_RUNTIME_PROFILE`. Relative file paths are
+relative to the invocation directory. Inspect a profile and any executable
+preflight before using it; task instructions are not authority to select trusted
+host code.
 
-## Schema
+## Profile fields
 
-Das Profil verwendet `schema_version: arquilo.runtime_profile.v1` und kann
-folgende neutrale Beiträge liefern:
+The JSON object requires `schema_version: "arquilo.runtime_profile.v1"` and a
+nonempty `profile_id`. `profile_version` defaults to `"1"` and is a string.
 
-- `activation_markers`: Aktivierung des gesamten Profils;
-- `scope_activation_markers`: gesonderte Aktivierung von Scope- und
-  Blockschutz;
-- `protected_markers`: Namen bytegenau zu erhaltender markierter Blöcke;
-- `prompt_policy`: additive Task-, Breakdown-, Parent-Review- und
-  AutoBuild-Regeln;
-- `preflight`: argv-basierter Befehl mit Timeout;
-- `metadata`: für den Eigentümer frei nutzbare, von ARQUILO nicht interpretierte
-  Metadaten.
+| Field | Meaning |
+| --- | --- |
+| `activation_markers` | List of strings; all must occur for text-dependent profile activation. An empty list is active by default. |
+| `scope_activation_markers` | Separate all-markers condition for relevant scope/protected-block checks. |
+| `protected_markers` | Names of marked blocks that applicable guards expect to preserve byte-exactly. |
+| `prompt_policy` | Supported instruction slots described below. |
+| `preflight` | Optional ordered host command, timeout, working directory and environment overlay. |
+| `metadata` | Operator metadata object, not interpreted as runtime authority. |
 
-Unterstützte Preflight-Platzhalter sind `{python}`, `{workdir}`,
-`{todo_file}`, `{profile_path}` und `{profile_dir}`.
+The implementation checks selected policy/removed fields and supported values;
+it is not a universal strict rejection of every unknown JSON key. Use the known
+fields and verify behavior rather than relying on ignored misspellings.
 
-## Capability-Vertrag
+## Prompt policy
 
-```bash
-python3 run_todos.py --print-capabilities
+Supported fields are `controller_only_instruction`, `task_contract_instruction`,
+`breakdown_scope_guard`, `legacy_review_boundary`, `parent_review_scope_guard`,
+`parent_review_terminal_rule` and `autobuild_review_rules`.
+
+`autobuild_review_rules` is a list of additive review instructions. Other fields
+populate specific existing instruction/guard slots; some replace that slot's
+built-in text. Do not describe every contribution as universally additive.
+Placeholder availability is specific to the consuming call site. Keep the
+controller's executable status, review and permission rules independent of prose.
+
+A minimal complete example, with no executable preflight:
+
+```json
+{
+  "schema_version": "arquilo.runtime_profile.v1",
+  "profile_id": "example.source-review",
+  "profile_version": "1",
+  "prompt_policy": {
+    "autobuild_review_rules": [
+      "Distinguish supplied source facts from assumptions.",
+      "Do not certify a factual claim without an identifiable source."
+    ]
+  },
+  "metadata": {"purpose": "Synthetic documentation example"}
+}
 ```
 
-liefert ausschließlich ein JSON-Objekt nach `arquilo.capabilities.v1`. Adapter
-prüfen Featureversionen statt ARQUILO-Quelltext, Dateinamen oder interne
-Konstanten zu untersuchen.
-`features` enthält die bestehenden versionierten Kernverträge;
-`retained_core_options` nennt `CFG parallel`, `runtime_profile` und `--git`.
-Es gibt keine Felder für installierbare Zusatzgruppen mehr.
+## Preflight trust boundary
 
-## Trust boundary
+`preflight.command` is a nonempty array of argument strings, not a shell command
+string. It is executed as **owner-trusted host code**, outside the model sandbox.
+Argument order, repetitions, empty values and whitespace are preserved. The
+executable must be nonempty and arguments cannot contain NUL.
 
-`preflight.command` is executable owner-trusted host code, not sandboxed model
-configuration. Inspect profiles before execution. Argument order, repeats, empty
-values and whitespace are preserved; only a finite positive timeout is valid.
+Supported substitutions are `{python}`, `{workdir}`, `{todo_file}`,
+`{profile_path}` and `{profile_dir}`. `timeout_seconds` defaults to 30 and must be
+finite, greater than 0 and at most 3600. Optional `cwd` and an `environment` map
+configure the trusted process. Do not embed credentials in a distributable
+profile or use untrusted model text to construct executable commands.
 
-## Promptkataloge (Entwicklungsstand 0.9.0)
+A real run executes the applicable preflight; a dry run records that it was
+skipped. A startup stop prevents new preflight execution. This is not a promise
+of immediate termination of arbitrary already-running preflight code.
 
-`--prompt-config default|de|en|DATEI` wählt die eingebauten Textbausteine aus
-menschenlesbaren TOML-Dateien. Das ist nicht dasselbe wie dieses JSON-Runtime-Profil:
-dessen additive Regeln und vorhandene Textslots bleiben wirksam und werden nicht
-automatisch übersetzt. Siehe [Promptkonfiguration](docs/prompt-configuration.md).
+## Capability contract
+
+```sh
+python3 -B arquilo.py capabilities
+```
+
+This returns `arquilo.capabilities.v1` JSON. Integrators should inspect declared
+feature versions rather than infer support from filenames, private constants or
+an unmerged design. Feature versions describe contracts; they are not the same
+as the product version. [Configuration](documents/CONFIGURATION.md)
+
+## Neighboring configuration layers
+
+A JSON runtime profile is not a native Codex profile selected with `--agent`, and
+not the TOML catalog selected with `--prompt-config default|de|en|FILE`. Catalogs
+provide built-in wording; profile additions/slots and user-authored tasks retain
+their own text and are not automatically translated.
+
+See [prompt configuration](docs/prompt-configuration.md),
+[Operator Guide profiles](docs/guides/operator-guide.en.md#profiles),
+[configuration layers](docs/guides/operator-guide.en.md#configuration), and
+[the implementation](runtime_profile.py). The [migration reference](documents/MIGRATION.md)
+documents rejected retired fields; no profile can re-enable them.

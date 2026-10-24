@@ -132,42 +132,29 @@ its integrations remain separate security boundaries.
 
 ## Explicit Git selection and publication
 
-Run from the Git worktree root. Commit or stash pending edits of selected files
-first; initially absent selected output files are fine. Unrelated staged,
-unstaged and untracked files are left alone.
+The Git-integrity repair checkout binds the mandatory review to a private
+pre-review workspace snapshot. Accepted run/task/attempt tokens identify the
+exact bytes, modes and deletions used by the commit. Source-index/HEAD locking
+and the actual remote's expected OID govern publication; mutable tracking refs
+and later workspace reads cannot authorize different content.
 
 ```sh
 python3 -B arquilo.py tasklist run --workdir /path/to/worktree \
   --todo-file /path/to/worktree/tasks.md \
-  --git --git-path tasks.md --git-path hello.txt --git-path todo_result_1.md
+  --git --git-path hello.txt
 ```
 
-Paths are literal, relative filenames, not glob patterns or whole directories.
-Internal `.codex_runs`, `.git` and `process_stop` paths cannot be selected, even
-if tracked. ARQUILO constructs the commit with a separate index and frozen file
-bytes. It does not run Git clean filters or commit hooks; exact bytes are retained.
-Changes to the branch or staging index outside the runner cause a refusal.
-Do not change the worktree/index concurrently. The selected paths are authorized
-for this run, not a blanket secret scan or per-file correctness guarantee.
+Add `--git-push` only for intentional publication. Run from the Git worktree
+root, select clean/absent ordinary output files, and keep controller task plans
+and rewritten reports out of the selection. Parallel Git publication and split
+indexes are not supported by this repair. Unrelated staging remains unchanged.
 
-Add `--git-push` **only** when publication to the configured upstream is intended.
-HEAD must initially match that upstream; unrelated unpushed commits are not
-published automatically. No force push is used. Branch protection can refuse
-the push; use an ordinary feature branch and pull request instead of weakening
-protection. With no `--git`, no automatic Git mutation occurs.
+The [Git publication reference](git-publication.md) explains snapshot limits,
+private transport, explicit leases, host credentials and recovery after a local
+commit or uncertain push. This describes an unreleased repair checkout, not a
+replacement of the already published 0.9.1 package. No new version tag is implied.
 
-An automatic push requires exactly one configured push destination. The runner
-records its resolved URL at startup and refuses a changed destination before
-committing or pushing. Do not edit the repository's remote configuration while
-the run is active; the comparison is not an atomic lock against another local
-process. A failed push can leave the local commit while the run is
-reported as failed. Inspect the local commit and remote ref before retrying;
-completed tasks do not automatically replay the Git step on restart.
-
-The automatic push explicitly disables tag following (`--no-follow-tags`). A
-user setting such as `push.followTags=true` must not publish additional tags
-alongside the selected branch update. Local tags and user configuration are
-left unchanged. Publish tags separately with an explicit owner decision.
+For a step-by-step explanation, see the [Operator Guide](guides/operator-guide.en.md#git).
 
 ## Smaller error cases
 
