@@ -697,6 +697,11 @@ class ReviewedGit:
             self.baseline[name] = contents[name]
             if contents[name] is not None:
                 self.modes[name] = contents[name][1]
+            else:
+                # The next task's pinned parent no longer tracks this path.
+                # Retaining its old mode would mislabel continued absence as
+                # another deletion (and a later recreation as pre-existing).
+                self.modes.pop(name, None)
         record.update(status='push_pending' if self.push else 'published', error_type=None)
         self._save_publication(record)
 

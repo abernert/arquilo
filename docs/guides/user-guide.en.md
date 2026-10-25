@@ -363,6 +363,8 @@ See [Troubleshooting](operator-guide.en.md#troubleshooting-reference) and [known
 
 For automatic Git publication, selected outputs are frozen before review and the reviewer stays in the normal workspace with explicit snapshot references. Unselected links or large context files are not copied into a full-workspace snapshot. Optional publication can remain blocked while a successful task becomes DONE. The controller preserves this obligation across restarts, including when no accepted publication candidate exists. `git status` shows it; `git retry` can continue delivery without model work only when accepted private evidence exists. With `--git-required`, incomplete delivery stops the run, including a later restart.
 
+The files selected with `--git-path` may belong to different tasks in the same run. A file for task 2 that is absent both before and after task 1 is not a deletion or an additional requirement for task 1. Review distinguishes this case from an actually removed file. If the current task itself requires the missing file, it remains incomplete.
+
 Without an accepted candidate, first inspect and preserve the existing outputs and prepare a valid clean Git baseline for the selected files. Then deliberately reopen the task, accept the inspected plan change and run ordinary optional `--git` again for a fresh review. Successful matching delivery supersedes the old block while retaining its history. Failure to persist the required controller record prevents DONE; tampering with a captured reviewed output or its binding also remains an acceptance failure. See [Git publication and recovery](operator-guide.en.md#git).
 
 <a id="updating"></a>

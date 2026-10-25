@@ -71,7 +71,8 @@ def read_regular(path: Path, *, limit: int = MAX_FILE_BYTES) -> tuple[bytes, int
             content = stream.read(limit + 1)
             after = os.fstat(stream.fileno())
     except FileNotFoundError:
-        # A missing parent is an ordinary deletion, never a followed link.
+        # Absence is a frozen state, not necessarily a deletion: the path may
+        # also have been absent from the pinned original Git parent.
         safe_io.check_path(path)
         return None
     if len(content) > limit:
@@ -179,7 +180,7 @@ def capture(request: dict, active_workspace: Path, review_index: int) -> tuple[d
         except (OSError, ValueError) as exc:
             raise GitSnapshotUnavailable('Selected Git output cannot be captured: ' + name) from exc
         if value is None:
-            continue  # An explicit selected deletion is part of the candidate.
+            continue  # Keep selected absence, including absent-before/after no-ops.
         parts = PurePosixPath(name).parts
         entries.update('/'.join(parts[:length]) for length in range(1, len(parts) + 1))
         if len(entries) > MAX_FILES:
@@ -279,18 +280,44 @@ def verify(request: dict, token: Any, review_index: int) -> dict[str, tuple[byte
 
 
 def review_instructions(request: dict, token: dict) -> str:
+    # Classify presence from controller-owned original modes and the verified
+    # frozen candidate, never from a later live reread or a producer's claims.
+    # The modes mapping includes exactly the selected regular files tracked at
+    # the pinned parent. It does not contain paths that were already absent.
+    contents = verify(request, token, token.get('review_index') if isinstance(token, dict) else None)
+    states = {}
+    for name in request['paths']:
+        tracked = name in request['modes']
+        present = contents[name] is not None
+        state = ('present_existing' if tracked else 'added') if present else (
+            'deleted' if tracked else 'absent_unchanged')
+        states[name] = {'baseline_tracked': tracked, 'snapshot_present': present, 'state': state}
     return ('\n\nCONTROLLER GIT PUBLICATION CANDIDATE\n'
             'Your working directory remains the ordinary project workspace. Review the task '
             'with all necessary original context; context has NOT been copied or silently omitted. '
             'A separate private directory contains ONLY the explicitly selected output bytes '
             'captured before this review. Read those frozen selected outputs as the authoritative '
             'publication candidate, not a later live version or producer claims. '
-            'Review every explicitly selected output below against the task and report a blocker '
-            'for an unexplained or unverified selected change. Publication will use these exact '
-            'bytes/modes or deletions, not a later reread of live files. Consult the original '
+            'The selected paths form a publication allowlist that may span several tasks; '
+            'they do not extend the current task contract or require this task to create every '
+            'selected file. A null manifest selection means the path is absent in this frozen '
+            'snapshot; it is NOT by itself a deletion instruction. The controller-bound '
+            'selected_path_states below distinguish added (absent before, present now), deleted '
+            '(tracked before, absent now), absent_unchanged (absent before and now), and '
+            'present_existing (present before and now, without asserting whether its bytes or '
+            'mode changed). An absent_unchanged path contributes no Git change and is not a '
+            'blocker merely because it is selected or belongs to a later task. A missing output '
+            'required by the current task is still a blocker, including when its state is '
+            'absent_unchanged. Review required outputs and actual selected changes against the '
+            'current task; report a blocker for an unexplained or unverified change, including '
+            'a genuine deletion. Do not request creation of later-task outputs or editing/removal '
+            'of private controller manifests or selection entries to resolve unchanged absence. '
+            'Publication will use the exact frozen bytes/modes or accepted deletions, with '
+            'unchanged selected paths producing no Git change. Consult the original '
             'workspace for other necessary context. The controller checks selected live outputs '
             'still match after review; the model judgment is still your responsibility.\n'
             + json.dumps({'paths_relative_to_snapshot_root': request['paths'],
+                          'selected_path_states': states,
                           'snapshot_root': str(Path(request['directory']) / token['candidate'] / 'workspace'),
                           'original_workspace_for_context': request['source'], 'manifest_sha256': token['sha256'],
                           'parent': request['binding']['parent']}, ensure_ascii=False) + '\n')

@@ -35,6 +35,13 @@ Snapshot/token/selected-output integrity remains mandatory when a candidate was
 captured. Capture unavailable before review can leave publication blocked while
 a valid ordinary review still accepts the task.
 
+The Git review contract also distinguishes run-wide publication selection from
+the current task's deliverables. A selected path absent both in the bound baseline
+and in the snapshot is unchanged absence, not a deletion. Explicit baseline and
+snapshot presence prevent a later task's not-yet-created output from becoming
+a false deletion issue in an earlier task. Genuine deletions and required missing
+outputs still require the ordinary review decision.
+
 Task acceptance and delivery are separate. Optional commit/push failures retain
 accepted DONE work and a publication record. `--git-required` requires the
 requested delivery before continuation and stops with incomplete delivery while

@@ -35,6 +35,7 @@ from reviewed_git import ReviewedGitError
 from review_contract import parse_review_classification
 from runtime_contracts import ExitCode
 from test_claude_backend import Fixture as ClaudeFixture
+from test_git_review_selection_states import review_metadata
 from test_review_completion_integrity import COMPLETE, LEGACY_PASS, completed_document
 
 
@@ -412,6 +413,137 @@ class PublicationWorkflow:
 
     def test_optional_publication_failure_allows_next_task(self):
         self._two_task_publication_failure(required=False)
+
+    def test_later_selected_output_is_not_a_deletion_across_push_restart_retry_and_next_task(self):
+        # Reproduce the owner smoke literally: only tasks.md is tracked, and the
+        # run-wide selection contains outputs belonging to two different tasks.
+        plan = ('1. ***Task***: Create result.txt containing exactly READY followed by LF.\n'
+                '2. ***Task***: Create second.txt containing exactly SECOND followed by LF.\n')
+        self.write_plan(plan)
+        self.git('add', '--', 'tasks.md')
+        self.git('commit', '-qm', 'owner two-task publication smoke')
+        original = self.git('rev-parse', 'HEAD')
+        self.assertEqual(self.git('ls-tree', '-r', '--name-only', 'HEAD'), b'tasks.md\n')
+        remote = self.base / 'remote.git'
+        self.git('init', '--bare', '-q', str(remote))
+        self.git('remote', 'add', 'origin', str(remote))
+        self.git('push', '-qu', 'origin', 'HEAD')
+        branch = self.git('symbolic-ref', 'HEAD').strip().decode()
+        hooks = remote / 'hooks'; hooks.mkdir(exist_ok=True)
+        self.git('--git-dir', str(remote), 'config', 'core.hooksPath', str(hooks))
+        hook = hooks / 'pre-receive'
+        hook.write_bytes(b'#!/bin/sh\ncat >/dev/null\n'
+                         b'if [ -f REJECT_PUSH ]; then exit 1; fi\nexit 0\n')
+        hook.chmod(0o755)
+        reject = remote / 'REJECT_PUSH'; reject.touch()
+        options = dict(git_required=True, git_push=True, git_paths=['result.txt', 'second.txt'])
+        runner = self.new_runner(**options)
+        observed = []
+
+        def produce_and_review(**kw):
+            self.phases.append(kw['phase'])
+            self.assertEqual(Path(kw['cwd']), self.work)
+            task = self.phases.count('auftrag')
+            self.assertIn(task, (1, 2), 'No extra production/fix attempt is expected')
+            if kw['phase'] == 'auftrag':
+                name, content = ('result.txt', b'READY\n') if task == 1 else ('second.txt', b'SECOND\n')
+                (self.work / name).write_bytes(content)
+                return answer('Created the one output required by this task.')
+            self.assertEqual(kw['phase'], 'review')
+            self.assertEqual(kw['sandbox'], 'read-only')
+            metadata = review_metadata(kw['prompt'])
+            frozen = Path(metadata['snapshot_root'])
+            observed.append(metadata['selected_path_states'])
+            self.assertEqual((frozen / 'result.txt').read_bytes(), b'READY\n')
+            if task == 1:
+                self.assertEqual(metadata['selected_path_states'], {
+                    'result.txt': {'baseline_tracked': False, 'snapshot_present': True, 'state': 'added'},
+                    'second.txt': {'baseline_tracked': False, 'snapshot_present': False, 'state': 'absent_unchanged'}})
+                self.assertFalse((frozen / 'second.txt').exists())
+                manifest = json.loads((frozen.parent / 'manifest.json').read_text())
+                self.assertIsNone(manifest['selection']['second.txt'])
+                self.assertNotIn('second.txt', manifest['request']['modes'])
+                self.assertEqual(self.git('ls-tree', '-r', '--name-only', metadata['parent']), b'tasks.md\n')
+            else:
+                self.assertEqual(metadata['selected_path_states'], {
+                    'result.txt': {'baseline_tracked': True, 'snapshot_present': True, 'state': 'present_existing'},
+                    'second.txt': {'baseline_tracked': False, 'snapshot_present': True, 'state': 'added'}})
+                self.assertEqual((frozen / 'second.txt').read_bytes(), b'SECOND\n')
+                self.assertEqual(set(self.git('ls-tree', '-r', '--name-only', metadata['parent']).splitlines()),
+                                 {b'tasks.md', b'result.txt'})
+            # Acceptance is synthetic, but depends on inspected frozen bytes,
+            # independently checked Git ancestry and unambiguous selected state.
+            return answer(json.dumps(PASS))
+
+        with self.dispatch(produce_and_review):
+            runner.run()
+        self.assertEqual(self.phases, ['auftrag', 'review'])
+        self.assertEqual(runner.exit_code, int(ExitCode.INCOMPLETE))
+        self.assertEqual(self.todo.read_text(), plan.replace('***Task***', '***DONE***', 1))
+        self.assertFalse((self.work / 'second.txt').exists())
+        receipt, = reviewed_git.list_publications(runner.state_dir, self.work)
+        self.assertEqual(receipt['status'], 'push_pending')
+        first_commit = self.git('rev-parse', 'HEAD')
+        self.assertNotEqual(first_commit, original)
+        self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', branch), original)
+        self.assertEqual(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'), b'result.txt\n')
+        state = runner.state_dir
+        budgets = self._budget_snapshot(state)
+        runner.close()
+
+        resumed = self.new_runner(**options)
+        with self.dispatch(lambda **kw: self.fail('Required pending delivery must block new model work')):
+            resumed.run()
+        self.assertEqual(resumed.exit_code, int(ExitCode.INCOMPLETE))
+        self.assertEqual(self.todo.read_text(), plan.replace('***Task***', '***DONE***', 1))
+        self.assertEqual(self._budget_snapshot(state), budgets)
+        resumed.close()
+
+        reject.unlink()
+        arguments = ['--workdir', str(self.work), '--todo-file', str(self.todo),
+                     '--state-dir', str(self.state_root), '--publication', receipt['id']]
+        with self.dispatch(lambda **kw: self.fail('Publication retry must not call a model')):
+            self.assertEqual(arquilo.main(['git', 'retry', *arguments]), 0)
+            self.assertEqual(arquilo.main(['git', 'retry', *arguments]), 0)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), first_commit)
+        self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', branch), first_commit)
+        self.assertEqual(self._budget_snapshot(state), budgets)
+
+        continued = self.new_runner(**options)
+        with self.dispatch(produce_and_review):
+            continued.run()
+        self.assertEqual(continued.exit_code, 0)
+        self.assertEqual(self.phases, ['auftrag', 'review', 'auftrag', 'review'])
+        self.assertEqual(len(observed), 2)
+        self.assertEqual(self.todo.read_text(), plan.replace('***Task***', '***DONE***'))
+        self.assertEqual(self.git('show', 'HEAD:result.txt'), b'READY\n')
+        self.assertEqual(self.git('show', 'HEAD:second.txt'), b'SECOND\n')
+        self.assertEqual(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'), b'second.txt\n')
+        self.assertEqual(self.git('rev-list', '--count', original.strip().decode() + '..HEAD').strip(), b'2')
+        self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', branch), self.git('rev-parse', 'HEAD'))
+
+    def test_unchanged_absence_of_current_required_output_still_fails_review(self):
+        runner = self.new_runner(git_paths=['proof.txt', 'later.txt'])
+        def missing_output(**kw):
+            self.phases.append(kw['phase'])
+            if kw['phase'] == 'auftrag':
+                return answer('Claimed completion without writing the required output.')
+            self.assertEqual(kw['phase'], 'review')
+            metadata = review_metadata(kw['prompt'])
+            self.assertEqual(metadata['selected_path_states']['proof.txt'], {
+                'baseline_tracked': False, 'snapshot_present': False, 'state': 'absent_unchanged'})
+            self.assertEqual(metadata['selected_path_states']['later.txt'], {
+                'baseline_tracked': False, 'snapshot_present': False, 'state': 'absent_unchanged'})
+            self.assertFalse((Path(metadata['snapshot_root']) / 'proof.txt').exists())
+            self.assertIn('required by the current task is still a blocker', kw['prompt'])
+            return answer(json.dumps(FAIL))
+        with self.dispatch(missing_output):
+            runner.run()
+        self.assertEqual(self.phases, ['auftrag', 'review'])
+        self.assert_plan(runner, done=False)
+        self.assertNotEqual(runner.exit_code, 0)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.original_head)
+        self.assertEqual(reviewed_git.list_publications(runner.state_dir, self.work), [])
 
     def test_capture_failure_uses_actual_separate_review_without_publishing(self):
         runner = self.new_runner()
