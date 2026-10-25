@@ -70,3 +70,6 @@ todo_fragen.md
 !.env.example
 *.pem
 *.key
+
+# Claude backend local run evidence (contains raw prompts and outputs)
+.arquilo_runs/

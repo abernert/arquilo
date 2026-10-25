@@ -75,7 +75,9 @@ class GitLongPathIntegrationTests(unittest.TestCase):
             expected = bytes(range(256)) * 3 + b'\r\nreviewed\x00'
             selected.write_bytes(expected)
             request = publisher.begin_review(run='long-path', task='1', attempt='1')
-            token, mirror = git_snapshot.capture(request, workspace, 1)
+            token, review_cwd = git_snapshot.capture(request, workspace, 1)
+            self.assertEqual(review_cwd, workspace)
+            mirror = Path(request['directory']) / token['candidate'] / 'workspace'
             self.assertEqual((mirror / 'output.bin').read_bytes(), expected)
             # Synthetic successful review: no model or provider is invoked.
             candidate = publisher.accept_review(request, token, review_index=1)

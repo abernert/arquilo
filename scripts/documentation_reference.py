@@ -24,6 +24,10 @@ DESCRIPTIONS = {
  '--help': 'Show the help for this command and exit; no model call.',
  '--version': 'Print the runtime version and exit. For development checkouts also record the commit.',
  'command': 'Select a subcommand. Options belong after their owning subcommand.',
+ '--backend': 'Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run.',
+ '--skip-backend-preflight': 'Skip only the selected-backend runner preflight. Per-call executable/protocol checks, sandbox requirements and mandatory reviews remain.',
+ '--git-required': 'Require successful requested Git delivery before the run continues; requires --git. Accepted tasks remain DONE, but pending delivery yields incomplete exit 9.',
+ '--publication': 'Exact existing publication ID returned by git status. Required for git retry and rejected for status; no model or review call.',
  '--todo-syntax': 'Choose the spelling used when writing new task headers; existing supported spellings remain readable. CLI overrides ARQUILO_TODO_SYNTAX.',
  '--todo-preamble': 'Include the visible project preamble when present (auto), omit it (off), or require it (required). CLI overrides ARQUILO_TODO_PREAMBLE.',
  '--todo-file': 'Working UTF-8 Markdown task list. Required for execution; not needed for help/capabilities. An existing list is resumed, not replaced.',
@@ -41,33 +45,33 @@ DESCRIPTIONS = {
  '--max-steps': 'Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget.',
  '--sandbox': 'Explicit execution policy. The task runner only accepts workspace-write; standalone AutoBuild also accepts read-only. Mandatory review/Decide remain read-only.',
  '--network-access': 'Grant shell-network access within workspace-write. A task may restrict this grant, not create it. Does not control provider, MCP or web-search traffic.',
- '--model': 'Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide.',
- '--reasoning-effort': 'Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide.',
+ '--model': 'Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide.',
+ '--reasoning-effort': 'Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide.',
  '--skip-codex-preflight': 'Skip the runner workspace-write functional probe only after that environment has been checked separately. Does not skip mandatory task reviews.',
  '--dry-run': 'Lint and render planned work without model calls. Explicit --todo-template can still create the missing list. Does not certify provider permissions or Git snapshot suitability.',
  '--dry-run-file': 'New output file for the dry-run report, relative to the invocation directory. Existing output is refused rather than overwritten.',
  '--simulate-incomplete': 'In dry run only, mark the supplied task ID as incomplete for simulation; repeat for multiple IDs.',
  '--run-id': 'Optional run identifier; a new identifier is generated when omitted. Changing the identifier does not reset task state or consumed budgets.',
- '--git': 'Enable reviewed commits for explicit --git-path selections; no implicit push. Read the Git chapter before enabling: this branch still couples Git snapshots to mandatory review.',
+ '--git': 'Request commits of explicit selected outputs bound to their review; no implicit push. Capture only selected files; task acceptance and optional publication have separate outcomes.',
  '--git-path': 'One literal relative output filename per occurrence, not a glob or directory. Requires --git. Do not select task plans, rewritten reports or controller logs.',
  '--git-push': 'Additionally publish reviewed commits to the approved existing upstream. Requires --git and the documented remote/serial-execution conditions.',
  '--state-dir': 'Trusted external controller-state root. Defaults: ~/Library/Application Support/ARQUILO/controller on macOS, ~/.local/state/arquilo/controller on Linux/WSL, LOCALAPPDATA/ARQUILO/controller on Windows. Keep the same root when resuming.',
  '--project-id': 'Readable log grouping identifier, 1 to 48 characters, validated as a portable name. Bound to workspace/plan; does not merge independent budgets.',
- '--logs-in-workdir': 'Place new diagnostic run logs under .codex_runs/run_todos in the workspace. Authoritative journals, budgets and worker returns remain external.',
+ '--logs-in-workdir': 'Place new diagnostic run logs in the workspace under the selected backend log directory. Authoritative journals, budgets and worker returns remain external.',
  '--allow-todo-modifications': 'Explicitly permit and record valid primary-plan edits during this run. Model-written statuses are not independent review evidence. Permission is not sticky across runs.',
  '--accept-plan-changes': 'Adopt owner-inspected external plan changes on restart. Preserve consumption/history. Not a generic repair for an unexplained integrity failure.',
  '--runtime-profile': 'Load an operator-trusted JSON runtime profile. CLI precedes ARQUILO_RUNTIME_PROFILE. A real run may execute its host preflight command.',
  '--print-capabilities': 'Print the core capability/contract JSON without model execution; also available through arquilo.py capabilities.',
  '--prompt-config': 'Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector.',
- '--mcp': 'Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none.',
+ '--mcp': 'Comma-separated explicit server selection/ceiling, or none. Codex omission inherits native configuration. Claude accepts only none/omission; no named servers or native MCP inheritance.',
  '--review-mcp': 'Subset of production MCP servers for review, or none. Explicit --mcp defaults review to none. Local read-only policy does not make remote tools read-only.',
  '--skills': 'Comma-separated skill names, or none for no explicit bindings. Instruction snapshots, not permission grants. Does not disable native implicit discovery.',
  '--skill-dir': 'Approved root containing skill directories with SKILL.md; repeatable. Explicit roots replace default discovery roots.',
- '--agent': 'Native Codex profile name and agent hint, not a team definition. Local CFG agent can override the run default.',
+ '--agent': 'Native Codex profile name and agent hint, not a team definition. Local CFG agent can override it. Rejected for Claude.',
  '--json': 'Emit the Doctor report as JSON on stdout, including failures; not a request for model-generated JSON.',
  '--check-decide': 'Opt in to one live diagnostic model call after metadata checks; may incur provider charges. Default Doctor is metadata-only.',
- '--model-provider': 'Existing native provider identifier for the live Doctor probe; does not define a URL, credentials or model. Requires --check-decide.',
- '--profile': 'Existing native Codex profile for the live Doctor probe. Requires --check-decide. This option is not accepted by tasklist run; use --agent there.',
+ '--model-provider': 'Existing native Codex provider for the live Doctor probe; requires --check-decide. Does not define credentials or a URL. Rejected for Claude.',
+ '--profile': 'Existing native Codex profile for the live Doctor probe; requires --check-decide. Tasklist run uses --agent. Rejected for Claude.',
  '--decide-timeout': 'Positive finite timeout for the live Doctor probe. Effective default is 120 seconds, plus metadata/cleanup. Requires --check-decide.',
  '--todo': 'Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator.',
  '--capture-dir': 'Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient.',
@@ -76,7 +80,7 @@ DESCRIPTIONS = {
  '--task': 'Standalone assignment text. Supply exactly one of --task or --task-file.',
  '--task-file': 'UTF-8 file containing the standalone assignment; mutually exclusive with --task.',
  '--file': 'Standalone single-file mode in an isolated workspace, mutually exclusive with --workdir. Inspect the returned output path; do not assume in-place publication.',
- '--codex-profile': 'Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent.',
+ '--codex-profile': 'Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent. Rejected for Claude.',
  '--extra-arg': 'Repeatable validated additional Codex argument for standalone use. Policy-changing or conflicting arguments are rejected; not a sandbox bypass.',
  '--logfile': 'Standalone readable log path; omitted paths are allocated for the run.',
  '--rawlog': 'Standalone raw event log path; raw content can contain sensitive data.',
@@ -100,7 +104,7 @@ class _Captured(BaseException):
     pass
 
 def parser_inventory():
-    import run_todos, autobuild, arquilo_doctor, arquilo, review_resume, review_confidence
+    import run_todos, autobuild, arquilo_doctor, arquilo, review_resume, review_confidence, git_publication_cli
     from scripts import build_runtime_zip, check_release, stage_lean, install_test_codex, check_codex_configuration, check_codex_provider, check_resource_configuration
     parsers = {}
     def collect(name, callback):
@@ -119,6 +123,7 @@ def parser_inventory():
         collect('tasklist run', lambda: run_todos.parse_args([]))
         collect('doctor', lambda: arquilo_doctor.main([]))
         collect('tasklist resume-review', lambda: review_resume.main(['resume-review', '--']))
+        parsers['git'] = git_publication_cli.build_parser()
         collect('package', lambda: build_runtime_zip.main([]))
         collect('review_confidence.py', lambda: review_confidence.main([]))
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -144,12 +149,20 @@ def parser_inventory():
             default = action.default
             if isinstance(default, Path): default = '<checkout-root>' if default == ROOT else str(default)
             if default == argparse.SUPPRESS: default = None
+            description = DESCRIPTIONS[primary]
+            if name == 'git':
+                description = {
+                    'command': 'status lists retained publication records; retry reconciles one exact recorded publication. Both print JSON and make no model/review calls.',
+                    '--workdir': 'Required original Git working-tree root; use the same path as the task run.',
+                    '--todo-file': 'Required original task-list path selecting existing private state. Relative paths are relative to the shell working directory, as in tasklist run.',
+                    '--state-dir': 'Original private state base, if the task run used a custom --state-dir. Do not select a new state root to retry publication.',
+                }.get(primary, description)
             records.append({'names': keys, 'destination': action.dest,
                 'default': default, 'choices': list(action.choices) if action.choices else None,
                 'required': action.required, 'nargs': action.nargs,
                 'repeatable': isinstance(action, argparse._AppendAction),
                 'flag': action.nargs == 0,
-                'description': ('Required NEW destination directory.' if name == 'scripts/install_test_codex.py' and primary == 'destination' else 'Required NEW output directory, or ZIP path with --zip.' if name == 'scripts/stage_lean.py' and primary == 'destination' else DESCRIPTIONS[primary])})
+                'description': ('Required NEW destination directory.' if name == 'scripts/install_test_codex.py' and primary == 'destination' else 'Required NEW output directory, or ZIP path with --zip.' if name == 'scripts/stage_lean.py' and primary == 'destination' else description)})
         result[name] = records
     return {'schema_version': 'arquilo.cli_reference.v1', 'commands': {k:v for k,v in result.items() if not k.startswith('scripts/')},
             'maintenance_commands': {k:v for k,v in result.items() if k.startswith('scripts/')},
@@ -163,7 +176,7 @@ def render(inventory):
     def esc(s): return str(s).replace('|', '&#124;').replace('\n', ' ')
     anchors = {'arquilo':'cli-entry', 'tasklist':'cli-tasklist', 'tasklist run':'cli-run',
                'doctor':'cli-doctor', 'tasklist resume-review':'cli-resume',
-               'package':'cli-package', 'review_confidence.py':'cli-confidence', 'autobuild.py':'cli-autobuild'}
+               'package':'cli-package', 'git':'cli-git', 'review_confidence.py':'cli-confidence', 'autobuild.py':'cli-autobuild'}
     notes = {
        'tasklist run':'Use `python3 -B arquilo.py tasklist run OPTIONS`. The table lists every public runner option. Defaults below are parser defaults in a clean environment; environment/native fallbacks are explained in each description and the configuration chapter.',
        'doctor':'Use `python3 -B arquilo.py doctor OPTIONS`. Model/provider/profile/effort/timeout overrides require `--check-decide`; metadata-only checks do not call a model.',
@@ -171,7 +184,8 @@ def render(inventory):
        'package':'Use `python3 -B arquilo.py package [NEW_ZIP_PATH]`. This creates an archive and checksum, not a release.',
        'autobuild.py':'Use `python3 -B autobuild.py OPTIONS`. Exactly one task source (`--task` or `--task-file`) AND one target (`--workdir` or `--file`) are required. This is a single-assignment interface, not a second task-list scheduler.',
        'review_confidence.py':'Use `python3 -B review_confidence.py SUMMARY_JSON`. Confidence is advisory, not an acceptance threshold.',
-       'arquilo':'Use `python3 -B arquilo.py COMMAND`. `--version` is a top-level option. There is no `--backend` in this checkout; unmerged alternative backends are outside this manual.',
+       'arquilo':'Use `python3 -B arquilo.py COMMAND`. `--version` is a top-level option. Place --backend after tasklist run or doctor; it is not a top-level option. The git group performs model-free publication operations.',
+       'git':'Use `python3 -B arquilo.py git status --workdir DIR --todo-file FILE` or `git retry` with the same paths and --publication ID. Reuse the original --state-dir when set. Status/retry never run a model or review; retry retains normal STOP and controller-lock checks.',
        'tasklist':'The tasklist group selects `run` or `resume-review`; options belong to the selected subcommand.'}
     notes.update({
       'scripts/check_release.py': 'Offline source/package validation. `--source` can point at an extracted runtime; no publication is performed.',

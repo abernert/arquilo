@@ -1,11 +1,11 @@
 # ARQUILO Technical / Architecture Guide
 
-**English · runtime 0.9.1 · code baseline `48331c7210d63787c578bf925ade41da9eb806a8`**
+**English · runtime 0.9.1 · integration checkout 2026-10-25**
 [Documentation index](../README.md) · [Operator Guide](operator-guide.en.md) · [Architecture summary](#system)
 
-> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The runtime version string remains 0.9.1. This edition combines the state-I/O repairs from PR #35, Git-integrity repairs from PR #36 and handbooks from PR #33. See [scope, source commits and remaining limits](../integration-status.md). No merge to `main`, new tag or release is implied.
+> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The version string remains 0.9.1. This edition combines the consolidated manuals/Git work from PR #37 with the current main runtime, including Claude Code and state-I/O repairs, and separates task acceptance from optional publication. See [source commits and remaining limits](../integration-status.md). An existing release ZIP does not acquire these changes automatically.
 
-This guide explains the implementation and its trust boundaries for developers and technically advanced integrators. It is a map for reading and changing the code, not a claim that every desired hardening mechanism has been implemented. The code baseline is the unreleased PR #36 commit, which includes PR #35; the handbooks originate in PR #33. The runtime version remains 0.9.1 for this integration only; this does not replace its published asset.
+This guide explains the implementation and its trust boundaries for developers and technically advanced integrators. The integration combines the PR #37 handbook/Git baseline with main commit `cded22f337a0033a3b0934709a82e1ce3db7cdb3`, including Claude Code and state-I/O repairs, plus the local publication-separation changes. These source inputs identify provenance, not a completed final-commit acceptance. The version string remains 0.9.1; this does not replace the published ZIP.
 
 ## Contents
 
@@ -14,24 +14,22 @@ This guide explains the implementation and its trust boundaries for developers a
 <a id="system"></a>
 ## 1. System boundary and architectural intent
 
-ARQUILO is a synchronous Python controller around external Codex Exec processes. Its runtime uses the Python standard library. It is neither a model server nor an OS sandbox, and it does not directly replace Codex authentication, provider routing or native tool implementations.
+ARQUILO is a synchronous Python controller around a selected external agent CLI: Codex by default or Claude Code for the entire run. The runtime uses the Python standard library. The controller is neither a model server nor an OS sandbox; native authentication, provider routing and tools remain responsibilities of the selected runtime and host.
 
-```text
-Operator
-  |
-  v
-arquilo.py -> task-list controller -> AutoBuild -> Codex transport -> Codex CLI
-                  |                     |                              |
-                  |                     +-> separate review/fix        +-> provider/tools
-                  |
-                  +-> private plan, identities, budgets, worker IPC
-                  +-> diagnostic logs and visible task reports
-                  +-> optional explicit Git integration
+```mermaid
+flowchart TD
+    CLI["CLI or Python entry"] --> Controller["Task controller"]
+    Controller --> State["Private plans, budgets and evidence"]
+    Controller --> Loop["Production, review and correction"]
+    Loop --> Backend["Run-wide backend selection"]
+    Backend --> Codex["Codex transport and CLI"]
+    Backend --> Claude["Claude transport and CLI"]
+    Controller --> Publication["Optional reviewed publication"]
 ```
 
 The producer's workspace is mutable. The controller must not accept model-edited status or public summaries as new authority merely because their format looks plausible. Captured original requirements, mandatory review and deterministic acceptance checks exist to separate proposed work from authorized completion.
 
-An external state directory is a logical trust boundary only when actual host permissions and execution confinement keep workers from writing it. “Outside the workspace” does not defeat another hostile process with the same operating-system credentials. Native Codex integrations and configured writable roots remain relevant. The [security model](../../SECURITY.md) must be read alongside this guide.
+An external state directory is a logical trust boundary only when actual host permissions and execution confinement keep workers from writing it. “Outside the workspace” does not defeat another hostile process with the same operating-system credentials. Native runtime integrations and configured permissions remain relevant. The [security model](../../SECURITY.md) must be read alongside this guide.
 
 <a id="modules"></a>
 ## 2. Module ownership
@@ -47,7 +45,9 @@ An external state directory is a logical trust boundary only when actual host pe
 | Plan authority/identity | [controller_state.py](../../controller_state.py) | Persistent accepted text, lock ownership, approved status transitions, identity and alias refusal. |
 | Invocation accounting | [execution_budget.py](../../execution_budget.py) | Monotonic reservations, shared root counters and owner limit changes. |
 | Safe local I/O | [safe_io.py](../../safe_io.py), `runtime_files.py` | Anchored/leased traversal, link/type checks, atomic creation/replacement and path validation. |
-| Host process selection | [host_launcher.py](../../host_launcher.py), `codex_launcher.py`, `codex_policy.py` | Trusted external executables, sanitized PATH, native/npm launch forms and policy construction. |
+| Backend selection/evidence | `agent_backend.py`, `agent_types.py` | Explicit run-wide backend, backend-specific model defaults and shared evidence types without provider imports. |
+| Claude boundary | `claude_transport.py`, `claude_launcher.py`, `agent_process.py`, `claude_decision.py`, `claude_doctor.py` | Native Claude stream-json, owned process I/O, structured decisions and metadata checks without Codex dispatch. |
+| Host process selection | [host_launcher.py](../../host_launcher.py), `codex_launcher.py`, `claude_launcher.py`, `codex_policy.py` | Trusted external executables, sanitized PATH, native/npm launch forms and policy construction. |
 | Process transport | [codex_transport.py](../../codex_transport.py), `process_tree.py` | Byte streams, event collection, terminal conditions, cancellation and cleanup. |
 | Restricted decisions | `decide.py`, `decision_request.py`, `decision_exec.py`, `decision_response.py`, `decision_archive.py` | Input/context capture, constrained options, execution policy, response validation and archives. |
 | Resources/configuration | [task_resources.py](../../task_resources.py), `mcp_selection.py`, `runtime_config.py`, `runtime_profile.py`, `prompt_config.py` | Operator ceilings, skill snapshots, native MCP overrides, profiles and immutable prompt catalogs. |
@@ -71,16 +71,18 @@ Selection honors the owner's `--start`/`--stop` range. A Markdown STOP barrier i
 
 The controller captures the original task and effective context before granting the producer access to mutable files. The task/preamble evidence used for copied worker requests must match that accepted source. AutoBuild executes production under the selected workspace-write policy, then performs a separate read-only review against the captured original request.
 
-```text
-Accepted original task
-    -> production transport
-       -> technical failure/stop: retain evidence; no completion
-       -> successful production
-          -> separate review
-             -> invalid/missing review: failure; no completion
-             -> valid FAIL: targeted correction, breakdown handling or stop
-             -> valid PASS: final controller checks
-                -> accepted plan transition to DONE
+```mermaid
+flowchart TD
+    Request["Accepted original task"] --> Production["Production or correction"]
+    Production --> Technical{"Usable result without stop?"}
+    Technical -->|No| Incomplete["Retain evidence; no completion"]
+    Technical -->|Yes| Review["Separate mandatory review"]
+    Review --> Verdict{"Valid review?"}
+    Verdict -->|Invalid or missing| Incomplete
+    Verdict -->|FAIL| Repair["Correction, decomposition or stop"]
+    Repair --> Production
+    Verdict -->|PASS| Checks["Plan, stop and integrity checks"]
+    Checks --> Done["Controller accepts DONE"]
 ```
 
 This is a conceptual flow, not a list of literal persisted status names. A successfully executed reviewer can legitimately reject its subject. Separate this from a reviewer process failure. A fixed artifact must receive another review; a previous pass is not reusable authorization for arbitrary new content.
@@ -89,7 +91,7 @@ This is a conceptual flow, not a list of literal persisted status names. A succe
 
 When the supported policy calls for decomposition, the controller validates insertion of open direct children and preserves the parent contract. Children share their numeric root's budget. Once required children are DONE, parent acceptance remains a separate review against the original request. OBSOLETE is not interchangeable with completed work.
 
-Before recording completion, the runner checks stop state, the validated execution/review result and the current accepted plan revision. Git-enabled results must also carry an accepted review candidate. A late stop cannot turn into success through delayed collection of a completed worker. Only the authorized task command token may change for an ordinary DONE transition. Artifacts and diagnostics may exist even when final acceptance fails.
+Before recording completion, the runner checks stop state, the validated execution/review result and the current accepted plan revision. When a publication candidate was captured, its binding and selected bytes must remain valid at acceptance. Capture unavailability recorded before review can leave publication blocked while ordinary review still accepts the task. A late stop cannot turn into success through delayed collection of a completed worker. Only the authorized task command token may change for an ordinary DONE transition. Artifacts and diagnostics may exist even when final acceptance fails.
 
 <a id="review"></a>
 ## 4. Review authority and result validation
@@ -161,9 +163,9 @@ This is not yet a distributed job protocol. The parent currently uses subprocess
 <a id="transport"></a>
 ## 9. Host launchers, transport and cancellation
 
-Host selection treats executable identity as controller authority. Codex/Git lookup uses absolute trusted directories outside the primary and active workspaces, checks physical targets and removes workspace/relative entries from child PATH. External symlinks back into model-writable workspaces are refused. Normal external user installations remain supported.
+Host selection treats executable identity as controller authority. Codex/Claude/Git lookup uses absolute trusted directories outside the primary and active workspaces, checks physical targets and removes workspace/relative entries from child PATH. External symlinks back into model-writable workspaces are refused. Normal external user installations remain supported.
 
-For Windows, native executables and the specifically supported standard npm `codex.cmd` layout are handled. The recognized npm shim is inspected and translated to an explicit Node executable plus Codex script instead of running arbitrary batch syntax. POSIX executable scripts can use external interpreters; a sanitized PATH prevents ordinary `env node` lookup from selecting a project-local interpreter. Trusted host installations are not made immutable against another host process.
+For Windows, native executables and the specifically supported standard npm `codex.cmd` and `claude.cmd` layouts are handled. The recognized npm shim is inspected and translated to an explicit external Node executable plus the validated agent script instead of running arbitrary batch syntax. POSIX executable scripts can use external interpreters; a sanitized PATH prevents ordinary `env node` lookup from selecting a project-local interpreter. Trusted host installations are not made immutable against another host process.
 
 `codex_transport` collects raw byte streams, structured events, answer text, process exit and capture completeness. A successful-looking message without terminal completion and acceptable process/capture state is not successful execution. Item-level diagnostic errors are distinct from fatal top-level events. Only recognized, well-formed pre-terminal reconnect notices are retained as nonfatal diagnostics; unknown or post-terminal errors, `turn.failed`, missing completion and genuine I/O/cleanup failures remain significant.
 
@@ -171,10 +173,22 @@ Stop is an independent observation. Error-plus-stop retains both facts and does 
 
 Process groups and cleanup logic are platform-specific. Detached descendants, a continuously productive but never-ending process, worker collection and very large output streams remain reasons for broader supervision hardening. Do not document existing stall timers as a universal total deadline or process-group cleanup as proof that all descendants terminated. [Testing and stop evidence](#test-reference)
 
+### Claude execution and decision boundary
+
+`agent_backend.py` validates explicit run-wide selection and resolves model/effort defaults for that backend. The selected value travels in `AutoBuildOptions` and the private worker contract; task prose cannot switch runtimes. The Claude path never discovers or invokes Codex, including doctor, Decide, review, fixes and parent review. The common controller retains accepted-plan, STOP, budget, review and DONE authority.
+
+`claude_transport.py` validates native stream-json session identity, initialization, terminal result and event policy. `agent_process.py` retains raw I/O and owned-process cleanup evidence. Rejection is sticky: a later success-looking terminal event cannot restore an accepted answer after an invalid stream. `claude_decision.py` creates adapter-owned decision output only from a correlated native structured terminal result; common response validation and archives still apply. `claude_doctor.py` performs selected-runtime checks without Codex probes.
+
+Claude production/fix permits Read/Glob/Grep/Edit/Write and sandboxed Bash. Review/parent review permits Read/Glob/Grep only; Decide has no task tools. Named MCP servers, native skills/plugins/subagents and project-local configuration are deliberately unavailable. Explicit ARQUILO skills bind frozen instruction text and hashes under the shared resource rules. Model-supplied text or a native diagnostic event cannot grant more tools.
+
+Linux production requires native sandbox prerequisites and permission to use them; Windows production uses WSL2/Linux. Native file tools, provider communication and mandatory managed components are not a whole-process OS boundary. The exact recognized built-in component identities and bounded `thinking_tokens` progress event are documented in [Claude qualification](../claude-code-backend.md). Progress is neither accepted output nor billable token accounting. Unknown/foreign/post-terminal events remain failures.
+
 <a id="resources"></a>
 ## 10. Resource and prompt capture boundaries
 
-`task_resources` resolves omitted, explicit-empty and nonempty selections distinctly. Run-level selections provide defaults/ceilings; task/child selections may narrow. `mcp_selection` inspects native configuration, applies temporary server-selection overrides and verifies the effective allowed set. Definitions, credentials and remote per-tool permissions remain native/operator responsibilities, not a complete immutable capabilities service.
+`task_resources` resolves omitted, explicit-empty and nonempty selections distinctly. Run-level selections provide defaults/ceilings; task/child selections may narrow. For Codex, `mcp_selection` inspects native configuration, applies temporary server-selection overrides and verifies the effective allowed set. Definitions, credentials and remote per-tool permissions remain native/operator responsibilities, not a complete immutable capabilities service.
+
+Claude rejects named MCP selections before model work and does not inherit native MCPs. Its default skill discovery uses `.agents/skills` and `.claude/skills`, never Codex home.
 
 `SkillCatalog` binds selected `SKILL.md` instruction snapshots and hashes. Helper scripts and references remain external files. Prompt instructions do not create authority to widen a sandbox, set controller state or skip review. Native implicit discovery is a separate mechanism.
 
@@ -183,33 +197,17 @@ Process groups and cleanup logic are platform-specific. Detached descendants, a 
 Runtime profiles are JSON-based domain extensions and trusted preflights. Some prompt slots are replacements; others are additive lists/guards. Do not treat the current loader as a complete universal unknown-field-rejecting schema or treat a profile name as a permission ceiling. Keep executable invariants in code regardless of wording. [Prompt reference](operator-guide.en.md#prompts) · [Profile API](operator-guide.en.md#profiles)
 
 <a id="git"></a>
-## 11. Review snapshot, local commit and remote publication
+## 11. Review binding and separate publication
 
-`git_snapshot.py` creates the private request, captures ordinary workspace files and emits a manifest/token. `AutoBuildContext.git_review` carries the parent-created request across the private Python-worker boundary. AutoBuild captures immediately before each existing mandatory review, switches only the reviewer to the read-only copy, and returns the candidate alongside the validated result. The source workspace remains the producer/correction location.
+`git_snapshot.py` captures only owner-selected publication outputs before the mandatory review. The parent-created request crosses the private worker boundary in `AutoBuildContext.git_review`. The reviewer remains in the normal workspace and receives the frozen output references in its review contract, with other context available through its normal read policy. No full-workspace context copy is created; unselected links and large files are not publication inputs merely because they exist nearby.
 
-`ReviewedGit.begin_review()` owns request identity; `accept_review()` verifies request/token, task/attempt, review round, snapshot and selected live outputs. Only the accepted candidate authorizes `commit()`. A fresh task/attempt cannot reuse it. The token is not a model-truth proof or a signed audit ledger. A private state path is not same-UID containment.
+`ReviewedGit.begin_review()` establishes request identity. On a captured candidate, `accept_review()` verifies the request/token, task/attempt, review round, frozen bytes and selected live outputs. Snapshot/token/output mutation after review still vetoes acceptance. If capture was unavailable before review, the controller can accept a valid ordinary review while recording publication as blocked; it cannot manufacture an accepted candidate afterward from live files.
 
-```text
-Live production/correction
-    -> private pre-review snapshot + run/task/attempt/round/parent binding
-    -> existing read-only reviewer examines the copy
-    -> validated PASS + snapshot/live-selection checks
-    -> accepted candidate + final plan/stop checks
-    -> task acceptance (DONE)
-    -> private Git objects from verified snapshot bytes
-    -> index lock + prepared HEAD/branch transaction
-    -> optional pinned remote update with exact old-OID lease
-```
+After deterministic plan/review/STOP checks, the controller records task acceptance independently of delivery. Optional commit/push failures preserve DONE and a separate publication record. `--git-required` changes the run's delivery requirement: accepted work stays DONE, but incomplete delivery stops continuation with the incomplete exit code. Neither mode weakens candidate validation.
 
-The diagram is conceptual, not a set of persisted status enums. Local task acceptance and remote publication are distinct. Publication failure can leave a DONE task and local commit while the overall run is failed. Inspect recovery evidence before replay. There is no transaction spanning plan journal, local index/branch and remote server.
+Private publication receipts retain the exact reviewed candidate/commit and operation progress outside the model workspace. The `git status` and `git retry` commands use those receipts without model or review dispatch. Retry reconciles the actual index, symbolic HEAD/branch and remote; it reuses the recorded reviewed commit and refuses conflicting or missing evidence. There is no transaction spanning plan journal, local index/branch and remote server.
 
-Object construction uses a private bare repository, raw blob hashing and a separate index. Mutable source filters, hooks, fsmonitor and transport configuration cannot choose different output bytes or run as publication helpers. Approved global/system host authentication/transport settings are captured before tasks and kept in memory; repository settings and subsequent URL rewrites are excluded. The real index lock and Git's prepared reference transaction protect cooperating writers. Symbolic HEAD identity matters even when two branches have equal object IDs.
-
-Push authorization queries the actual endpoint/branch, not a local tracking ref. The new commit must be one direct child of the exact expected old OID. Transport addresses the pinned endpoint with one explicit refspec and `--force-with-lease=REF:EXPECTED_OLD_OID`; history rewriting, tag following and mirror expansion are not authorized. A remote race rejects the update. Trusted remote/server policy still applies.
-
-The private Git path remains anchored to its private parent; native Windows uses a short relative GIT_DIR and command-scoped long-path support without modifying host configuration. History-pack transfer is bounded separately from the still-open broader supervisor work.
-
-Serial operation, ordinary file contexts and snapshot/pack limits are deliberate restrictions. Full context inspection occurs at capture, after production; it is not a whole-workspace preflight or coherent filesystem snapshot against arbitrary external writers. The reviewer must use captured relative paths, not reach back to live files; model compliance and semantic correctness are not guaranteed. See [Git publication](operator-guide.en.md#git) and [Operator guidance](operator-guide.en.md#git).
+Object construction uses the private publisher and frozen output bytes, not new live-file reads. Source filters/hooks/fsmonitor and mutable repository transport settings cannot select a different output or publication helper. Actual endpoint/branch state, one explicit refspec and an exact old-OID lease bound the requested push. Existing unrelated staging and other writers' locks are preserved. See [the implementation reference](#git-reference) and [operator procedures](operator-guide.en.md#git).
 
 <a id="evidence"></a>
 ## 12. Authority, diagnostics and recovery evidence
@@ -220,18 +218,19 @@ Serial operation, ordinary file contexts and snapshot/pack limits are deliberate
 | Identity and budget records | Continuity of plan identity and consumed reservations | Disposable cache or a refundable model invoice. |
 | Private worker return | Input to boundary validation | A success solely because it is parseable JSON. |
 | Original contract/prompt snapshot | Reproducible request evidence | A snapshot of every workspace or native configuration file. |
+| Private publication receipt | Durable delivery status, exact reviewed commit and reconciliation evidence | Authority to re-review new live content or blindly repeat an uncertain push. |
 | Private Git review manifest/token | Exact candidate and request binding for selected output publication | Proof of model correctness, same-user isolation or remote push success. |
 | Capture bytes, raw/pretty logs and public summaries | Diagnostics and execution evidence | Encrypted, immutable audit storage or trusted instructions. |
 | Readable result report | Model-authored explanation and observed checks | Independent proof of correctness or authorization to publish. |
 
 `project_logs` adds readable project/run/phase organization without relocating the authoritative plan key. Default runner logs are external. Workspace log mode is opt-in and makes those diagnostic files model-writable; private worker IPC and control records remain external.
 
-The specialized review-only recovery validates complete archived production evidence, matching prompt/task/workspace identity and the narrow recovered-reconnect failure condition. It substitutes that matching completed production result once, then starts a fresh review. It is not a universal replay API, does not repair arbitrary archives and does not waive operator review of current artifacts. [Exact recovery requirements](operator-guide.en.md#recovery-reference)
+The Codex-specific review-only recovery validates complete archived production evidence, matching prompt/task/workspace identity and the narrow recovered-reconnect failure condition. It substitutes that matching completed production result once, then starts a fresh review. It is not a universal replay API, does not repair arbitrary archives and does not waive operator review of current artifacts. [Exact recovery requirements](operator-guide.en.md#recovery-reference)
 
 <a id="interfaces"></a>
 ## 13. Supported entry points versus internal APIs
 
-For external programs prefer the CLI plus `capabilities`, which reports versioned feature contracts. The compatibility `run` alias preserves behavior but emits a migration notice. `tasklist resume-review` has its own strict scope. No invented backend, team or service selector should be inferred from an unmerged branch or design proposal.
+For external programs prefer the CLI plus `capabilities`, which reports versioned feature contracts. Backend selection is supported on task execution, AutoBuild and doctor. Model-free `git status`/`git retry` operate on retained publication records. The compatibility `run` alias emits a migration notice; `tasklist resume-review` retains its narrow Codex-only scope. Team, general pipeline and MCP-service selectors are not implemented.
 
 For Python integrations, `autobuild.start()` accepts exactly one of `task`/`task_file` and one of `workdir`/`file`, with validated `AutoBuildOptions` and `AutoBuildContext`. A configuration-only example is:
 
@@ -239,6 +238,7 @@ For Python integrations, `autobuild.start()` accepts exactly one of `task`/`task
 from autobuild_contract import AutoBuildContext, AutoBuildOptions
 
 options = AutoBuildOptions(
+    backend="codex",
     max_steps=3,
     max_calls=8,
     network_access=False,
@@ -269,13 +269,13 @@ python3 -B scripts/build_runtime_zip.py
 
 The ZIP builder refuses to overwrite existing outputs; choose a clean output location according to its help for repeated builds. Keep private audit inputs outside the checked source tree. Never weaken naming or packaging checks to include confidential project artifacts.
 
-Testing has distinct layers: pure contracts/parsers, synthetic real subprocess and filesystem integration, native OS races, actual Codex against loopback fake providers, and explicitly approved live model/sandbox acceptance. Passing one layer does not establish all the others. Platform skips must remain visible. A useful security regression fails on the vulnerable baseline and passes after the fix, with a positive allowed case as well.
+Testing has distinct layers: pure contracts/parsers, synthetic real subprocess and filesystem integration, native OS races, actual Codex/Claude CLIs against synthetic providers, and explicitly approved live model/sandbox acceptance. Passing one layer does not establish all the others. Platform skips must remain visible. A useful security regression fails on the vulnerable baseline and passes after the fix, with a positive allowed case as well.
 
-The normal CI covers three operating systems and three Python versions; separate CLI compatibility jobs cover their configured Codex versions. Check the run for the exact content/commit rather than an older green reference. A successful rerun is evidence of that run, not proof that an earlier intermittent failure was harmless.
+The normal CI covers three operating systems and three Python versions; separate workflows cover configured Codex and Claude native compatibility scenarios. Check the run for the exact content/commit rather than an older green reference. A successful rerun is evidence of that run, not proof that an earlier intermittent failure was harmless.
 
-The runtime package is selected by `documents/lean_package.json`. New guide files and examples must enter the allowlist and file count; repository presence alone does not ship them. `VERSION`, runtime version and citation metadata remain unchanged for this documentation-only work. Do not overwrite existing versioned release assets merely to add manuals.
+The runtime package is selected by `documents/lean_package.json`. New guide files and examples must enter the allowlist and file count; repository presence alone does not ship them. `VERSION`, runtime version and citation metadata remain unchanged for this unreleased integration; runtime behavior does change as described here. Do not overwrite existing versioned release assets merely to add manuals.
 
-The regular 0.9.1 tag workflow does not yet enforce all fifteen native gates as a general permanent policy. Future release hardening should bind the actual source commit, checks and generated artifacts. Documentation tests added with these guides check structural parity, referenced files/anchors and offline example behavior; they do not certify translation semantics or model responses. See [documentation maintenance](#documentation-reference).
+The regular tag workflow does not yet bind the complete native compatibility matrix to every release as a general permanent policy. Future release hardening should bind the actual source commit, checks and generated artifacts. Documentation tests added with these guides check structural parity, referenced files/anchors and offline example behavior; they do not certify translation semantics or model responses. See [documentation maintenance](#documentation-reference).
 
 <a id="extensions"></a>
 ## 15. Rules for future extensions
@@ -429,29 +429,9 @@ its integrations remain separate security boundaries.
 
 ### Explicit Git selection and publication
 
-The Git-integrity repair checkout binds the mandatory review to a private
-pre-review workspace snapshot. Accepted run/task/attempt tokens identify the
-exact bytes, modes and deletions used by the commit. Source-index/HEAD locking
-and the actual remote's expected OID govern publication; mutable tracking refs
-and later workspace reads cannot authorize different content.
+Git remains an explicit serial operation with literal output selection. Review captures selected bytes and passes their references to the reviewer in the normal workspace. Source task plans, rewritten reports, linked selected outputs and unsafe targets remain excluded. Unrelated unselected context is not copied merely to support Git.
 
-```sh
-python3 -B arquilo.py tasklist run --workdir /path/to/worktree \
-  --todo-file /path/to/worktree/tasks.md \
-  --git --git-path hello.txt
-```
-
-Add `--git-push` only for intentional publication. Run from the Git worktree
-root, select clean/absent ordinary output files, and keep controller task plans
-and rewritten reports out of the selection. Parallel Git publication and split
-indexes are not supported by this repair. Unrelated staging remains unchanged.
-
-The [Git publication reference](operator-guide.en.md#git) explains snapshot limits,
-private transport, explicit leases, host credentials and recovery after a local
-commit or uncertain push. This describes an unreleased repair checkout, not a
-replacement of the already published 0.9.1 package. No new version tag is implied.
-
-For a step-by-step explanation, see the [Operator Guide](operator-guide.en.md#git).
+Task acceptance and delivery records are distinct. Optional publication failure leaves accepted work intact; `--git-required` makes the run wait for successful delivery. Both use the same reviewed-byte, identity, index/ref and remote checks. Never treat a transport error as proof that the remote did not update. Use model-free status/retry and the private receipts described in [the publication implementation](#git-reference).
 
 ### Smaller error cases
 
@@ -489,126 +469,38 @@ See [operator controls and migration](operator-guide.en.md#operator-controls-ref
 <a id="git-reference"></a>
 ## B. Git candidate and publication implementation
 
-For the operator workflow see [Git](operator-guide.en.md#git). This appendix describes the transaction and its boundaries.
+### Candidate capture and review binding
 
-### Git execution and local transaction
+A parent-owned request records the run/task/attempt/review-round and repository baseline. Capture materializes selected ordinary outputs and a controller-validated binding in private state before review. Selected deletions and executable modes are represented explicitly. The reviewer sees those exact output references while keeping its ordinary workspace for context. A bound candidate is not a signed ledger or an OS isolation mechanism.
 
-The controller resolves an external host Git executable once. Repository
-inspection uses plumbing and raw file/index comparisons, not `git status` or a
-filter-driven clean check. Git clean/smudge filters, commit/reference hooks,
-fsmonitor and automatic maintenance are not used to authorize this publication.
-Built-in CRLF checkout normalization is recognized at startup when configured;
-commits still contain the exact reviewed bytes rather than silently running a
-filter or newline conversion.
+The worker return cannot invent a candidate, replay one from another task, weaken its identity or replace captured bytes. Acceptance checks both the private candidate and the selected live outputs. A token/snapshot/live-output mismatch after review remains a task-acceptance failure even when Git is optional. Capture unavailable before review instead leaves publication without an accepted candidate; ordinary review may complete, but no later publication may substitute a fresh unreviewed snapshot.
 
-A private bare repository outside the model-writable workspace holds verified
-base objects and constructs the candidate with a private index. Only one direct
-child of the expected parent can be published. A separate copy of the user's
-actual index changes only selected entries; other staging remains in place.
+### Local commit and cooperating writers
 
-During local publication the controller owns `index.lock`. Git's own prepared
-reference transaction locks both `HEAD` and the branch it resolves to. The
-controller checks the symbolic branch identity again after preparation, before
-publishing the index and committing that transaction. A branch with the same
-object ID is not an interchangeable destination. Existing locks are never
-removed as an automatic repair.
+Publication builds Git objects from verified snapshot bytes in a private bare publisher and separate index. Source filters, fsmonitor, hooks and custom repository helpers do not participate. Selected new files, deletions and executable modes are preserved; unrelated staging is not committed or discarded.
 
-The index, local branch and remote are **not one atomic distributed transaction**.
-A failed prepared transaction restores the prior index only if its own exact
-new bytes are still present and Git proves the reference did not change.
-Otherwise complete recovery candidates are retained for inspection. Ordinary
-Git writers honor the locks; arbitrary hostile processes with the same user
-credentials can violate filesystem/lock assumptions and are not contained by
-this Python controller.
+The real index lock and prepared reference transaction coordinate the local update. Symbolic branch identity is checked even when branch OIDs happen to match. Do not delete another process's lock or reset the branch/index on failure. Private recovery evidence must survive interrupted transitions. Native Windows uses command-scoped long-path handling and a short relative GIT_DIR resolved beneath its pinned private parent.
 
-### Push destination and history
+### Remote delivery and reconciliation
 
-An automatic push requires exactly one configured push endpoint and a normal
-remote branch. The controller queries that actual endpoint at startup: its
-branch must equal local HEAD. A local `origin/branch` tracking ref is diagnostic,
-not authority for the remote's state.
+The approved endpoint and destination branch are captured from trusted configuration. Query the actual destination rather than trusting a mutable local tracking ref. Publish the reviewed direct successor through one explicit refspec and exact old-OID lease; tag following, mirrors, extra refspecs and arbitrary history rewriting are not authorized. A concurrent remote advance requires reconciliation rather than overwrite.
 
-Transport runs from the private repository to the pinned resolved URL and exact
-branch, never by looking up the mutable source remote name at the last instant.
-Resolved system/global host settings are captured before task execution and
-passed in memory to child Git processes; local/worktree configuration, include
-directives, URL rewrites and named-remote rules are not imported into the
-publisher. Authentication helpers and SSH settings from those host scopes
-remain trusted operator configuration. Their values are not written to review
-snapshots or public reports. Configure required credentials at the host level,
-not as executable helpers in a model-writable repository.
+A durable private receipt separates accepted work, local commit and requested remote delivery. It identifies the exact reviewed commit and enough original/local/remote state to determine whether a previous interrupted operation already succeeded. `git retry` has no model/Decide/review path. It validates the receipt, selected content and current repository state, resumes only a compatible recorded publication and preserves an uncertain/conflicting outcome for inspection. It cannot use a newer branch tip or create a new commit from whatever files happen to exist now.
 
-Only `http`, `https`, `ssh`, `git`, local `file` and ordinary local/scp-like
-endpoints are supported. Custom external Git transport helpers are refused.
-Local endpoints must be absolute and outside the task workspace. The remote
-server and its own policy/hooks remain external trusted services.
+The receipt states `published` and `noop` satisfy delivery. `published` is
+relative to the original request and also covers a successful local-only commit;
+it does not by itself assert a remote push. `accepted`, `preparing`, `prepared`
+and `push_pending` remain pending until reconciliation completes that request.
 
-The push uses an explicit lease of the form
-`--force-with-lease=refs/heads/BRANCH:EXPECTED_OLD_OID`, plus one exact refspec.
-This is **not permission to rewrite history**: the new commit must be the direct
-child of that expected old commit. A remote change between checking and pushing
-makes the lease fail, including a concurrent fast-forward. An implicit lease
-based on a mutable tracking ref is never used. Tag following, mirror rules,
-additional source refspecs and source pre-push hooks cannot expand the push.
-Remote branch protection remains effective and may refuse it.
+### Optional and required delivery
 
-### Current deliberate limits
+With ordinary `--git`, publication failure is reported separately and does not undo an accepted DONE transition. With `--git-required`, the same accepted task remains DONE, but incomplete requested delivery stops the run with `EXIT_INCOMPLETE`. A commit-only request and a push request have different delivery requirements. A publication error is not a failed review; a corrupted review candidate is not merely a publication error.
 
-Automatic publication supports **serial task execution**. Combining it with
-`CFG parallel` is refused before that parallel batch starts: a global output
-selection is not yet a per-worker publication-ownership contract. Parallel work
-without `--git` remains supported. A serial task can use a subworkspace; its
-snapshot preserves the relative location within the root copy.
+Automatic Git remains serial only. Existing selection/target safety conditions remain enforced. Snapshot capacity applies to selected publication data, not the entire context tree. History-pack bounds remain separate from the still-open comprehensive process supervisor. There is no universal exactly-once guarantee or atomic transaction spanning all local and remote stores.
 
-Snapshots accept ordinary single-link files and real directories only. Symlinks,
-hardlinks, junctions and special files in the captured context are refused, not
-followed. The limits are 32 MiB per file, 128 MiB total copied contents, 20,000
-entries, depth 64 and an 8 MiB manifest. A workspace containing linked virtual
-environments or very large dependency trees should use a smaller dedicated
-worktree or manual Git publication; no silent context omission is promised.
-Full-context checks happen at snapshot capture after production, not in a
-complete startup preflight. A linked or oversized unselected file can therefore
-consume a production call before refusal; a dry run does not establish snapshot
-suitability. Preserve partial artifacts and resolve the context before retrying.
+### Validation
 
-Git history transfer is limited to 128 MiB of pack output, 64 KiB of diagnostic
-output and 60 seconds per pack operation. This can reject a large repository
-before model execution. These targeted bounds do not complete the separate
-project-wide process-supervision/output-quota work. Split indexes are refused
-for automatic publication; convert them explicitly outside a run or publish
-manually. Unsupported Git/filesystem operations fail closed.
-
-### Failure and recovery
-
-A valid task review and successful Git publication are different results. A Git
-failure after task acceptance can leave that task marked DONE while the **run is
-reported failed**; it is not reported as a successful push. A transport error can
-also mean an uncertain remote result. Inspect the recorded candidate, local
-commit/index and actual remote branch before any retry. Do not blindly replay
-the task, delete controller state, move a tag or force-push to make the error
-vanish. Completed tasks do not automatically repeat their Git step on restart.
-
-Private artifacts are kept below `git-reviews/` and `git-publication/` in the
-plan state directory. They can contain confidential workspace contents and
-history; normal private-state access and retention rules apply. The successful
-`git_TASK.json` diagnostic binds commit, parent, selected paths and review
-manifest digest. It is evidence, not an immutable or cryptographically signed
-ledger. No historical DONE entries or existing Git history are rewritten by
-installing this repair.
-
-### Validation and references
-
-The offline tests use temporary repositories and local bare remotes. They cover
-snapshot/token corruption, post-review edits, actual Python workers, forged
-tracking refs, last-moment URL and remote-ref changes, host-helper canaries,
-cooperating writer conflicts, retained staging and failure recovery. Model
-answers are synthetic; no production provider, external push or comprehensive
-native sandbox certification is claimed.
-
-Git's [reference transactions](https://git-scm.com/docs/git-update-ref) and
-[explicit push leases](https://git-scm.com/docs/git-push) describe the underlying
-primitives. See [controller safety](#controller-reference) and
-[testing](#test-reference) for the wider contract and its limits.
+Regression scenarios must cover ordinary tasks with unselected links/large context, both backends, selected-output capture failure, post-review mutation, optional and required delivery failures, persisted receipts, interrupted local/remote transitions and model-free retry. Use synthetic agents and local remotes for offline tests. Provider quality, authentication and native sandbox acceptance require separate evidence. Operational commands are in the [Git chapter](operator-guide.en.md#git).
 
 <a id="test-reference"></a>
 ## C. Test and evidence reference
@@ -632,6 +524,17 @@ allowlist isolation and ZIP overwrite protection.
 CI is configured for Linux, native Windows and macOS with Python 3.11, 3.12 and 3.13.
 The exact commit's Actions run is the source of truth for its outcome; merely
 including a workflow file does not mean that a job passed.
+
+### Native Claude selected-output access
+
+The current synthetic native fixture includes seven scenarios. Its
+`read_private_output` case checks that the CLI starts in the ordinary live
+workspace while its read-only role can inspect the explicitly referenced private
+selected-output snapshot. This is required evidence for the new Git review
+contract. Earlier six-case results did not exercise that boundary and are
+historical evidence only. The scenario grants neither reviewer Bash nor write
+tools and must pass on the supported native targets before claiming that aspect
+of the combined integration is qualified.
 
 ### Live acceptance — explicit and separate
 
@@ -823,16 +726,11 @@ options, a sample runtime profile, and dry runs of the synthetic task lists.
 It performs no billed model calls and does not prove translation semantics or
 real model output correctness. See [maintenance instructions](#documentation-reference).
 
-### Combined state/Git/handbook acceptance
+### Combined state/Git/backend acceptance
 
-`tests/test_integration_091.py` exercises the actual guide document/software tasks
-with synthetic answers, real controller journals and local Git commits. It checks
-retained unrelated staging, no-Git behavior, setup/batch refusals, and the existing
-late rejection of linked/oversized contexts. Those timing tests document a limit,
-not a new preflight guarantee. No live provider or external push is involved.
-The [integration baseline](../integration-status.md) distinguishes the tested
-checkout from the unchanged v0.9.1 release. Run these tests together with the
-original state-I/O, Git, worker and documentation suites on native platforms.
+`tests/test_integration_091.py` and the publication/backend suites exercise the combined checkout using synthetic model answers and local repositories. The final integration must test both Codex and Claude through the same acceptance rules. Original #37 tests that expected a full-context snapshot failure after production belong to the earlier behavior; updated tests must instead show selected-output capture, ordinary workspace review and independent publication outcomes.
+
+Documentation tests check live parser inventory, bilingual examples and resolvable packaged links. A passing parent revision does not validate this combined runtime. Record the actual final source tree and complete test outcome, including skips, separately from the published v0.9.1 asset.
 
 <a id="distribution-reference"></a>
 ## D. Runtime package and release procedure
@@ -882,7 +780,7 @@ bump, runtime dependency or replacement of an existing release asset.
 ### Integration identity
 
 For an unreleased integration, keep `runtime_version` unchanged and record
-`status`, `release_baseline`, `source_commit` (the exact code baseline),
+`status`, `release_baseline`, `source_commit` (the pinned main input, with its scope recorded explicitly),
 `documentation_base_commit` and pinned `integrated_pull_requests` in the guide
 manifest. The documentation revision is identified by the checkout commit, not
 by embedding its own hash into itself. Keep a clear release-versus-checkout

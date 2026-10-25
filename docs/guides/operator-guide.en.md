@@ -1,11 +1,11 @@
 # ARQUILO Advanced / Operator Guide
 
-**English · runtime 0.9.1 · integration documentation 2026-10-24**
+**English · runtime 0.9.1 · integration checkout 2026-10-25**
 [Guide index](../README.md) · [User Guide](user-guide.en.md) · [Technical Guide](technical-guide.en.md)
 
-> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The runtime version string remains 0.9.1. This edition combines the state-I/O repairs from PR #35, Git-integrity repairs from PR #36 and handbooks from PR #33. See [scope, source commits and remaining limits](../integration-status.md). No merge to `main`, new tag or release is implied.
+> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The version string remains 0.9.1. This edition combines the consolidated manuals/Git work from PR #37 with the current main runtime, including Claude Code and state-I/O repairs, and separates task acceptance from optional publication. See [source commits and remaining limits](../integration-status.md). An existing release ZIP does not acquire these changes automatically.
 
-Use this handbook to configure, run, diagnose and integrate ARQUILO. Part I follows the operating workflow. Part II is the complete reference for public commands, environment settings, task directives, runtime-profile fields and prompt catalogs in this checkout. Follow the [User Guide](user-guide.en.md) for installation and the first run. Provider-owned Codex settings are a separate configuration layer, not additional ARQUILO parameters.
+Use this handbook to configure, run, diagnose and integrate ARQUILO. Part I follows the operating workflow. Part II is the complete reference for public commands, environment settings, task directives, runtime-profile fields and prompt catalogs in this checkout. Follow the [User Guide](user-guide.en.md) for installation and the first run. Native Codex and Claude provider settings are separate configuration layers, not additional ARQUILO parameters.
 
 ## Part I — operating procedures
 
@@ -18,7 +18,7 @@ Use this handbook to configure, run, diagnose and integrate ARQUILO. Part I foll
 
 Before a run, identify its approved inputs, allowed external effects, provider, model availability, resource ceiling, acceptance criteria and stopping conditions. Use a bounded synthetic example to validate the environment. A successful doctor check is not a substitute for a producer/reviewer run; neither proves complete sandbox enforcement.
 
-Keep the installation, writable workspace and private controller-state root distinct. Update the controller and Python workers together. Record the ARQUILO version, Codex version and selected model/provider configuration without copying credentials into logs or reports.
+Keep the installation, writable workspace and private controller-state root distinct. Update the controller and Python workers together. Record the ARQUILO revision, selected backend, native CLI version and model/provider configuration without copying credentials into logs or reports.
 
 Use strict plan handling unless the job explicitly involves generating a plan for later human approval. Use automatic Git only within the documented snapshot/host trust boundaries; do not treat it as isolation from arbitrary hostile same-user processes. Treat runtime-profile preflight commands and host installations as trusted code. A read-only reviewer filesystem does not make every remote tool read-only.
 
@@ -29,19 +29,41 @@ The canonical interface is `python3 -B arquilo.py tasklist run ...`. On native W
 
 | Layer | Purpose | Rule to remember |
 | --- | --- | --- |
-| Codex host configuration | Provider, endpoint, authentication, proxy/CA setup and native integrations | Inherited unless an explicit supported selector overrides the relevant setting. ARQUILO does not promise an alternative provider fallback. |
-| Codex profile / `--agent` | Native named model/tool profile and prompt hint | Task `CFG agent` can override the run default. This is not a team definition or a general profile allowlist. |
+| Native backend host configuration | Provider, endpoint, authentication, proxy/CA setup | Use the selected runtime's approved settings. Claude does not read Codex configuration or fall back to Codex. |
+| Codex profile / `--agent` | Native named model/tool profile and prompt hint | Codex only; task `CFG agent` can override the run default. Claude rejects it. This is not a team definition. |
 | Run CLI / environment | Operator choices for this invocation | Rules vary by option; distinguish defaults, ceilings and permissions. |
 | Task preamble and directives | Shared project instructions and next-task settings | CFG is local to the following task; one DEFAULTS block supplies supported resource defaults. |
 | JSON runtime profile | Domain-specific instruction slots, guards and trusted preflight | CLI `--runtime-profile` wins over `ARQUILO_RUNTIME_PROFILE`. |
 | TOML prompt catalog | Built-in ARQUILO instruction wording | Operator selects once per run; no task-controlled catalog selection. |
 | Explicit skills | Captured procedure text | Instructions, not permissions or independent agents. |
 
-For models, an explicit global `--model` wins over `ARQUILO_CODEX_MODEL`; the resulting global model wins over `CFG model`. Only without a global model does the task model apply. `--reasoning-effort` similarly precedes `ARQUILO_CODEX_REASONING_EFFORT`. Supported effort strings are not a promise that every provider/model accepts them.
+For models, global `--model` precedes the selected backend's environment variable (`ARQUILO_CODEX_MODEL` or `ARQUILO_CLAUDE_CODE_MODEL`); that effective global choice precedes task `CFG model`. With neither, the selected native runtime chooses its configured default. `--reasoning-effort` similarly precedes `ARQUILO_CODEX_REASONING_EFFORT` or `ARQUILO_CLAUDE_CODE_REASONING_EFFORT`. Codex model/effort variables are not translated into Claude settings. Claude accepts `low`, `medium`, `high`, `xhigh` or `max`; Codex also accepts `none` and `minimal`. Native provider/model support is still required.
 
 A CLI MCP/skill selection is a **default and ceiling**. A descendant may narrow the set, not broaden it. Shell-network access instead requires a runner-level grant; a task can restrict an existing grant but cannot create one. These are different from a plain “last value wins” rule.
 
 With no explicit resource selection, native Codex integrations can remain inherited. Do not interpret an omitted option as `none`. `CODEX_HOME` and the trusted process environment remain part of provider provisioning. ARQUILO does not load a workspace `.env` automatically. The [configuration reference](#cli-reference) is the detailed option map.
+
+<a id="backends"></a>
+### Select the execution backend
+
+Use `--backend codex` (default) or `--backend claude-code` after `tasklist run`, `doctor`, or with standalone AutoBuild. The selection covers production, fixes, reviews, parent reviews, Decide and parallel workers. There is no task-level backend switch, mixed-backend review or automatic fallback. A dry run needs neither CLI; actual execution needs the selected CLI and its approved authentication.
+
+| Capability | Codex | Claude Code in this checkout |
+| --- | --- | --- |
+| Provider/model configuration | Trusted Codex host configuration, optional native profile | Trusted Claude user/provider configuration; no Codex discovery |
+| Production/fix tools | Native Codex policy and declared sandbox | Read, Glob, Grep, Edit, Write and sandboxed Bash |
+| Review/parent review | Native read-only policy | Read, Glob, Grep; no Bash or writes |
+| Decide | Restricted Codex decision path | No task tools; native structured terminal result |
+| Named MCP services | Explicit verified selection and ceilings | Unsupported; only none/omission, both with no native MCP inheritance |
+| Explicit ARQUILO skills | Frozen SKILL.md text and hashes | Same binding contract; default roots under .agents/skills and .claude/skills, no Codex home lookup |
+| Native skills/plugins/subagents | Subject to Codex configuration and the documented selection mode | Disabled by the restricted adapter; explicitly bound text does not enable them |
+| Native profiles / `--agent` | Supported | Rejected, including task CFG agent |
+| Historical reconnect `resume-review` | Narrow evidence-validated recovery | Unsupported; no session or cross-backend recovery |
+| Windows production | Follow the native Codex setup | WSL2/Linux required; read-only native calls are a different capability |
+
+Install the selected CLI and any required Node launcher outside all writable task workspaces, including resolved targets. Linux Claude production requires `bubblewrap`, `socat` and permission to use its native sandbox; no unsandboxed escape is provided. The Claude reviewer cannot independently rerun a shell test, so production/fix must supply the test evidence for inspection. Native file access, mandatory managed integration and provider processing remain host/provider boundaries.
+
+`--skip-backend-preflight` skips only the runner's selected-backend preflight. It does not bypass mandatory review, per-call executable/protocol checks or sandbox requirements. `--skip-codex-preflight` is a Codex-only compatibility selector and is rejected in a Claude run. `--model-provider`, native `--profile`/`--codex-profile`, `--agent` and raw `--extra-arg` overrides are not accepted for Claude. See [Claude qualification](../claude-code-backend.md) for native protocol versions and diagnostics.
 
 <a id="tasks"></a>
 ## 3. Design tasks as testable contracts
@@ -63,6 +85,8 @@ Keep an immutable clean template and a distinct working list. `--todo-template` 
 
 ### Explicit MCP selection
 
+The named-server configuration in this section applies to Codex. Claude rejects every named selection before model work; omission and explicit `none` both enable no native MCPs.
+
 A resource-controlled invocation might select `--mcp issues,docs --review-mcp docs`. The names must already exist and be enabled in trusted native Codex configuration. These are illustrative aliases, not servers installed by ARQUILO. The review set must be a subset of production. Supplying `--mcp` without `--review-mcp` defaults the review selection to none.
 
 The adapter discovers configured direct servers, generates temporary overrides, disables unselected servers and plugin/app integrations, and verifies the effective selection. It refuses missing, disabled, unsupported or policy-denied selections instead of silently enabling or dropping them. Metadata inspection does not initialize STDIO servers, but it may query native authentication metadata.
@@ -73,9 +97,11 @@ Portable server aliases use letters, digits, underscores and hyphens. The first 
 
 ### Skills
 
+The native-discovery behavior differs by backend; explicitly bound ARQUILO text follows the same shared resource contract.
+
 Use `--skills procedure-name` and repeatable `--skill-dir /approved/root` to choose procedures from known roots. Each root contains skill directories with a `SKILL.md`, YAML frontmatter and a simple name. Duplicate names require disambiguation. The no-extra-dependency loader is not a general YAML configuration engine.
 
-Without explicit roots, lookup includes the workspace `.agents/skills`, the user's `.agents/skills` and the Codex home skills directory. Explicit roots replace that lookup set. Selected instruction text and its hashes are captured for production, review and corrections. Referenced scripts/assets are **not** snapshotted or automatically run at binding time. Keep them stable and trusted. `--skills none` adds no explicit bindings, but does not disable native implicit discovery or normal file access.
+For Codex, default lookup includes the workspace `.agents/skills`, the user's `.agents/skills` and the Codex home skills directory. Claude uses workspace/user `.agents/skills` and `.claude/skills`, without accessing Codex home. Explicit roots replace that lookup set. Selected instruction text and its hashes are captured for production, review and corrections. Referenced scripts/assets are **not** snapshotted or automatically run at binding time. Keep them stable and trusted. `--skills none` adds no explicit bindings, but does not disable native implicit discovery or normal file access.
 
 A list can narrow operator-approved resources:
 
@@ -91,7 +117,7 @@ A list can narrow operator-approved resources:
     Acceptance: Report contradictions without inventing missing source facts.
 ```
 
-Run this only with matching approved servers, skills and inputs. A dry run can validate syntax and bound skill text; it cannot establish remote permissions or authenticate MCP servers.
+This named-server example is Codex-only. Run it only with matching approved servers, skills and inputs. A dry run can validate syntax and bound skill text; it cannot establish remote permissions or authenticate MCP servers.
 
 ### Four separate network paths
 
@@ -559,26 +585,50 @@ For diagnosis, preserve the original error, exact versions and invocation withou
 
 Raw archives are not encrypted, append-only evidence stores or sanitized support bundles. Share a reviewed minimal diagnostic extract, not the whole state root. [Project logs](#logs-reference) · [Controller safety](technical-guide.en.md#controller-reference)
 
+`run.json` reports `publication_required`, `publication_status` and `publication_records` separately from task completion. The aggregate publication status is `not_requested`, `complete` or `pending`; a verified no-change publication is successful. A pending/blocked delivery can coexist with DONE tasks. Existing pending receipts remain visible when a later run has no unfinished tasks; merely restarting does not mark them delivered. The private receipts, not a mutable public summary, authorize model-free retry.
+
 <a id="git"></a>
-## 12. Automatic Git: reviewed snapshots and controlled publication
+## 12. Automatic Git: acceptance and publication are separate
 
-Automatic Git remains off by default. `--git` requires explicit literal `--git-path FILE` selections; `--git-push` is a separate publication opt-in. Use the Git working-tree root and an ordinary feature branch. Selected files must initially be clean or absent. The owner commits the initial task plan manually before the run; **do not select that plan, controller logs or rewritten result reports** as outputs. A valid selection example is `--git --git-path src/example.py --git-path tests/test_example.py`. The introductory tutorials deliberately leave Git off.
+`--git` opts into a local commit of explicitly selected `--git-path` output files. `--git-push` additionally requests delivery to the approved upstream. Both are off by default. The reviewed task and its delivery have separate outcomes: optional Git failure cannot turn a valid review into a model failure or force production to run again.
 
-Production and corrections run in the live workspace. Before each mandatory review, the controller captures a bounded private copy and the reviewer examines that copy read-only. A successful result binds the candidate to its run, task, attempt, review round and expected parent commit. The publisher verifies it and builds the selected Git objects from those exact bytes. It does not reread live outputs to decide the commit content. A selected output changed before acceptance is rejected; a later edit cannot replace the reviewed commit bytes and can remain uncommitted.
+Before review, the controller freezes **selected outputs only** and binds their identity and bytes to that review. The reviewer remains in the normal workspace and receives explicit instructions to judge the frozen output references; other context remains accessible under the normal review policy. There is no full-workspace copy. An unrelated linked `.venv` or large unselected context file does not make publication capture fail merely by existing.
 
-Automatic publication is currently **serial only**. `CFG parallel` with `--git` is rejected before dispatch of that batch, not necessarily at whole-run startup. Unrelated staging is retained. Git filters, source hooks and fsmonitor are not used by this publication path. Commits contain the reviewed bytes, without silent line-ending conversion; source startup checks do recognize configured built-in CRLF checkout normalization. The review copy has no `.git`; workflows requiring repository history inside that copy need a different design or manual Git.
+If selected-output capture is unavailable before review, ordinary review may still accept the work, but publication remains blocked without accepted snapshot evidence. This is different from a snapshot, token or selected-live-output mismatch discovered after review: such a mismatch still vetoes acceptance. Optional publication never authorizes substituting unreviewed live bytes.
 
-For a push, local HEAD must initially match the actual remote branch at the one approved endpoint. Mutable local tracking refs are not authority. The private publisher sends only one direct successor, to one pinned endpoint/branch, with an explicit expected-old-commit lease. Although Git calls this option `--force-with-lease`, ARQUILO does not authorize a history rewrite: the new commit must have that exact old commit as its direct parent. A concurrent remote advance is refused. Tags, mirror settings and additional configured refspecs cannot expand the update.
+| Result | Default `--git` | With `--git-required` |
+| --- | --- | --- |
+| Review rejects or its binding is invalid | Task remains incomplete; no publication | Same |
+| Task accepted and requested delivery succeeds | DONE; continue | DONE; continue |
+| Task accepted but capture/commit/push cannot complete | DONE; record delivery separately and continue within normal run controls | DONE; stop the run with incomplete delivery (exit 9) |
+| Push outcome is uncertain | Preserve the reviewed commit and recovery evidence; inspect/reconcile | Same evidence retained; required delivery remains incomplete |
 
-Required authentication and SSH/HTTP settings must come from trusted host configuration; executable credentials helpers in the mutable task repository are not imported. Remote branch protections remain effective. Do not weaken them for the controller. Configuration values can be sensitive and must not be pasted into review reports.
+`--git-required` requires `--git`. A successful local commit satisfies a commit-only request; a request containing `--git-push` also requires the requested remote delivery. Automatic Git is **serial only**: `CFG parallel` with Git remains an unsupported configuration, not a reason to weaken workspace ownership. Task plans and rewritten result reports are not selectable publication outputs. Existing selected files must meet the documented starting conditions; unrelated staging is preserved.
 
-The entire captured context, not just selected output files, must satisfy snapshot restrictions: ordinary single-link files/real directories, 32 MiB per file, 128 MiB total, 20,000 entries, depth 64, and an 8 MiB manifest. There is no general `.gitignore`-driven snapshot exclusion. Linked virtual environments or dependency trees can therefore prevent review. Such context checks happen at snapshot capture **after production**, not as a complete preflight. Use a small dedicated worktree with required inputs and outputs, or leave `--git` off and review/publish manually. Do not remove project dependencies blindly to satisfy a limit.
+### Read the delivery state
 
-A valid task review and successful publication are different outcomes. A failed or uncertain push may leave a reviewed local commit and a DONE task in a failed run. Inspect the recorded candidate, index, local history and actual remote branch before retrying. Completed tasks do not automatically replay their Git step. Never delete private state, move tags or force a remote branch to disguise a failure. Private snapshots can contain confidential context and need the same access/retention controls as other private state.
+A receipt with `published` has satisfied the requested delivery: a local commit
+when no push was requested, or the required remote update when `--git-push` was
+selected. It is not an unconditional claim of remote publication. `noop` is a
+successful verified no-change outcome. `accepted`, `preparing`, `prepared` and
+`push_pending` are unfinished delivery states, even when the task is already
+DONE. The run-level aggregate remains `pending` while required recorded work is
+unfinished; restarting a DONE-only plan does not erase old pending receipts.
 
-**Open behavior change:** separating optional Git publication failure from ordinary production/review has been requested but is not implemented in this checkout. A larger history pack can stop Git setup before production; a large or linked review context can stop the run after production. Omitting only `--git-push` does not remove this coupling. Run without `--git` to avoid this machinery. Do not treat a normal live-workspace review as authority for publishing arbitrary later bytes.
+### Inspect and retry publication without model work
 
-The history-pack transfer is bounded at 128 MiB, 64 KiB diagnostics and 60 seconds. Split indexes, custom transport helpers and in-workspace local remotes are not supported by automatic publication. The [Technical Guide](technical-guide.en.md#git) describes the private transaction; [integration status](../integration-status.md) distinguishes this checkout from the release.
+Use the same workspace, task-list path and state root as the original run:
+
+```sh
+python3 -B arquilo.py git status --workdir /path/to/project --todo-file /path/to/project/tasks.md
+python3 -B arquilo.py git retry --workdir /path/to/project --todo-file /path/to/project/tasks.md --publication PUBLICATION_ID
+```
+
+Replace `PUBLICATION_ID` with the identifier shown by status. Add the original `--state-dir` when a custom state root was used. These commands do not call a model, rerun production or perform another review. Retry uses private retained evidence and the exact reviewed commit. It reconciles current HEAD/index and the actual remote before proceeding; it does not blindly create another commit or push a changed branch. An already delivered request must not be duplicated.
+
+A missing or invalid accepted candidate cannot be repaired by snapshotting current live files after the review. Diagnose the blocked record and obtain any newly required review through an explicit task workflow. Do not clear controller state, overwrite the receipt, switch branches or reset an index just to make retry proceed. A failed/uncertain push may already have created a valid local commit or reached the remote.
+
+The selected-file allowlist is not a secret scanner. Native Git/authentication and remote behavior remain trusted boundaries; local state, index, branch and remote are not one distributed transaction. See [implementation and recovery](technical-guide.en.md#git-reference).
 
 <a id="integration"></a>
 ## 13. Calling ARQUILO from another process
@@ -587,7 +637,7 @@ Prefer the public CLI and `capabilities` output for an external launcher. Use ex
 
 Check declared feature contract versions rather than searching source filenames for guessed capabilities. The presence of a design document does not create a command. Private worker payloads and `TodoRunner` internals are not a promised stable remote-service API. An external scheduler should record the command, run identity and outcome and avoid blind whole-task retries after possible side effects.
 
-Running ARQUILO as a daemon, serving it over MCP, recursive suborders, team configuration and alternative backend selection require separate implemented contracts. They are not enabled by passing an invented switch. For internal extension boundaries read the [Technical Guide](technical-guide.en.md).
+Running ARQUILO as a daemon, serving it over MCP, recursive suborders and team configuration require separate implemented contracts. Backend selection is already implemented as described [above](#backends); it is not a team or service interface. For internal extension boundaries read the [Technical Guide](technical-guide.en.md).
 
 <a id="limitations"></a>
 ## 14. Known limitations of the documented baseline
@@ -595,7 +645,7 @@ Running ARQUILO as a daemon, serving it over MCP, recursive suborders, team conf
 | Area | Operator implication |
 | --- | --- |
 | State-I/O repairs #32/#34 | Included in this integration through PR #35, not in the existing v0.9.1 release asset. State keys, journals and spent budgets are preserved; unsupported atomic Windows filesystem operations fail closed. |
-| Git scope and timing | Exact-byte binding is implemented here, not in the published v0.9.1 ZIP. Serial execution and bounded regular-file contexts are required; full-context rejection can occur after production. |
+| Git scope and delivery | Selected outputs are bound to review; the reviewer retains ordinary context access. Publication is separate, optional by default and serial only; --git-required makes incomplete delivery stop the run. |
 | Process supervision | Detached descendants, full-run deadlines, output quotas and active preflight cancellation are not comprehensively solved. |
 | Legacy state | Old budget-only stores without recoverable identity still need original paths and manual inspection. Historical invalid DONE values are not automatically repaired. |
 | Configuration and resources | Trusted native configuration, profile definitions and skill helper files are not a fully immutable capability snapshot. Profile names are not themselves a permissions ceiling. |
@@ -626,13 +676,13 @@ This is the authoritative operator reference in this edition. Defaults in the CL
 <a id="cli-entry"></a>
 ### `arquilo`
 
-Use `python3 -B arquilo.py COMMAND`. `--version` is a top-level option. There is no `--backend` in this checkout; unmerged alternative backends are outside this manual.
+Use `python3 -B arquilo.py COMMAND`. `--version` is a top-level option. Place --backend after tasklist run or doctor; it is not a top-level option. The git group performs model-free publication operations.
 
 | Parameter / argument | Value / default | Meaning |
 | --- | --- | --- |
 | `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
 | `--version` | Action | Print the runtime version and exit. For development checkouts also record the commit. |
-| `command` | Not set; one of `tasklist`, `run`, `resume-review`, `doctor`, `capabilities`, `package` | Select a subcommand. Options belong after their owning subcommand. |
+| `command` | Not set; one of `tasklist`, `run`, `resume-review`, `doctor`, `git`, `capabilities`, `package` | Select a subcommand. Options belong after their owning subcommand. |
 
 <a id="cli-tasklist"></a>
 ### `tasklist`
@@ -669,29 +719,32 @@ Use `python3 -B arquilo.py tasklist run OPTIONS`. The table lists every public r
 | `--max-steps` | `3` | Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. |
 | `--sandbox` | `workspace-write`; one of `workspace-write` | Explicit execution policy. The task runner only accepts workspace-write; standalone AutoBuild also accepts read-only. Mandatory review/Decide remain read-only. |
 | `--network-access` | Off | Grant shell-network access within workspace-write. A task may restrict this grant, not create it. Does not control provider, MCP or web-search traffic. |
-| `--model` | Not set | Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide. |
-| `--reasoning-effort` | Not set; one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide. |
+| `--model` | Not set | Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide. |
+| `--reasoning-effort` | Not set; one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide. |
+| `--backend` | `codex`; one of `codex`, `claude-code` | Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run. |
+| `--skip-backend-preflight` | Off | Skip only the selected-backend runner preflight. Per-call executable/protocol checks, sandbox requirements and mandatory reviews remain. |
 | `--skip-codex-preflight` | Off | Skip the runner workspace-write functional probe only after that environment has been checked separately. Does not skip mandatory task reviews. |
 | `--dry-run` | Off | Lint and render planned work without model calls. Explicit --todo-template can still create the missing list. Does not certify provider permissions or Git snapshot suitability. |
 | `--dry-run-file` | `run_todos_dry_run.md` | New output file for the dry-run report, relative to the invocation directory. Existing output is refused rather than overwritten. |
 | `--simulate-incomplete` | Empty list; repeatable | In dry run only, mark the supplied task ID as incomplete for simulation; repeat for multiple IDs. |
 | `--run-id` | Not set | Optional run identifier; a new identifier is generated when omitted. Changing the identifier does not reset task state or consumed budgets. |
-| `--git` | Off | Enable reviewed commits for explicit --git-path selections; no implicit push. Read the Git chapter before enabling: this branch still couples Git snapshots to mandatory review. |
+| `--git` | Off | Request commits of explicit selected outputs bound to their review; no implicit push. Capture only selected files; task acceptance and optional publication have separate outcomes. |
 | `--git-path` | Empty list; repeatable | One literal relative output filename per occurrence, not a glob or directory. Requires --git. Do not select task plans, rewritten reports or controller logs. |
 | `--git-push` | Off | Additionally publish reviewed commits to the approved existing upstream. Requires --git and the documented remote/serial-execution conditions. |
+| `--git-required` | Off | Require successful requested Git delivery before the run continues; requires --git. Accepted tasks remain DONE, but pending delivery yields incomplete exit 9. |
 | `--state-dir` | Not set | Trusted external controller-state root. Defaults: ~/Library/Application Support/ARQUILO/controller on macOS, ~/.local/state/arquilo/controller on Linux/WSL, LOCALAPPDATA/ARQUILO/controller on Windows. Keep the same root when resuming. |
 | `--project-id` | Not set | Readable log grouping identifier, 1 to 48 characters, validated as a portable name. Bound to workspace/plan; does not merge independent budgets. |
-| `--logs-in-workdir` | Off | Place new diagnostic run logs under .codex_runs/run_todos in the workspace. Authoritative journals, budgets and worker returns remain external. |
+| `--logs-in-workdir` | Off | Place new diagnostic run logs in the workspace under the selected backend log directory. Authoritative journals, budgets and worker returns remain external. |
 | `--allow-todo-modifications` | Off | Explicitly permit and record valid primary-plan edits during this run. Model-written statuses are not independent review evidence. Permission is not sticky across runs. |
 | `--accept-plan-changes` | Off | Adopt owner-inspected external plan changes on restart. Preserve consumption/history. Not a generic repair for an unexplained integrity failure. |
 | `--runtime-profile` | Not set | Load an operator-trusted JSON runtime profile. CLI precedes ARQUILO_RUNTIME_PROFILE. A real run may execute its host preflight command. |
 | `--print-capabilities` | Off | Print the core capability/contract JSON without model execution; also available through arquilo.py capabilities. |
 | `--prompt-config` | `default` | Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector. |
-| `--mcp` | Not set | Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none. |
+| `--mcp` | Not set | Comma-separated explicit server selection/ceiling, or none. Codex omission inherits native configuration. Claude accepts only none/omission; no named servers or native MCP inheritance. |
 | `--review-mcp` | Not set | Subset of production MCP servers for review, or none. Explicit --mcp defaults review to none. Local read-only policy does not make remote tools read-only. |
 | `--skills` | Not set | Comma-separated skill names, or none for no explicit bindings. Instruction snapshots, not permission grants. Does not disable native implicit discovery. |
 | `--skill-dir` | Empty list; repeatable | Approved root containing skill directories with SKILL.md; repeatable. Explicit roots replace default discovery roots. |
-| `--agent` | Not set | Native Codex profile name and agent hint, not a team definition. Local CFG agent can override the run default. |
+| `--agent` | Not set | Native Codex profile name and agent hint, not a team definition. Local CFG agent can override it. Rejected for Claude. |
 
 <a id="cli-doctor"></a>
 ### `doctor`
@@ -701,14 +754,15 @@ Use `python3 -B arquilo.py doctor OPTIONS`. Model/provider/profile/effort/timeou
 | Parameter / argument | Value / default | Meaning |
 | --- | --- | --- |
 | `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
+| `--backend` | `codex`; one of `codex`, `claude-code` | Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run. |
 | `--workdir` | Not set | Workspace. In the task runner, defaults to the task-list directory; Doctor uses the task-list directory or current directory. Use a narrow project directory, not your entire home. |
 | `--todo-file` | Not set | Working UTF-8 Markdown task list. Required for execution; not needed for help/capabilities. An existing list is resumed, not replaced. |
 | `--json` | Off | Emit the Doctor report as JSON on stdout, including failures; not a request for model-generated JSON. |
 | `--check-decide` | Off | Opt in to one live diagnostic model call after metadata checks; may incur provider charges. Default Doctor is metadata-only. |
-| `--model` | Not set | Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide. |
-| `--model-provider` | Not set | Existing native provider identifier for the live Doctor probe; does not define a URL, credentials or model. Requires --check-decide. |
-| `--profile` | Not set | Existing native Codex profile for the live Doctor probe. Requires --check-decide. This option is not accepted by tasklist run; use --agent there. |
-| `--reasoning-effort` | Not set; one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide. |
+| `--model` | Not set | Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide. |
+| `--model-provider` | Not set | Existing native Codex provider for the live Doctor probe; requires --check-decide. Does not define credentials or a URL. Rejected for Claude. |
+| `--profile` | Not set | Existing native Codex profile for the live Doctor probe; requires --check-decide. Tasklist run uses --agent. Rejected for Claude. |
+| `--reasoning-effort` | Not set; one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide. |
 | `--decide-timeout` | Not set | Positive finite timeout for the live Doctor probe. Effective default is 120 seconds, plus metadata/cleanup. Requires --check-decide. |
 | `--prompt-config` | `default` | Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector. |
 
@@ -722,6 +776,20 @@ Use `python3 -B arquilo.py tasklist resume-review --todo ID --capture-dir DIR --
 | `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
 | `--todo` | Required | Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator. |
 | `--capture-dir` | Required | Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient. |
+
+<a id="cli-git"></a>
+### `git`
+
+Use `python3 -B arquilo.py git status --workdir DIR --todo-file FILE` or `git retry` with the same paths and --publication ID. Reuse the original --state-dir when set. Status/retry never run a model or review; retry retains normal STOP and controller-lock checks.
+
+| Parameter / argument | Value / default | Meaning |
+| --- | --- | --- |
+| `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
+| `command` | Required; one of `status`, `retry` | status lists retained publication records; retry reconciles one exact recorded publication. Both print JSON and make no model/review calls. |
+| `--workdir` | Required | Required original Git working-tree root; use the same path as the task run. |
+| `--todo-file` | Required | Required original task-list path selecting existing private state. Relative paths are relative to the shell working directory, as in tasklist run. |
+| `--state-dir` | Not set | Original private state base, if the task run used a custom --state-dir. Do not select a new state root to retry publication. |
+| `--publication` | Not set | Exact existing publication ID returned by git status. Required for git retry and rejected for status; no model or review call. |
 
 <a id="cli-package"></a>
 ### `package`
@@ -751,20 +819,21 @@ Use `python3 -B autobuild.py OPTIONS`. Exactly one task source (`--task` or `--t
 | Parameter / argument | Value / default | Meaning |
 | --- | --- | --- |
 | `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
+| `--backend` | `codex`; one of `codex`, `claude-code` | Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run. |
 | `--task` | Not set | Standalone assignment text. Supply exactly one of --task or --task-file. |
 | `--task-file` | Not set | UTF-8 file containing the standalone assignment; mutually exclusive with --task. |
 | `--workdir` | Not set | Workspace. In the task runner, defaults to the task-list directory; Doctor uses the task-list directory or current directory. Use a narrow project directory, not your entire home. |
 | `--file` | Not set | Standalone single-file mode in an isolated workspace, mutually exclusive with --workdir. Inspect the returned output path; do not assume in-place publication. |
 | `--sandbox` | `workspace-write`; one of `workspace-write`, `read-only` | Explicit execution policy. The task runner only accepts workspace-write; standalone AutoBuild also accepts read-only. Mandatory review/Decide remain read-only. |
 | `--network-access` | Off | Grant shell-network access within workspace-write. A task may restrict this grant, not create it. Does not control provider, MCP or web-search traffic. |
-| `--codex-profile` | Not set | Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent. |
-| `--mcp` | Not set | Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none. |
+| `--codex-profile` | Not set | Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent. Rejected for Claude. |
+| `--mcp` | Not set | Comma-separated explicit server selection/ceiling, or none. Codex omission inherits native configuration. Claude accepts only none/omission; no named servers or native MCP inheritance. |
 | `--review-mcp` | Not set | Subset of production MCP servers for review, or none. Explicit --mcp defaults review to none. Local read-only policy does not make remote tools read-only. |
 | `--skills` | Not set | Comma-separated skill names, or none for no explicit bindings. Instruction snapshots, not permission grants. Does not disable native implicit discovery. |
 | `--skill-dir` | Empty list; repeatable | Approved root containing skill directories with SKILL.md; repeatable. Explicit roots replace default discovery roots. |
 | `--prompt-config` | `default` | Use the complete built-in default, de or en TOML catalog, or an explicit file. Frozen for the invocation; not a task-controlled selector. |
-| `--model` | Not set | Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide. |
-| `--reasoning-effort` | Not set; one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide. |
+| `--model` | Not set | Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide. |
+| `--reasoning-effort` | Not set; one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide. |
 | `--extra-arg` | Empty list; repeatable | Repeatable validated additional Codex argument for standalone use. Policy-changing or conflicting arguments are rejected; not a sandbox bypass. |
 | `--logfile` | Not set | Standalone readable log path; omitted paths are allocated for the run. |
 | `--rawlog` | Not set | Standalone raw event log path; raw content can contain sensitive data. |
@@ -872,16 +941,19 @@ ARQUILO reads the following ten current configuration variables. A nonempty cano
 
 | Variable | Default when absent | Purpose and precedence |
 | --- | --- | --- |
+| `ARQUILO_CLAUDE_CODE_COMMAND` | `claude` from approved host PATH | Trusted executable path/name, never a shell command string; resolved outside writable workspaces. |
+| `ARQUILO_CLAUDE_CODE_MODEL` | No global model override | Claude model fallback after `--model`, before task `CFG model`; no Codex model fallback. |
+| `ARQUILO_CLAUDE_CODE_REASONING_EFFORT` | No effort override | Claude effort fallback after the CLI; `low`, `medium`, `high`, `xhigh`, `max`. |
 | `ARQUILO_CODEX_MODEL` | No global model override | Fallback for task-run/AutoBuild model selection; explicit `--model` wins. The effective global value precedes `CFG model`. |
 | `ARQUILO_CODEX_REASONING_EFFORT` | No effort override | Fallback for task-run/AutoBuild effort; explicit `--reasoning-effort` wins. Same seven supported strings as the CLI. |
 | `ARQUILO_TODO_SYNTAX` | `auto` | Runner emitted task syntax; overridden by `--todo-syntax`. |
 | `ARQUILO_TODO_PREAMBLE` | `auto` | Runner preamble inclusion; overridden by `--todo-preamble`. |
 | `ARQUILO_RUNTIME_PROFILE` | No custom profile | JSON profile path; overridden by `--runtime-profile`. |
-| `ARQUILO_DECISION_MODEL` | Effective task model, otherwise native selection | Explicit internal AutoBuild Decide model override, not a change to production/review model. Standalone Doctor has its own explicit selectors. |
+| `ARQUILO_DECISION_MODEL` | Effective task model, otherwise native selection | Codex internal AutoBuild Decide model override, not a change to production/review model; not implicitly used for Claude. Standalone Doctor has its own explicit selectors. |
 | `ARQUILO_DECISION_SYSTEM_PROMPT` | Selected catalog's `decision_system` | Owner-authored AutoBuild decision instruction; not automatically translated. Do not use prose to override executable acceptance rules. |
-| `ARQUILO_CODEX_POST_TURN_EXIT_GRACE_SECONDS` | `120` seconds | AutoBuild transport wait for process exit after a terminal turn. |
-| `ARQUILO_CODEX_STALL_TIMEOUT_SECONDS` | `7200` seconds | AutoBuild inactivity timeout; not a complete task/run deadline. |
-| `ARQUILO_CODEX_KILL_GRACE_SECONDS` | `10` seconds | Grace during transport shutdown before escalation. |
+| `ARQUILO_CODEX_POST_TURN_EXIT_GRACE_SECONDS` | `120` seconds | Shared AutoBuild transport wait after a terminal turn; the historical variable name is retained for both backends. |
+| `ARQUILO_CODEX_STALL_TIMEOUT_SECONDS` | `7200` seconds | Shared AutoBuild inactivity timeout for either backend; not a complete task/run deadline. |
+| `ARQUILO_CODEX_KILL_GRACE_SECONDS` | `10` seconds | Shared AutoBuild transport shutdown grace for either backend before escalation. |
 
 The three timeout values must be finite and nonnegative. `0` is an allowed numeric value, not a universal synonym for unlimited; consult the transport behavior before using zero. Explicit Python transport settings can supersede these values. Decide uses its own bounded settings rather than assuming these AutoBuild timeouts apply.
 
@@ -1535,6 +1607,8 @@ finite limits), preserving counters and auditing limit changes.
 <a id="decide-reference"></a>
 ## 23. Configure and diagnose Decide
 
+The detailed Codex configuration and compatibility examples below apply to the Codex backend. With `--backend claude-code`, Decide uses the independent Claude path, trusted Claude model/provider settings and no task tools; it performs no Codex discovery or fallback. See [backend selection](#backends).
+
 Current Decide behavior preserves model/provider provisioning from the trusted Codex host configuration unless an explicit override is supplied.
 It delegates provisioning to the installed Codex CLI, just as a normal local
 Codex call does. This includes custom providers such as a company Databricks
@@ -1664,6 +1738,8 @@ acceptance; an offline test is not proof of either.
 
 <a id="recovery-reference"></a>
 ## 24. Verified review-only recovery
+
+This procedure is Codex-specific. Claude session recovery and cross-backend reuse are not implemented; a Claude request is not converted into Codex recovery.
 
 **Generic ARQUILO behavior** (independent of provider, proxy or employer).
 

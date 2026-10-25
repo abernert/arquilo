@@ -1,61 +1,74 @@
 # Integration baseline and release distinction
 
-**Unreleased integration checkout, 2026-10-24. Runtime version string: 0.9.1.**
-The version number alone does not identify these changes. They are not in the
-existing v0.9.1 ZIP/tag. No merge into `main`, tag, release or replacement of
-published assets is part of this work.
+**Unreleased combined checkout, 2026-10-25. Runtime version string: 0.9.1.**
+The version string alone does not identify the installed behavior. The published
+v0.9.1 tag/ZIP predates the later main and integration changes listed here. This
+checkout does not replace a published asset or imply a new release.
 
-| Source | Pinned commit | Role |
+| Source input | Pinned commit | Role |
 | --- | --- | --- |
-| Published baseline / unchanged main at preparation | `0c4de8a76d40821578a9aa6f544dcf5fb45d26d5` | Existing 0.9.1 release. |
-| PR #35 | `557f4f1b9b1959002a0677315f809426de1aab9b` | State metadata/lock repairs for #32 and #34. |
-| PR #36 (contains #35) | `48331c7210d63787c578bf925ade41da9eb806a8` | Exact code baseline for reviewed Git publication. |
-| PR #33 | `0e57df59ea067596b0ab0db987347aa31e7870de` | Original DE/EN user and EN operator/technical guides. |
+| Published v0.9.1 baseline | `0c4de8a76d40821578a9aa6f544dcf5fb45d26d5` | Foundational review/plan/STOP/state/launcher repair. |
+| Current main input | `cded22f337a0033a3b0934709a82e1ce3db7cdb3` | Includes merged state-I/O PR #35 and Claude-backend PR #30. |
+| Consolidated integration input, PR #37 | `209d5a709da9d53bad987720b3f5dcc6cbc3a837` | Git work from #36 and the consolidated four-handbook edition. |
+| Git repair source inside #37 | `48331c7210d63787c578bf925ade41da9eb806a8` | Original reviewed-byte/local/remote publication controls. |
+| Original handbook source inside #37 | `0e57df59ea067596b0ab0db987347aa31e7870de` | Initial user/operator/technical guides, subsequently consolidated. |
 
-This integration preserves the PR #36 runtime code, prompt catalogs and workflows
-byte for byte. It reconciles documentation and package lists and adds offline
-integration acceptance tests. Runtime version, citation and release entries remain unchanged; one historical
-documentation link in CHANGELOG is retargeted to the handbook. The original PR branches remain independent review units. Use the
-integration checkout's commit and test results for deployment/review decisions;
-a green result on a parent alone is not acceptance of the combined tree.
+This integration reconciles those inputs and changes publication behavior.
+Runtime code is **not** claimed byte-identical to the earlier #36 or #37 tree.
+The source inputs above are provenance, not a final-commit validation statement.
+Use the exact combined commit, its tests and package checksum for acceptance;
+a green result on one parent does not validate the combined checkout. No
+version, tag or release-asset change is part of the integration.
 
 ## What changed for users
 
-Normal commands without `--git` do not use Git review snapshots. Ordinary
-external Codex installations remain supported. The state-I/O fixes retain keys,
-journals and used budgets; unsupported Windows atomic replacement fails closed.
+Codex remains the default. `--backend claude-code` uses Claude for production,
+fixes, review, parent review and Decide without a Codex executable/configuration
+lookup or fallback. Claude deliberately has no named MCP servers or reviewer
+Bash; Windows production requires WSL2/Linux. The same controller acceptance,
+plan, STOP and budget rules apply. See [backend selection](guides/operator-guide.en.md#backends).
 
-With `--git`, review and selected commit bytes are bound to a private pre-review
-copy. Automatic publication is serial only. Do not select the task plan or
-rewritten reports. Snapshot restrictions apply to the full captured context,
-not only selected outputs; `.gitignore` is not a snapshot exclusion mechanism.
-There is no general early workspace preflight: an unsuitable linked environment
-or large context file may stop the run after production, before review. Preserve
-partial work and diagnose rather than deleting state. See [Git publication](guides/operator-guide.en.md#git).
+Git is optional. With `--git`, selected outputs are captured before review;
+the reviewer stays in the normal workspace and receives frozen output references.
+Unselected links and large context files do not require a full-workspace snapshot.
+Snapshot/token/selected-output integrity remains mandatory when a candidate was
+captured. Capture unavailable before review can leave publication blocked while
+a valid ordinary review still accepts the task.
 
-A Git failure can leave an accepted task and reviewed local commit in a failed
-run. Remote acceptance may be uncertain after a transport error. Inspect local
-and remote state before retrying; task restart does not automatically replay
-publication. No historical DONE state is repaired automatically.
+Task acceptance and delivery are separate. Optional commit/push failures retain
+accepted DONE work and a publication record. `--git-required` requires the
+requested delivery before continuation and stops with incomplete delivery while
+retaining task acceptance. `git status` and `git retry` inspect/reconcile retained
+publication evidence without production or model review. They do not create a
+fresh reviewed candidate from current live files. Automatic parallel Git remains
+unsupported. See [publication and retry](guides/operator-guide.en.md#git).
 
-## Remaining limits
+State-I/O fixes retain keys, journals and used budgets. Keep the same workspace,
+task-list path and state root when continuing. Update controller and workers
+together. No historical DONE record is automatically recertified.
 
-General parent-side worker supervision, global deadlines/output quotas, detached
-process containment, active trusted-preflight cancellation, stricter control
-streams, broader recovery/resource hardening and permanent release gates remain
-separate work. Model PASS is not truth; snapshots are not same-user isolation,
-a signed evidence ledger or a distributed transaction across local/remote state.
-The tests use synthetic model responses and local remotes, not real provider
-quality or production credentials.
+## Remaining limits and evidence
 
-## Reading paths
+General parent-side worker supervision, global deadlines/output quotas,
+detached-process containment, active trusted-preflight cancellation, stricter
+control streams, broader recovery/resource hardening and permanent release
+gates remain separate work. Model PASS is not truth; snapshots are not same-user
+isolation or a signed ledger. Local state/index/branch and remote delivery are
+not one distributed transaction. Synthetic fixtures and local remotes do not
+establish real-provider quality, production credentials or complete native
+sandbox enforcement.
+
+## Documentation and package
+
+The four handbooks under `docs/guides/` remain the canonical instructions. The
+Operator Guide's CLI inventory is generated from the actual parsers; the
+Technical Guide contains the integrated Codex/Claude architecture. The former
+standalone `docs/architecture.md` is not revived. The focused Claude qualification
+page records native adapter limits and compatibility evidence. The runtime
+manifest includes both backend modules and the consolidated documentation;
+repository-only tests, maintenance sources and future designs stay outside it.
 
 [Benutzerhandbuch Deutsch](guides/user-guide.de.md) ·
 [User Guide English](guides/user-guide.en.md) ·
 [Operator Guide](guides/operator-guide.en.md) ·
-[Technical Guide](guides/technical-guide.en.md) ·
-[Testing](guides/technical-guide.en.md#test-reference) · [Documentation maintenance](guides/technical-guide.en.md#documentation-reference)
-
-## Handbook consolidation edition
-
-The PR #37 documentation revision consolidates overlapping instruction pages into four handbooks and a single index. The User Guides include an everyday configuration reference; the Operator Guide includes the complete generated CLI inventory and all current ARQUILO configuration layers. This documentation change does not implement the requested Git/ordinary-review separation. It changes no runtime, prompt catalog, version or product workflow. See the repository-only consolidation map for retired page locations.
+[Technical Guide](guides/technical-guide.en.md)

@@ -6,7 +6,7 @@
 
 ARQUILO executes a Markdown task list in a project workspace. Each production or correction step receives a separate review against the original assignment. The controller decides whether to accept the task, correct it, break remaining work into smaller tasks or stop. Files, reviews and execution logs remain available for inspection. A model PASS is not a guarantee of factual correctness.
 
-**Runtime version: 0.9.1 — public preview.** This branch is an **unreleased integration checkout**, including state and Git repairs not present in the already published v0.9.1 ZIP. See the [exact baseline and remaining limits](docs/integration-status.md). No new release is implied by the unchanged version string.
+**Runtime version: 0.9.1 — public preview.** This **unreleased integration checkout** combines the current Codex/Claude runtime, consolidated handbooks and reviewed Git publication. The published v0.9.1 ZIP is an earlier baseline. See the [source commits and remaining limits](docs/integration-status.md); the version string alone does not identify these changes.
 
 ## Choose a handbook
 
@@ -20,7 +20,7 @@ The handbooks are the primary instructions. The [documentation index](docs/READM
 
 ## Requirements and first check
 
-The core uses Python 3.11+ and its standard library, plus a separately installed and authenticated Codex CLI. Keep the ARQUILO installation, host tools, project workspace and private state separate. Codex and its actual executable target must lie outside model-writable workspaces. Native provider/authentication settings remain with Codex; do not paste credentials into a task list. Git is optional unless using Git installation/update or explicitly enabling Git publication.
+The core uses Python 3.11+ and its standard library, plus a separately installed and authenticated agent CLI. `--backend codex` is the default; `--backend claude-code` selects Claude Code for the entire run, including review and Decide, without a Codex installation or fallback. Keep the ARQUILO installation, host tools, project workspace and private state separate. Agent/Git executables and their resolved targets must lie outside model-writable workspaces. Provider/authentication settings remain with the selected runtime; do not paste credentials into a task list. Git is optional unless using Git installation/update or explicitly enabling publication.
 
 From a complete checkout or extracted runtime ZIP, print the version and command help without a model call:
 
@@ -35,6 +35,8 @@ On native Windows, use an installed interpreter such as `py -3.11 -B .\arquilo.p
 
 Review is mandatory. Status changes, shared budgets and stop signals are controller rules, not promises enforced only by prompt wording. Workspaces and raw logs may contain confidential input; read-only and disabled shell networking do not mean local-only inference or remote read-only tools.
 
-Automatic Git is off by default. In this branch, enabling it couples review to bounded private snapshots; capacity failures can still block ordinary work. The requested separation of optional publication is not implemented. Read the [Git chapter](docs/guides/operator-guide.en.md#git) before enabling it. Teams, GUI, MCP service and alternative-backend branches are not part of this checkout.
+Automatic Git is off by default. With `--git`, selected outputs are frozen for review and publication; task acceptance and publication have separate outcomes. `--git-required` makes incomplete delivery stop the run while preserving accepted work. Read the [Git chapter](docs/guides/operator-guide.en.md#git) before enabling it.
+
+The Claude adapter supports no named MCP servers, no reviewer Bash and no mixed-backend run. Production on Windows uses WSL2/Linux. See [backend selection](docs/guides/operator-guide.en.md#backends) and [Claude qualification](docs/claude-code-backend.md). Teams, GUI, a general pipeline runner and an ARQUILO MCP service are not implemented in this checkout.
 
 For testing and contributing, see [CONTRIBUTING.md](CONTRIBUTING.md). For vulnerability reporting and trust boundaries, see [SECURITY.md](SECURITY.md). Source is licensed under [Apache-2.0](LICENSE), with [NOTICE](NOTICE), [authors](AUTHORS.md), [third-party notes](THIRD_PARTY.md) and [version history](CHANGELOG.md).

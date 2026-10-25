@@ -13,8 +13,9 @@ import argparse
 import safe_io
 from controller_state import PlanAuthority, PlanIntegrityError, state_directory, default_state_root
 from project_logs import project_logs, validate_project_id, timestamp_name, reserve_directory
-from reviewed_git import ReviewedGit, ReviewedGitError
+from reviewed_git import ReviewedGit, ReviewedGitError, PublicationUnavailable, list_publications
 from git_snapshot import ReviewedCandidate
+import git_snapshot
 from codex_launcher import resolve_launcher
 from host_launcher import launcher_environment, resolve_executable
 from runtime_config import (
@@ -27,6 +28,7 @@ import codex_policy
 from task_resources import (RESOURCE_KEYS, TaskResources, SkillCatalog, selection, narrower,
     plan_resources, resolve_task_resources, bind_resources, add_resource_arguments)
 import codex_transport
+import agent_backend
 from runtime_logging import TaskLogRecord, LogWriteError, copy_log_files, write_log_json, write_log_text
 from removed_features import (reject_removed_options, add_removed_arguments,
                               check_removed_environment, reject_bridge_wait_conditions,
@@ -148,6 +150,7 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         "schema_version": ARQUILO_CAPABILITIES_SCHEMA_VERSION,
         "runtime_version": ARQUILO_RUNTIME_VERSION,
         "retained_core_options": ["CFG parallel", "runtime_profile", "--git"],
+        "backends": {"default": "codex", "available": ["codex", "claude-code"], "scope": "all-phases", "fallback": False},
         "operator_controls": {
             "default_max_calls": DEFAULT_MAX_CALLS, "unlimited_max_calls": 0,
             "default_logs_in_workdir": False, "default_allow_todo_modifications": False,
@@ -158,6 +161,9 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
             "run_todos.resources": 1,
             "run_todos.resource_defaults": 1,
             "codex.mcp_selection": 1,
+            "claude_code.mcp_selection": 0,
+            "claude_code.skill_bindings": 1,
+            "claude_code.prompt_config": 1,
             "run_todos.skill_bindings": 1,
             "run_todos.breakdown": RUN_TODOS_BREAKDOWN_CONTRACT_VERSION,
             "run_todos.final_failure": RUN_TODOS_FINAL_FAILURE_CONTRACT_VERSION,
@@ -683,6 +689,7 @@ class TaskOutcome:
     process_stop_details: Optional[str] = None
     capture_directory: Optional[Path] = None
     git_candidate: Optional[ReviewedCandidate] = None
+    git_publication_error: Optional[Dict[str, str]] = None
 
     def __post_init__(self) -> None:
         if self.process_stop_triggered:
@@ -777,6 +784,7 @@ class TodoRunner:
         *removed_positional_options: Any,
         git_paths: Sequence[str] = (),
         git_push: bool = False,
+        git_required: bool = False,
         state_dir: Optional[Path] = None,
         project_id: Optional[str] = None,
         accept_plan_changes: bool = False,
@@ -791,6 +799,7 @@ class TodoRunner:
         network_access: bool = False,
         todo_preamble: str = "auto",
         max_calls: int = DEFAULT_MAX_CALLS,
+        backend: str = "codex",
         mcp: Optional[Sequence[str]] = None,
         review_mcp: Optional[Sequence[str]] = None,
         skills: Optional[Sequence[str]] = None,
@@ -806,6 +815,7 @@ class TodoRunner:
                 "Nachfolgende Optionen als Schlüsselwortargumente übergeben. "
                 + IACT_MIGRATION + " " + BRIDGE_MIGRATION
             )
+        self.backend = agent_backend.validate_backend(backend)
         reject_removed_options(removed_options, source="TodoRunner")
         self._prompts = load_prompt_config(prompt_config)
         check_removed_environment()
@@ -829,12 +839,15 @@ class TodoRunner:
         self.workdir = native_path(workdir, label="workdir")
         self.resource_caps = {"mcp": selection(mcp), "review_mcp": selection(review_mcp), "skills": selection(skills)}
         codex_policy.validate_config_profile(agent)
+        agent_backend.validate_options(self.backend, config_profile=agent)
+        agent_backend.validate_resources(self.backend, mcp=mcp, review_mcp=review_mcp)
         self.agent = agent
-        self.skill_catalog = SkillCatalog(workdir=self.workdir, roots=skill_dirs)
+        self.skill_catalog = SkillCatalog(workdir=self.workdir, roots=skill_dirs, backend=self.backend)
         self.initial_resource_plan = read_utf8(self.todo_file) if self.todo_file.is_file() else ""
         self.resource_mode = False
         for resource_id in plan_resources(self.initial_resource_plan)[1]:
             resource = resolve_task_resources(self.initial_resource_plan, resource_id, **self.resource_caps)
+            agent_backend.validate_resources(self.backend, mcp=resource.mcp, review_mcp=resource.review_mcp)
             self.skill_catalog.get(resource.skills)
             self.resource_mode = self.resource_mode or resource.explicit
         if self.todo_file.is_file():
@@ -887,16 +900,20 @@ class TodoRunner:
         )
         self.sandbox = sandbox
         self.git_enabled = git_enabled
-        self.model = _resolve_codex_model(model)
-        self.reasoning_effort = _resolve_codex_reasoning_effort(reasoning_effort)
+        self.git_required = git_required
+        self.publication_records: List[Dict[str, Any]] = []
+        if type(git_required) is not bool or (git_required and not git_enabled):
+            raise ValueError("--git-required requires --git")
+        self.model = agent_backend.resolve_model(model, backend=self.backend)
+        self.reasoning_effort = agent_backend.resolve_effort(reasoning_effort, backend=self.backend)
         self.git_repo_root: Optional[Path] = None
         self.run_id = self._resolve_run_id(run_id)
         # Reject stale/hostile workspace links even though control records now
         # live outside every model-writable workspace.
-        safe_io.check_path(self.workdir / ".codex_runs")
+        safe_io.check_path(self.workdir / agent_backend.logs_name(self.backend))
         self.state_dir = (state_directory(self.workdir, self.todo_workspace_file, state_dir)
                           if not self.dry_run else safe_io.lexical_path(state_dir or default_state_root()) / "dry-run")
-        self.runs_dir = (self.workdir / ".codex_runs" / "run_todos" if logs_in_workdir
+        self.runs_dir = (self.workdir / agent_backend.logs_name(self.backend) / "run_todos" if logs_in_workdir
                          else self.state_dir / "runs")
         self.git_selection = None
         if git_push and not git_enabled:
@@ -904,10 +921,24 @@ class TodoRunner:
         if self.git_enabled:
             self.git_repo_root = self._assert_git_repository()
             if not self.dry_run:
-                self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir,
-                    push=git_push, executable=self._git_executable)
-                if any((self.workdir / path) == self.todo_workspace_file for path in self.git_selection.paths):
-                    raise ReviewedGitError("The controller task plan cannot be an automatic Git output selection.")
+                pending_publications = [row for row in list_publications(self.state_dir, self.workdir)
+                                        if row.get("status") not in {"published", "noop"}
+                                        and self._publication_record_in_scope(row)]
+                existing_plan = (read_utf8(self.todo_workspace_file) if self.todo_workspace_file.is_file()
+                                 else self.initial_resource_plan)
+                statuses = _todo_line_map(existing_plan)
+                ids = list(statuses)
+                selected_ids = ids[(ids.index(start_id) if start_id in ids else 0):
+                                   (ids.index(stop_id) + 1 if stop_id in ids else len(ids))]
+                no_open_work = all(statuses[identifier][0] in {"DONE", "OBSOLETE"} for identifier in selected_ids)
+                # A no-work restart must expose an existing publication, not
+                # reject its deliberately retained uncommitted reviewed output
+                # as the dirty baseline of a new production attempt.
+                if not (pending_publications and (no_open_work or self.git_required)):
+                    self.git_selection = ReviewedGit(self.workdir, git_paths, self.state_dir,
+                        push=git_push, executable=self._git_executable)
+                    if any((self.workdir / path) == self.todo_workspace_file for path in self.git_selection.paths):
+                        raise ReviewedGitError("The controller task plan cannot be an automatic Git output selection.")
         # The run is allocated only after the authoritative plan lock is held.
         self.run_dir = self.runs_dir / timestamp_name(self.run_started_at)
         self.autobuild_runs_dir = self.run_dir
@@ -930,7 +961,7 @@ class TodoRunner:
                 self.project_id = self.project_logs.project_id
                 if self.logs_in_workdir:
                     self.project_logs = replace(self.project_logs,
-                        directory=self.workdir / ".codex_runs" / "run_todos", workspace_layout=True)
+                        directory=self.workdir / agent_backend.logs_name(self.backend) / "run_todos", workspace_layout=True)
                 self.runs_dir = self.project_logs.runs_directory
                 # Apply owner policy to existing budgets, including exhausted
                 # 0.5.x budgets, without resetting counts or moving state.
@@ -996,6 +1027,11 @@ class TodoRunner:
         self._workspace_sync_lock = threading.Lock()
         self.completed_parallel_groups: Set[str] = set()
         self.completed_agents: Set[str] = set()
+        if self.git_enabled and not self.dry_run:
+            self.publication_records = [dict(record, required=self.git_required, previous_run=True)
+                for record in list_publications(self.state_dir, self.workdir)
+                if record.get("status") not in {"published", "committed", "unchanged", "noop"}
+                and self._publication_record_in_scope(record)]
 
 
     @staticmethod
@@ -1259,6 +1295,10 @@ class TodoRunner:
                 # Validate the live plan before WAIT/STOP or a no-work return,
                 # not only after these directives have already been interpreted.
                 self.plan_authority.check()
+                if self.git_required and self._publication_pending():
+                    self.exit_code = EXIT_INCOMPLETE
+                    print("[warn] Erforderliche Git-Veröffentlichung ist noch offen; keine neue Aufgabe wird gestartet.")
+                    break
                 self._lint_todo_before_autobuild(todo_file=self.todo_file, workdir=self.workdir)
                 if self.process_stop_detected or self.stop_triggered:
                     break
@@ -1329,6 +1369,10 @@ class TodoRunner:
                         "[fatal] ToDo-Lauf wird beendet: " + outcome.message
                     )
                     break
+                if self.git_required and self._publication_pending():
+                    self.exit_code = EXIT_INCOMPLETE
+                    print("[warn] Fachliche Abnahme erfolgt; erforderliche Git-Veröffentlichung vor der Fortsetzung abschließen.")
+                    break
                 # Owner stop is a scheduling barrier, even if this task added
                 # more tasks/children. Its own AutoBuild review has already run.
                 if self.stop_id and todo.identifier == self.stop_id:
@@ -1338,13 +1382,15 @@ class TodoRunner:
                 self._maybe_run_pending_reviews(trigger_parent=todo.identifier)
                 if self.process_stop_detected or self.stop_triggered:
                     break
-            if not self.aborted and not self.stop_triggered:
+            if not self.aborted and not self.stop_triggered and not (self.git_required and self._publication_pending()):
                 self._maybe_run_pending_reviews(force=True)
             if self.process_stop_detected:
                 self.exit_code = RUN_TODOS_EXIT_PROCESS_STOP
             if self.terminal_execution_error:
                 self.exit_code = failure_exit_code(self.terminal_execution_error)
             elif self.exit_code == 0 and (self.incomplete or self.failed or self.pending_reviews):
+                self.exit_code = EXIT_INCOMPLETE
+            if self.exit_code == 0 and self.git_required and self._publication_pending():
                 self.exit_code = EXIT_INCOMPLETE
             if self.exit_code == 0 and not self.stop_triggered and not self.dry_run:
                 def number(value):
@@ -1524,6 +1570,10 @@ class TodoRunner:
             "failed": sorted(self.failed), "execution_error": self.terminal_execution_error,
             "tasks": [str(r.log_dir / "task_log.json") for r in self.task_log_records.values()],
             "call_budgets": {key: budget.snapshot() for key, budget in self.call_budgets.items()},
+            "publication_required": self.git_required,
+            "publication_status": ("not_requested" if not self.git_enabled else
+                                   "pending" if self._publication_pending() else "complete"),
+            "publication_records": list(self.publication_records),
         }
         write_log_json(self.run_dir / "run.json", payload)
         # Keep the old filename/schema for existing tooling (additive fields).
@@ -1911,10 +1961,52 @@ class TodoRunner:
             self.recorder.record(f"{todo.identifier}-git", "# explicit reviewed Git selection; no Git mutation")
             return
         self.plan_authority.check()
-        result = self.git_selection.commit(self._compose_git_commit_message(todo), candidate=outcome.git_candidate)
-        if result:
-            write_log_json(self.run_dir / ("git_" + todo.identifier.replace(".", "_") + ".json"), result)
-            print("[info] Ausgewählte geprüfte Dateien committed; Push=" + str(result["pushed"]))
+        if outcome.git_publication_error is not None:
+            result = {"status": "blocked", **outcome.git_publication_error}
+        else:
+            try:
+                result = self.git_selection.commit(self._compose_git_commit_message(todo), candidate=outcome.git_candidate)
+                result = result or {"status": "unchanged", "pushed": False}
+                result.setdefault("status", "published" if result.get("pushed") else "committed")
+            except (ReviewedGitError, OSError, ValueError) as exc:
+                result = dict(getattr(self.git_selection, "last_publication", None) or {})
+                # A receipt may have reached local_committed even though its
+                # requested push is still pending. Keep that distinction.
+                if result.get("status") in {"published", "committed", "unchanged", "noop"}:
+                    result["status"] = "pending"
+                result.setdefault("status", "blocked")
+                result.update(code="git_publication_failed", message=str(exc)[:4096])
+        record = {**result, "task": todo.identifier, "required": self.git_required}
+        self.publication_records.append(record)
+        write_log_json(self.run_dir / ("git_" + todo.identifier.replace(".", "_") + ".json"), record)
+        self._overview(f"Git publication {todo.identifier}: {record['status']}")
+        if record["status"] in {"published", "committed", "unchanged", "noop"}:
+            print("[info] Git-Veröffentlichung: " + record["status"])
+        else:
+            print("[warn] Fachliche Abnahme bleibt erhalten; Git-Veröffentlichung offen: "
+                  + str(record.get("message", record["status"])))
+            if record.get("id"):
+                print("[info] Git-Publikation gezielt prüfen/wiederholen: " + record["id"])
+
+    def _publication_pending(self) -> bool:
+        return any(record.get("status") not in {"published", "committed", "unchanged", "noop"}
+                   for record in self.publication_records)
+
+    def _publication_record_in_scope(self, record: dict) -> bool:
+        task = record.get("task", "")
+        if isinstance(task, str) and task.endswith("-review"):
+            task = task.removesuffix("-review")
+        if not isinstance(task, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", task):
+            return True  # Keep an unfamiliar accepted identity visible.
+        number = lambda value: tuple(int(part) for part in value.split("."))
+        return ((not self.start_id or number(task) >= number(self.start_id))
+                and (not self.stop_id or number(task) <= number(self.stop_id)))
+
+    def _verify_git_acceptance(self, outcome: TaskOutcome) -> None:
+        """The last review binding is a hard gate, independent of publication."""
+        if outcome.git_candidate is not None:
+            candidate = outcome.git_candidate
+            git_snapshot.verify_live(candidate.request, candidate.token, candidate.token["review_index"])
 
     def _stop_marker_before(self, todo: TodoItem) -> bool:
         if todo.preceding_line is None:
@@ -2038,7 +2130,7 @@ class TodoRunner:
                 continue
             if resolved in seen:
                 continue
-            if not resolved.is_file() or resolved.is_relative_to(self.workdir / ".codex_runs"):
+            if not resolved.is_file() or resolved.is_relative_to(self.workdir / agent_backend.logs_name(self.backend)):
                 continue
             seen.add(resolved)
             unique.append(resolved)
@@ -2418,6 +2510,7 @@ class TodoRunner:
             self.attempted.add(todo.identifier)
             if outcome.completed:
                 self._finalize_post_todo_log(outcome)
+                self._verify_git_acceptance(outcome)
                 if not self._mark_todo_as_done(todo):
                     outcome = self._stop_outcome_if_requested(outcome)
                     outcomes[todo.identifier] = outcome, context, primary_result_file
@@ -2558,6 +2651,7 @@ class TodoRunner:
             return replace(outcome, completed=False)
         if outcome.completed:
             self._finalize_post_todo_log(outcome)
+            self._verify_git_acceptance(outcome)
             if not self._mark_todo_as_done(todo):
                 return self._stop_outcome_if_requested(outcome)
             self.completed.add(todo.identifier)
@@ -3274,17 +3368,18 @@ class TodoRunner:
                                                     resource_id, **resource_caps)
         resources = TaskResources(**{key: narrower(getattr(live_resources, key), getattr(original_resources, key),
                                       label=f"Task {resource_id}: {key}") for key in RESOURCE_KEYS})
+        agent_backend.validate_resources(self.backend, mcp=resources.mcp, review_mcp=resources.review_mcp)
         if resources.explicit:
-            catalog = getattr(self, "skill_catalog", None) or SkillCatalog(workdir=self.workdir)
+            catalog = getattr(self, "skill_catalog", None) or SkillCatalog(workdir=self.workdir, backend=self.backend)
             task_text = bind_resources(task_text, resources, catalog, prompt_config=self.prompts)
-        active_model = _resolve_codex_model(
-            model_override if model_override is not None else self.model
+        active_model = agent_backend.resolve_model(
+            model_override if model_override is not None else self.model, backend=self.backend
         )
-        active_reasoning_effort = _resolve_codex_reasoning_effort(
-            reasoning_effort_override
-            if reasoning_effort_override is not None
-            else self.reasoning_effort
+        active_reasoning_effort = agent_backend.resolve_effort(
+            reasoning_effort_override if reasoning_effort_override is not None else self.reasoning_effort,
+            backend=self.backend
         )
+        agent_backend.validate_options(self.backend, config_profile=config_profile, extra_args=extra_args)
         active_extra_args = list(extra_args or [])
         active_process_stop = process_stop_override or self.process_stop_path
         session_stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -3318,7 +3413,7 @@ class TodoRunner:
             log_dir, attempt=1, ensure_directories=False)
         command_preview = (
             f"autobuild.start(task=<Referenzprompt>, workdir={str(active_workdir)!r}, "
-            f"options=AutoBuildOptions(sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
+            f"options=AutoBuildOptions(backend={self.backend!r}, sandbox={active_sandbox!r}, network_access={active_network_access!r}, "
             f"model={active_model!r}, reasoning_effort={active_reasoning_effort!r}, "
             f"mcp={resources.mcp!r}, review_mcp={resources.review_mcp!r}, skills={resources.skills!r}, "
             f"max_steps={self.max_steps * self.max_retries}, max_calls={self.max_calls}, summary_json={str(preview_summary)!r}), "
@@ -3381,6 +3476,7 @@ class TodoRunner:
             )
             print(f"[exec] (1/1, Fortsetzungsschritte={self.max_steps * self.max_retries}) {task_text}")
             options = AutoBuildOptions(
+                backend=self.backend,
                 sandbox=active_sandbox, network_access=active_network_access,
                 config_profile=config_profile, extra_arg=active_extra_args,
                 prompt_config=self.prompts,
@@ -3390,8 +3486,19 @@ class TodoRunner:
                 model=active_model, reasoning_effort=active_reasoning_effort,
                 process_stop_path=active_process_stop,
             )
-            git_request = (self.git_selection.begin_review(run=self.run_id, task=identifier,
-                attempt=f"{log_dir.name}.{attempt}") if self.git_enabled else None)
+            git_request = None
+            git_publication_error = None
+            # Planner/helper AutoBuild calls are independently reviewed, but
+            # they do not deliver a task's selected outputs. Do not leave
+            # spurious accepted publication receipts for breakdown generation.
+            if self.git_enabled and re.fullmatch(r"[0-9]+(?:\.[0-9]+)*(?:-review)?", identifier):
+                try:
+                    if self.git_selection is None:
+                        raise ReviewedGitError("An earlier reviewed publication is pending; inspect 'arquilo git status' before publishing new work.")
+                    git_request = self.git_selection.begin_review(run=self.run_id, task=identifier,
+                        attempt=f"{log_dir.name}.{attempt}")
+                except (ReviewedGitError, OSError) as exc:
+                    git_publication_error = {"code": "git_setup_unavailable", "message": str(exc)[:4096]}
             git_candidate = None
             context = AutoBuildContext(
                 task_source="todo", todo_identifier=identifier, decision_todo_file=active_todo_file,
@@ -3403,6 +3510,7 @@ class TodoRunner:
                 allow_todo_modifications=self.allow_todo_modifications,
                 process_stop_paths=(self.process_stop_path, *getattr(self, "_active_parallel_stop_paths", ())),
                 launcher_workspace=self.workdir, git_review=git_request,
+                git_review_optional=True,
             )
             try:
                 if use_cli_subprocess:
@@ -3413,8 +3521,19 @@ class TodoRunner:
                 validated_summary = validate_result(
                     autobuild_summary_document(summary) if not use_cli_subprocess else vars(summary))
                 if git_request is not None and validated_summary.get("completed"):
-                    git_candidate = self.git_selection.accept_review(git_request, validated_summary.get("git_review"),
-                        review_index=validated_summary.get("review_runs"))
+                    capture_error = validated_summary.get("git_publication_error")
+                    if capture_error is not None:
+                        git_publication_error = dict(capture_error)
+                    else:
+                        try:
+                            git_candidate = self.git_selection.accept_review(git_request, validated_summary.get("git_review"),
+                                review_index=validated_summary.get("review_runs"))
+                        except PublicationUnavailable as exc:
+                            # Only the Git layer's explicit post-verification
+                            # persistence failure is optional. Invalid tokens,
+                            # changed snapshots or live output drift still fail.
+                            git_publication_error = {"code": "git_acceptance_unavailable", "message": str(exc)[:4096]}
+                            git_candidate = ReviewedCandidate(git_request, validated_summary["git_review"])
             except ProcessStopActiveError as exc:
                 message = str(exc).strip() or "process_stop verhindert diesen Lauf."
                 outcome = TaskOutcome(
@@ -3472,6 +3591,7 @@ class TodoRunner:
                 outcome = TaskOutcome(
                     completed=True,
                     git_candidate=git_candidate,
+                    git_publication_error=git_publication_error,
                     message=last_message,
                     process_stop_triggered=bool(summary.process_stop_triggered),
                     process_stop_details=(stop_reason(getattr(summary, "process_stop_details", None))
@@ -3577,6 +3697,7 @@ class TodoRunner:
                 "todo_preamble": self.todo_preamble,
             },
         }
+        payload["backend"] = self.backend
         payload["prompt_config"] = self.prompts.metadata()
         if self.model:
             payload["model"] = self.model
@@ -3585,6 +3706,7 @@ class TodoRunner:
         if self.git_enabled:
             payload["git"] = {
                 "enabled": True,
+                "required": self.git_required,
                 "repo_root": str(self.git_repo_root) if self.git_repo_root else None,
             }
         return payload
@@ -3896,6 +4018,7 @@ class TodoRunner:
         codex_policy.reject_policy_keys(cfg, source="CFG")
         network_access = codex_policy.effective_network_access(self.network_access, cfg.get("network_access"))
         codex_policy.validate_config_profile(cfg.get("agent"))
+        agent_backend.validate_options(getattr(self, "backend", "codex"), config_profile=cfg.get("agent"))
         workdir = self.workdir
         if "workspace" in cfg and cfg["workspace"].strip():
             workdir = self._resolve_directive_workspace(cfg["workspace"])
@@ -4234,6 +4357,7 @@ class TodoRunner:
                         )
                         return
                 else:
+                    self._verify_git_acceptance(review.task_outcome)
                     if not self._mark_todo_as_done(parent_todo):
                         return
                 if self._poll_process_stop():
@@ -4241,6 +4365,8 @@ class TodoRunner:
                 self.completed.add(parent)
                 self.incomplete.discard(parent)
                 self.failed.discard(parent)
+                if parent_todo is not None:
+                    self._maybe_git_commit(parent_todo, review.task_outcome)
                 print(f"[ok]   Elternauftrag {parent} nach Unter-ToDos abgeschlossen.")
                 del self.pending_reviews[parent]
                 self.review_seen_children.pop(parent, None)
@@ -4615,6 +4741,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             "Wird pro Invocation übergeben und verändert config.toml nicht."
         ),
     )
+    agent_backend.add_backend_argument(parser)
+    parser.add_argument("--skip-backend-preflight", action="store_true", help="Skip the selected runtime preflight; does not select another backend.")
     parser.add_argument(
         "--skip-codex-preflight",
         action="store_true",
@@ -4648,11 +4776,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--git",
         action="store_true",
-        help="Commit nur explizit mit --git-path freigegebene Dateien; kein Push ohne --git-push.",
+        help="Optionale Veröffentlichung explizit geprüfter --git-path-Dateien; Fehler heben die fachliche Abnahme nicht auf.",
     )
     parser.add_argument("--git-path", action="append", default=[],
                         help="Einzelner relativer Dateipfad für geprüfte Commits (mehrfach, keine Globs).")
     parser.add_argument("--git-push", action="store_true", help="Zusätzlich ausgewählte Commits zum bestehenden Upstream pushen.")
+    parser.add_argument("--git-required", action="store_true",
+                        help="Mit --git: fehlende Veröffentlichung lässt den Lauf unvollständig (Exit 9); fachliche DONE-Abnahmen bleiben erhalten.")
     parser.add_argument("--state-dir", type=Path, help="Privates Basisverzeichnis außerhalb des Workspaces; vorhandenen Zustand weiterverwenden.")
     parser.add_argument("--project-id", type=validate_project_id, default=None,
                         help="Lesbare Projekt-ID fuer Logs (1-48 Zeichen); wird dauerhaft diesem Workspace/Plan zugeordnet.")
@@ -4786,12 +4916,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 network_access=args.network_access,
                 run_id=run_id,
                 git_enabled=args.git,
-                git_paths=args.git_path, git_push=args.git_push,
+                git_paths=args.git_path, git_push=args.git_push, git_required=args.git_required,
                 state_dir=args.state_dir, project_id=args.project_id,
                 accept_plan_changes=args.accept_plan_changes,
                 logs_in_workdir=args.logs_in_workdir,
                 allow_todo_modifications=args.allow_todo_modifications,
                 model=args.model,
+                backend=args.backend,
                 reasoning_effort=args.reasoning_effort,
                 breakdown_policy=args.breakdown_policy,
                 breakdown_max_children=args.breakdown_max_children,
@@ -4815,11 +4946,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if os.path.lexists(workdir / "process_stop"):
                 runner.run()
                 return RUN_TODOS_EXIT_PROCESS_STOP
-            if not args.skip_codex_preflight:
-                run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
-                    model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts,
-                    workdir=workdir,
-                    **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
+            if args.skip_codex_preflight and args.backend != "codex":
+                raise ValueError("--skip-codex-preflight is Codex-only; use --skip-backend-preflight.")
+            if not args.skip_backend_preflight:
+                if args.backend == "codex" and not args.skip_codex_preflight:
+                    run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
+                        model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts, workdir=workdir,
+                        **({"mcp_disabled": True} if getattr(runner, "resource_mode", False) is True else {}))
+                elif args.backend == "claude-code" and not args.dry_run:
+                    from claude_transport import probe_cli
+                    probe = probe_cli(cwd=workdir, env=dict(os.environ), require_schema=True,
+                                      require_effort=args.reasoning_effort is not None)
+                    if probe["status"] != "PASS":
+                        raise RuntimeError(probe.get("detail", "Claude Code preflight failed"))
+                    print("[preflight] Claude Code CLI verified; no Codex and no preflight model call.")
             runner.plan_authority.check()
         except (RuntimeError, ValueError, OSError) as exc:
             try:

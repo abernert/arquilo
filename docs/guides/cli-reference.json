@@ -40,6 +40,7 @@
           "run",
           "resume-review",
           "doctor",
+          "git",
           "capabilities",
           "package"
         ],
@@ -346,7 +347,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide."
+        "description": "Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide."
       },
       {
         "names": [
@@ -367,7 +368,36 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide."
+        "description": "Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide."
+      },
+      {
+        "names": [
+          "--backend"
+        ],
+        "destination": "backend",
+        "default": "codex",
+        "choices": [
+          "codex",
+          "claude-code"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run."
+      },
+      {
+        "names": [
+          "--skip-backend-preflight"
+        ],
+        "destination": "skip_backend_preflight",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Skip only the selected-backend runner preflight. Per-call executable/protocol checks, sandbox requirements and mandatory reviews remain."
       },
       {
         "names": [
@@ -445,7 +475,7 @@
         "nargs": 0,
         "repeatable": false,
         "flag": true,
-        "description": "Enable reviewed commits for explicit --git-path selections; no implicit push. Read the Git chapter before enabling: this branch still couples Git snapshots to mandatory review."
+        "description": "Request commits of explicit selected outputs bound to their review; no implicit push. Capture only selected files; task acceptance and optional publication have separate outcomes."
       },
       {
         "names": [
@@ -472,6 +502,19 @@
         "repeatable": false,
         "flag": true,
         "description": "Additionally publish reviewed commits to the approved existing upstream. Requires --git and the documented remote/serial-execution conditions."
+      },
+      {
+        "names": [
+          "--git-required"
+        ],
+        "destination": "git_required",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Require successful requested Git delivery before the run continues; requires --git. Accepted tasks remain DONE, but pending delivery yields incomplete exit 9."
       },
       {
         "names": [
@@ -510,7 +553,7 @@
         "nargs": 0,
         "repeatable": false,
         "flag": true,
-        "description": "Place new diagnostic run logs under .codex_runs/run_todos in the workspace. Authoritative journals, budgets and worker returns remain external."
+        "description": "Place new diagnostic run logs in the workspace under the selected backend log directory. Authoritative journals, budgets and worker returns remain external."
       },
       {
         "names": [
@@ -588,7 +631,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none."
+        "description": "Comma-separated explicit server selection/ceiling, or none. Codex omission inherits native configuration. Claude accepts only none/omission; no named servers or native MCP inheritance."
       },
       {
         "names": [
@@ -640,7 +683,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Native Codex profile name and agent hint, not a team definition. Local CFG agent can override the run default."
+        "description": "Native Codex profile name and agent hint, not a team definition. Local CFG agent can override it. Rejected for Claude."
       }
     ],
     "doctor": [
@@ -657,6 +700,22 @@
         "repeatable": false,
         "flag": true,
         "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--backend"
+        ],
+        "destination": "backend",
+        "default": "codex",
+        "choices": [
+          "codex",
+          "claude-code"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run."
       },
       {
         "names": [
@@ -721,7 +780,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide."
+        "description": "Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide."
       },
       {
         "names": [
@@ -734,7 +793,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Existing native provider identifier for the live Doctor probe; does not define a URL, credentials or model. Requires --check-decide."
+        "description": "Existing native Codex provider for the live Doctor probe; requires --check-decide. Does not define credentials or a URL. Rejected for Claude."
       },
       {
         "names": [
@@ -747,7 +806,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Existing native Codex profile for the live Doctor probe. Requires --check-decide. This option is not accepted by tasklist run; use --agent there."
+        "description": "Existing native Codex profile for the live Doctor probe; requires --check-decide. Tasklist run uses --agent. Rejected for Claude."
       },
       {
         "names": [
@@ -768,7 +827,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide."
+        "description": "Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide."
       },
       {
         "names": [
@@ -837,6 +896,90 @@
         "repeatable": false,
         "flag": false,
         "description": "Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient."
+      }
+    ],
+    "git": [
+      {
+        "names": [
+          "-h",
+          "--help"
+        ],
+        "destination": "help",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "command"
+        ],
+        "destination": "command",
+        "default": null,
+        "choices": [
+          "status",
+          "retry"
+        ],
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "status lists retained publication records; retry reconciles one exact recorded publication. Both print JSON and make no model/review calls."
+      },
+      {
+        "names": [
+          "--workdir"
+        ],
+        "destination": "workdir",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required original Git working-tree root; use the same path as the task run."
+      },
+      {
+        "names": [
+          "--todo-file"
+        ],
+        "destination": "todo_file",
+        "default": null,
+        "choices": null,
+        "required": true,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Required original task-list path selecting existing private state. Relative paths are relative to the shell working directory, as in tasklist run."
+      },
+      {
+        "names": [
+          "--state-dir"
+        ],
+        "destination": "state_dir",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Original private state base, if the task run used a custom --state-dir. Do not select a new state root to retry publication."
+      },
+      {
+        "names": [
+          "--publication"
+        ],
+        "destination": "publication",
+        "default": null,
+        "choices": null,
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Exact existing publication ID returned by git status. Required for git retry and rejected for status; no model or review call."
       }
     ],
     "package": [
@@ -911,6 +1054,22 @@
         "repeatable": false,
         "flag": true,
         "description": "Show the help for this command and exit; no model call."
+      },
+      {
+        "names": [
+          "--backend"
+        ],
+        "destination": "backend",
+        "default": "codex",
+        "choices": [
+          "codex",
+          "claude-code"
+        ],
+        "required": false,
+        "nargs": null,
+        "repeatable": false,
+        "flag": false,
+        "description": "Select codex (default) or claude-code for production, fixes, review, parent review and Decide. No implicit fallback or mixed-backend run."
       },
       {
         "names": [
@@ -1004,7 +1163,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent."
+        "description": "Existing native Codex profile for standalone AutoBuild; tasklist run calls this --agent. Rejected for Claude."
       },
       {
         "names": [
@@ -1017,7 +1176,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Comma-separated explicit server selection and ceiling, or none. Omission inherits native configuration; it is not equivalent to none."
+        "description": "Comma-separated explicit server selection/ceiling, or none. Codex omission inherits native configuration. Claude accepts only none/omission; no named servers or native MCP inheritance."
       },
       {
         "names": [
@@ -1082,7 +1241,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Explicit model/deployment identifier. In task runs: CLI, then ARQUILO_CODEX_MODEL, then CFG model, then native Codex configuration. Doctor overrides require --check-decide."
+        "description": "Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide."
       },
       {
         "names": [
@@ -1103,7 +1262,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Forward a supported effort string; larger effort can increase reasoning work, latency and usage. Provider/model support is still required. Task CLI overrides ARQUILO_CODEX_REASONING_EFFORT; Doctor requires --check-decide."
+        "description": "Request supported effort; provider/model support is required. CLI precedes the selected-backend environment. Claude accepts low/medium/high/xhigh/max; Codex also none/minimal. Doctor requires --check-decide."
       },
       {
         "names": [

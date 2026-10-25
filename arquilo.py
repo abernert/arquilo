@@ -51,6 +51,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args and args[0] == "doctor":
         from arquilo_doctor import main as doctor_main
         return doctor_main(args[1:])
+    if args and args[0] == "git":
+        from git_publication_cli import main as git_main
+        return git_main(args[1:])
     if args and args[0] == "capabilities":
         from run_todos import main as run_main
         return run_main(["--print-capabilities", *args[1:]])
@@ -64,7 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         allow_abbrev=False,
     )
     parser.add_argument("--version", action="version", version=f"ARQUILO {__version__}")
-    parser.add_argument("command", nargs="?", choices=("tasklist", "run", "resume-review", "doctor", "capabilities", "package"))
+    parser.add_argument("command", nargs="?", choices=("tasklist", "run", "resume-review", "doctor", "git", "capabilities", "package"))
     parser.parse_args(args)
     parser.print_help()
     return 0

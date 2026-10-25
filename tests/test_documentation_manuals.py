@@ -43,7 +43,7 @@ class HandbookConsolidationTests(unittest.TestCase):
             self.assertGreater(documentation_reference.check_or_write(), 80)
         inventory = json.loads((ROOT/'docs/guides/cli-reference.json').read_text(encoding='utf-8'))
         self.assertEqual(set(inventory['commands']), {'arquilo', 'tasklist', 'tasklist run', 'doctor',
-            'tasklist resume-review', 'package', 'review_confidence.py', 'autobuild.py'})
+            'tasklist resume-review', 'git', 'package', 'review_confidence.py', 'autobuild.py'})
         self.assertEqual(set(inventory['maintenance_commands']), {
             'scripts/check_release.py', 'scripts/stage_lean.py', 'scripts/install_test_codex.py',
             'scripts/check_codex_configuration.py', 'scripts/check_codex_provider.py',
@@ -66,11 +66,12 @@ class HandbookConsolidationTests(unittest.TestCase):
 
     def test_all_active_arquilo_environment_settings_are_documented(self):
         names = set()
-        for filename in ('runtime_config.py', 'runtime_profile.py', 'autobuild.py', 'run_todos.py'):
+        for filename in ('runtime_config.py', 'runtime_profile.py', 'autobuild.py', 'run_todos.py',
+                         'agent_backend.py', 'claude_transport.py'):
             tree = ast.parse((ROOT/filename).read_text(encoding='utf-8'))
             names.update(n.value for n in ast.walk(tree) if isinstance(n, ast.Constant)
                 and isinstance(n.value, str) and re.fullmatch(r'ARQUILO_[A-Z0-9_]+', n.value))
-        self.assertEqual(len(names), 10)
+        self.assertEqual(len(names), 13)
         for name in names:
             self.assertIn('| `'+name+'` |', self.operator)
 
@@ -97,11 +98,15 @@ class HandbookConsolidationTests(unittest.TestCase):
             self.assertNotIn('### Funktioniert `codex`', text)
             self.assertNotIn('### Does `codex`', text)
             self.assertIn('~/.local/bin', text)
-            for flag in ('--model', '--reasoning-effort', '--agent', '--max-calls', '--runtime-profile',
-                         '--prompt-config', '--mcp', '--skills', '--state-dir', '--git-push'):
+            for flag in ('--backend', '--model', '--reasoning-effort', '--agent', '--max-calls', '--runtime-profile',
+                         '--prompt-config', '--mcp', '--skills', '--state-dir', '--git-push', '--git-required'):
                 self.assertIn(flag, text)
             self.assertIn('ARQUILO_CODEX_MODEL', text)
             self.assertIn('ARQUILO_CODEX_REASONING_EFFORT', text)
+            self.assertIn('ARQUILO_CLAUDE_CODE_MODEL', text)
+            self.assertIn('ARQUILO_CLAUDE_CODE_REASONING_EFFORT', text)
+            self.assertIn('<!-- example: claude-doctor -->', text)
+            self.assertIn('<!-- example: claude-run -->', text)
             self.assertIn('<!-- example: model-and-effort -->', text)
             self.assertIn('YOUR_MODEL_ID', text)
 
@@ -135,10 +140,14 @@ class HandbookConsolidationTests(unittest.TestCase):
                     if url.fragment and path.suffix=='.md':
                         self.assertIn(unquote(url.fragment), anchors(path.read_text(encoding='utf-8')))
 
-    def test_git_change_is_not_documented_as_already_implemented(self):
-        self.assertIn('not implemented in this checkout', self.operator)
-        self.assertIn('after production', self.operator)
-        self.assertIn('Omitting only `--git-push`', self.operator)
+    def test_git_delivery_and_acceptance_are_documented_separately(self):
+        self.assertIn('`--git-required` requires `--git`', self.operator)
+        self.assertIn('normal workspace', self.operator)
+        self.assertIn('no full-workspace copy', self.operator)
+        self.assertIn('mismatch still vetoes acceptance', self.operator)
+        self.assertIn('git status --workdir', self.operator)
+        self.assertIn('git retry --workdir', self.operator)
+        self.assertIn('do not call a model', self.operator)
         self.assertIn('serial only', self.operator)
         self.assertEqual((ROOT/'VERSION').read_text().strip(), '0.9.1')
 

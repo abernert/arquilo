@@ -24,7 +24,7 @@ from autobuild_contract import AutoBuildContext, AutoBuildOptions, call_payload,
 from codex_transport import RunResult
 import git_snapshot
 import reviewed_git
-from git_review_fixture import reviewed_candidate
+from git_review_fixture import reviewed_candidate, review_snapshot_root
 from reviewed_git import ReviewedGit, ReviewedGitError
 import safe_io
 from adversarial.harness import IsolatedControllerCase
@@ -96,16 +96,17 @@ class GitIntegrityTests(unittest.TestCase):
             g.commit('reject', candidate=candidate)
         self.assertEqual(self.git('rev-parse', 'HEAD').strip(), self.old)
 
-    def test_late_change_cannot_replace_commit_bytes(self):
+    def test_late_change_before_ref_update_is_refused_without_replacing_frozen_bytes(self):
         g = self.selection(); self.change(); candidate = reviewed_candidate(g)
         original = g.git
         def race(*args, **kwargs):
             if args[0] == 'read-tree' and kwargs.get('private'):
                 (self.work / 'selected.txt').write_bytes(b'too late\n')
             return original(*args, **kwargs)
-        with patch.object(g, 'git', side_effect=race):
-            result = g.commit('frozen', candidate=candidate)
-        self.assertEqual(self.git('show', result['commit'] + ':selected.txt'), b'reviewed\n')
+        with patch.object(g, 'git', side_effect=race), self.assertRaisesRegex(ReviewedGitError, 'changed after review'):
+            g.commit('frozen', candidate=candidate)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), self.old)
+        self.assertEqual(candidate.contents()['selected.txt'][0], b'reviewed\n')
         self.assertEqual((self.work / 'selected.txt').read_bytes(), b'too late\n')
 
     def test_snapshot_tampering_is_refused(self):
@@ -176,15 +177,20 @@ class GitIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ReviewedGitError, 'changed after review'):
             g.commit('reject mode', candidate=candidate)
 
-    def test_linked_context_is_rejected_without_reading_target(self):
+    def test_unselected_linked_context_is_not_copied_or_published(self):
         g = self.selection(); self.change()
         secret = self.base / 'secret'; secret.write_bytes(b'outside')
         try:
             (self.work / 'linked-context').symlink_to(secret)
         except OSError:
             self.skipTest('Native symlinks unavailable')
-        with self.assertRaises(safe_io.UnsafePathError):
-            reviewed_candidate(g)
+        candidate = reviewed_candidate(g)
+        mirror = Path(candidate.request['directory']) / candidate.token['candidate'] / 'workspace'
+        self.assertFalse((mirror / 'linked-context').exists())
+        self.assertEqual(candidate.contents()['selected.txt'][0], b'reviewed\n')
+        result = g.commit('selected output only', candidate=candidate)
+        self.assertEqual(self.git('show', result['commit'] + ':selected.txt'), b'reviewed\n')
+        self.assertNotIn(b'linked-context\0', self.git('ls-tree', '-rz', '--name-only', 'HEAD'))
         self.assertEqual(secret.read_bytes(), b'outside')
 
     def test_snapshot_limits_fail_before_acceptance(self):
@@ -203,8 +209,15 @@ class GitIntegrityTests(unittest.TestCase):
         self.git('add', 'secret-parent.txt'); self.git('commit', '-qm', 'unpublished parent')
         branch = self.git('symbolic-ref', '--short', 'HEAD').strip().decode()
         self.git('update-ref', 'refs/remotes/origin/' + branch, 'HEAD')
-        with self.assertRaisesRegex(ReviewedGitError, 'actual push destination'):
-            self.selection(push=True)
+        unpublished_head = self.git('rev-parse', 'HEAD').strip()
+        g = self.selection(push=True)
+        self.change()
+        candidate = reviewed_candidate(g)
+        # Remote transport is deferred until publication, but the real remote
+        # baseline must still reject the forged local tracking reference.
+        with self.assertRaises(ReviewedGitError):
+            g.commit('must not publish unreviewed ancestor', candidate=candidate)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), unpublished_head)
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', 'refs/heads/' + branch).strip(), self.old)
 
     def test_final_push_lease_rejects_remote_race(self):
@@ -365,7 +378,7 @@ class GitControllerTests(IsolatedControllerCase):
     def git(self, *args):
         return subprocess.check_output(['git', *args], cwd=self.work, stderr=subprocess.PIPE)
 
-    def test_controller_reviews_private_copy_and_publishes_same_bytes(self):
+    def test_controller_reviews_frozen_outputs_with_live_context_and_publishes_same_bytes(self):
         runner = self.runner(git_enabled=True, git_paths=['proof.txt'])
         seen = []
         def dispatch(**kwargs):
@@ -374,9 +387,11 @@ class GitControllerTests(IsolatedControllerCase):
                 self.assertEqual(cwd, self.work)
                 (cwd / 'proof.txt').write_bytes(b'RIGHT')
                 return answer('Created proof.')
-            self.assertNotEqual(cwd, self.work)
-            self.assertTrue(cwd.is_relative_to(runner.state_dir))
-            self.assertEqual((cwd / 'proof.txt').read_bytes(), b'RIGHT')
+            self.assertEqual(cwd, self.work)
+            frozen = review_snapshot_root(kwargs['prompt'])
+            self.assertTrue(frozen.is_relative_to(runner.state_dir))
+            self.assertEqual((frozen / 'proof.txt').read_bytes(), b'RIGHT')
+            self.assertFalse((frozen / 'tasks.md').exists())
             self.assertEqual(kwargs['sandbox'], 'read-only')
             self.assertIn('--skip-git-repo-check', kwargs['extra_args'])
             return answer(json.dumps(PASS))
@@ -407,7 +422,7 @@ class GitControllerTests(IsolatedControllerCase):
         def dispatch(**kwargs):
             if kwargs['phase'] == 'auftrag':
                 (self.work / 'proof.txt').write_bytes(b'RIGHT'); return answer('Ready')
-            self.assertEqual((Path(kwargs['cwd']) / 'proof.txt').read_bytes(), b'RIGHT')
+            self.assertEqual((review_snapshot_root(kwargs['prompt']) / 'proof.txt').read_bytes(), b'RIGHT')
             (self.work / 'proof.txt').write_bytes(b'WRONG')
             return answer(json.dumps(PASS))
         with self.fake_codex(dispatch):
@@ -422,7 +437,8 @@ class GitControllerTests(IsolatedControllerCase):
             cwd = Path(kwargs['cwd'])
             if kwargs['phase'] == 'auftrag':
                 (cwd / 'proof.txt').write_bytes(b'RIGHT'); return answer('Ready')
-            path = cwd / 'proof.txt'; path.chmod(0o600); path.write_bytes(b'WRONG')
+            path = review_snapshot_root(kwargs['prompt']) / 'proof.txt'
+            path.chmod(0o600); path.write_bytes(b'WRONG')
             return answer(json.dumps(PASS))
         with self.fake_codex(dispatch):
             runner.run()

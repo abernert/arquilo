@@ -48,3 +48,14 @@ Documentation-specific tests that depended on removed page paths must point to t
 ## Distribution
 
 Baseline package: 105 entries. Revised package: 80 entries. Runtime Python/scripts remain packaged as before; the reduction is documentation-only apart from one machine-readable CLI reference. Repository-only generation/check scripts are not runtime dependencies.
+
+
+## Combined backend/publication integration, 25 October 2026
+
+The earlier 105-to-80 reduction describes the handbook-only #37 edition. The
+new combined manifest also includes the Claude/agent runtime modules,
+`docs/claude-code-backend.md`, `git_publication_cli.py` and
+`git_publication_state.py`. Counts are derived from `documents/lean_package.json`;
+the previous number is not the current distribution contract. The four manuals
+remain canonical, and `docs/architecture.md` remains retired. The Claude page
+is focused qualification evidence, with normal usage/architecture in the manuals.

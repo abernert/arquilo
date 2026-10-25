@@ -221,6 +221,11 @@ def _value(argv: list[str], name: str) -> str:
 
 
 def _validate_recovery_argv(argv: list[str], todo: str) -> Path:
+    for i, token in enumerate(argv):
+        if token == "--backend" and (i+1 >= len(argv) or argv[i+1] != "codex"):
+            raise RecoveryRefused("Legacy reconnect review recovery supports Codex archives only; Claude Code is not started or replaced.")
+        if token.startswith("--backend=") and token != "--backend=codex":
+            raise RecoveryRefused("Legacy reconnect review recovery supports Codex archives only.")
     if argv[:2] != ["tasklist", "run"]:
         raise RecoveryRefused("Use 'tasklist run' for a native controller review.")
     if (_value(argv, "--start") != todo or _value(argv, "--stop") != todo

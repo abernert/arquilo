@@ -24,6 +24,7 @@ import uuid
 
 import safe_io
 import git_snapshot
+import git_publication_state as publication_state
 from process_tree import ProcessTree, InterruptiblePipe
 
 MAX_PACK_BYTES = 128 * 1024 * 1024
@@ -34,6 +35,10 @@ from host_launcher import launcher_environment, resolve_executable
 
 class ReviewedGitError(RuntimeError):
     pass
+
+
+class PublicationUnavailable(ReviewedGitError):
+    """A verified review cannot currently be persisted for optional publication."""
 
 
 class ReviewedGit:
@@ -103,10 +108,9 @@ class ReviewedGit:
         self.publication = self.directory / 'publication.git'
         self.git('init', '--bare', '--quiet', '--object-format=' + self.object_format,
                  '--template=' + str(self.empty), str(self.publication), private=True)
-        # No fetch from the task repository: upload-pack hooks in its mutable
-        # config must not execute in the controller. Pack exact objects instead.
-        pack = self.git('pack-objects', '--stdout', '--revs', data=(self.head + '\n').encode())
-        self.git('index-pack', '--stdin', data=pack, private=True)
+        # Preparing optional publication must not transfer potentially large Git
+        # history or contact the remote before ordinary production and review.
+        self._publication_ready = False
         self.remote = self.remote_branch = self.push_destination = None
         if self.push:
             self.remote = self.git('config', '--get', 'branch.' + self.branch[11:] + '.remote').strip().decode()
@@ -116,10 +120,10 @@ class ReviewedGit:
             self.git('check-ref-format', self.remote_branch)
             self.push_destination = self._push_destination()
             self._validate_destination(self.push_destination)
-            if self._remote_head() != self.head:
-                raise ReviewedGitError('--git-push requires HEAD at the actual push destination; push unrelated commits manually first.')
         self._requests: dict[str, bytes] = {}
         self._accepted: set[bytes] = set()
+        self._candidate_publications: dict[bytes, str] = {}
+        self.last_publication = None
 
     def _capture_host_transport_configuration(self):
         # Snapshot only resolved host scopes before any task runs. Do not copy
@@ -454,7 +458,8 @@ class ReviewedGit:
         self._check_push_destination()
 
     def begin_review(self, *, run: str, task: str, attempt: str) -> dict:
-        self._check_source()
+        # The review itself does not depend on the current index or transport.
+        # Publication later compares them with the pinned pre-task baseline.
         request = git_snapshot.new_request(self.state, self.workspace, self.paths,
             run=run, task=task, attempt=attempt, parent=self.head, modes=self.modes)
         self._requests[request['directory']] = git_snapshot.canonical_bytes(request)
@@ -468,7 +473,31 @@ class ReviewedGit:
         contents = git_snapshot.verify(request, token, review_index)
         self._check_live_selection(contents)
         candidate = git_snapshot.ReviewedCandidate(json.loads(json.dumps(request)), json.loads(json.dumps(token)))
-        self._accepted.add(git_snapshot.canonical_bytes({'request': request, 'token': token}))
+        key = git_snapshot.canonical_bytes({'request': request, 'token': token})
+        publication_id = 'publication-' + hashlib.sha256(key).hexdigest()[:32]
+        record = {'schema_version': 'arquilo.git_publication.v1', 'id': publication_id,
+            'workspace': str(self.workspace), 'session': self.directory.name,
+            'request': candidate.request, 'token': candidate.token,
+            'branch': self.branch, 'parent': self.head, 'object_format': self.object_format,
+            'paths': list(self.paths), 'modes': dict(self.modes),
+            'baseline': {name: publication_state.fingerprint(value) for name, value in self.baseline.items()},
+            'before_index_sha256': None if self.index_bytes is None else git_snapshot.digest(self.index_bytes),
+            'before_listing_sha256': git_snapshot.digest(self.initial_index), 'after_index_sha256': None,
+            'push': self.push, 'remote': self.remote, 'remote_branch': self.remote_branch,
+            'destination_sha256': git_snapshot.digest(self.push_destination) if self.push else None,
+            'status': 'accepted', 'commit': None, 'tree': None, 'selected_paths': [],
+            'message': None, 'error_type': None}
+        try:
+            if self.index_bytes is not None:
+                safe_io.write_bytes(self.directory / (publication_id + '.index.before'), self.index_bytes, exclusive=True)
+            publication_state.save(record, self.state, self.workspace, create=True)
+        except FileExistsError as exc:
+            raise ReviewedGitError('Publication acceptance already exists; use its recorded identity.') from exc
+        except OSError as exc:
+            raise PublicationUnavailable('Cannot persist accepted Git publication; ordinary review remains separate.') from exc
+        self._accepted.add(key)
+        self._candidate_publications[key] = publication_id
+        self.last_publication = publication_state.summary(record)
         return candidate
 
     @contextmanager
@@ -506,26 +535,76 @@ class ReviewedGit:
             if live != frozen:
                 raise ReviewedGitError('Selected file changed after review; a fresh review is required: ' + name)
 
-    def commit(self, message: str, *, candidate: git_snapshot.ReviewedCandidate | None = None):
-        self._check_source()
-        if not isinstance(candidate, git_snapshot.ReviewedCandidate):
-            raise ReviewedGitError('Git commit requires a controller-accepted pre-review snapshot.')
-        key = git_snapshot.canonical_bytes({'request': candidate.request, 'token': candidate.token})
-        if key not in self._accepted or candidate.request['binding']['parent'] != self.head:
-            raise ReviewedGitError('Git review candidate is stale, foreign or already consumed.')
-        contents = candidate.contents()
-        self._check_live_selection(contents)
-        selected = [name for name in self.paths if contents[name] != self.baseline[name]]
-        self._accepted.remove(key)
-        if not selected:
+    def _save_publication(self, record):
+        publication_state.save(record, self.state, self.workspace)
+        self.last_publication = publication_state.summary(record)
+
+    def _publication_failed(self, record, exc):
+        # Never store transport stderr, credentials or arbitrary exception text.
+        record['error_type'] = type(exc).__name__
+        self.last_publication = publication_state.summary(record)
+        try:
+            publication_state.save(record, self.state, self.workspace)
+        except (OSError, ValueError):
+            pass  # Keep the original failure and the last durable phase.
+
+    def _check_publication_stop(self):
+        if os.path.lexists(self.workspace / 'process_stop'):
+            raise ReviewedGitError('process_stop blocks a new Git publication operation.')
+
+    def _ensure_history(self, parent):
+        if self._publication_ready:
+            return
+        try:
+            present = self.git('cat-file', '-t', parent, private=True).strip() == b'commit'
+        except ReviewedGitError:
+            present = False
+        if not present:
+            # No fetch/upload-pack from mutable workspace configuration.
+            pack = self.git('pack-objects', '--stdout', '--revs', data=(parent + '\n').encode())
+            self.git('index-pack', '--stdin', data=pack, private=True)
+        self._publication_ready = True
+
+    def _saved_index(self, record, kind):
+        expected = record[kind + '_index_sha256']
+        value = git_snapshot.read_regular(self.directory / (record['id'] + '.index.' + kind),
+                                         limit=64 * 1024 * 1024)
+        if expected is None:
+            if value is not None:
+                raise ReviewedGitError('Unexpected private publication index snapshot.')
             return None
+        if value is None or git_snapshot.digest(value[0]) != expected:
+            raise ReviewedGitError('Private publication index snapshot missing or changed.')
+        return value[0]
+
+    def _save_index(self, record, kind, data):
+        destination = self.directory / (record['id'] + '.index.' + kind)
+        try:
+            safe_io.write_bytes(destination, data, exclusive=True)
+        except FileExistsError:
+            existing = git_snapshot.read_regular(destination, limit=64 * 1024 * 1024)
+            if existing is None or existing[0] != data:
+                raise ReviewedGitError('Private publication index contradicts prepared recovery.')
+        record[kind + '_index_sha256'] = git_snapshot.digest(data)
+
+    def _prepare_publication(self, record, contents):
+        selected = [name for name in self.paths
+                    if publication_state.fingerprint(contents[name]) != record['baseline'][name]]
+        if record['selected_paths'] and selected != record['selected_paths']:
+            raise ReviewedGitError('Prepared selection contradicts the accepted snapshot.')
+        record['selected_paths'] = selected
+        if not selected:
+            record.update(status='noop', error_type=None)
+            self._save_publication(record)
+            return False
+        self._ensure_history(record['parent'])
         private_index = self.directory / ('candidate-index-' + uuid.uuid4().hex)
-        self.git('read-tree', self.head, index=private_index, private=True)
+        self.git('read-tree', record['parent'], index=private_index, private=True)
         changes = []
         for name in selected:
             value = contents[name]
             if value is None:
-                changes.append(b'0 ' + b'0' * len(self.head) + b'\t' + os.fsencode(name) + b'\0')
+                changes.append(b'0 ' + b'0' * len(record['parent']) + b'\t' + os.fsencode(name) + b'\0')
             else:
                 content, mode = value
                 oid = self.git('hash-object', '-w', '--stdin', data=content, private=True).strip()
@@ -533,69 +612,286 @@ class ReviewedGit:
         changes = b''.join(changes)
         self.git('update-index', '-z', '--index-info', data=changes, index=private_index, private=True)
         tree = self._oid(self.git('write-tree', index=private_index, private=True))
-        old_head = self.head
-        new = self._oid(self.git('commit-tree', tree, '-p', old_head,
-                                data=(message + '\n').encode('utf-8'), private=True))
-        parents = self.git('rev-list', '--parents', '-n', '1', new, private=True).split()
-        if parents != [new.encode(), old_head.encode()]:
-            raise ReviewedGitError('Publication commit is not the exact single-parent candidate.')
-        # Bring only the candidate's new objects back; this does not update refs.
+        if record['tree'] is not None and tree != record['tree']:
+            raise ReviewedGitError('Prepared Git tree is not the reviewed selected content.')
+        if record['commit'] is None:
+            self._check_publication_stop()
+            record['commit'] = self._oid(self.git('commit-tree', tree, '-p', record['parent'],
+                data=(record['message'] + '\n').encode('utf-8'), private=True))
+            record['tree'] = tree
+            self._save_publication(record)  # Pin the exact SHA before any local reference changes.
+        parents = self.git('rev-list', '--parents', '-n', '1', record['commit'], private=True).split()
+        actual_tree = self._oid(self.git('rev-parse', record['commit'] + '^{tree}', private=True))
+        if parents != [record['commit'].encode(), record['parent'].encode()] or actual_tree != tree:
+            raise ReviewedGitError('Publication commit is not the exact single-parent reviewed candidate.')
+        # Copy objects only, never refs; publication is still recoverably pending.
         pack = self.git('pack-objects', '--stdout', '--revs',
-                        data=(new + '\n^' + old_head + '\n').encode(), private=True)
+            data=(record['commit'] + '\n^' + record['parent'] + '\n').encode(), private=True)
         self.git('index-pack', '--stdin', data=pack)
-        new_real_index = self.directory / ('real-index-' + uuid.uuid4().hex)
-        with self._source_locks():
-            self._check_source()
-            if self.index_bytes is not None:
-                safe_io.write_bytes(new_real_index, self.index_bytes, exclusive=True)
+        if record['after_index_sha256'] is None:
+            before = self._saved_index(record, 'before')
+            new_real_index = self.directory / ('real-index-' + uuid.uuid4().hex)
+            if before is not None:
+                safe_io.write_bytes(new_real_index, before, exclusive=True)
             else:
-                self.git('read-tree', old_head, index=new_real_index)
-            # A copied split index points at sharedindex files relative to its
-            # location. Refuse this uncommon layout instead of losing entries.
+                self.git('read-tree', record['parent'], index=new_real_index)
             if self.git('rev-parse', '--shared-index-path').strip():
                 raise ReviewedGitError('Split indexes are not supported for automatic Git publication.')
             self.git('update-index', '-z', '--index-info', data=changes, index=new_real_index)
-            index_bytes = safe_io.read_bytes(new_real_index)
-            def publish_index():
-                # update HEAD prepares a transaction locking both HEAD and its
-                # actual branch. Check the symbolic identity AFTER preparation,
-                # not merely the equal commit value of two different branches.
+            after = git_snapshot.read_regular(new_real_index, limit=64 * 1024 * 1024)
+            if after is None:
+                raise ReviewedGitError('Prepared publication index disappeared.')
+            self._save_index(record, 'after', after[0])
+            record['status'] = 'prepared'
+            self._save_publication(record)
+        else:
+            self._saved_index(record, 'after')
+        return True
+
+    def _apply_local_publication(self, record, contents):
+        parent, new = record['parent'], record['commit']
+        after = self._saved_index(record, 'after')
+        branch = self.git('symbolic-ref', '-q', 'HEAD').strip().decode()
+        head = self._oid(self.git('rev-parse', 'HEAD'))
+        current = self._index_bytes()
+        current_hash = None if current is None else git_snapshot.digest(current)
+        if branch != record['branch']:
+            raise ReviewedGitError('Publication source branch changed; no automatic recovery.')
+        if head == new and current_hash == record['after_index_sha256']:
+            pass  # A prior call completed the local transaction; do not create another commit.
+        elif head == parent and current_hash == record['before_index_sha256']:
+            listing = self.git('ls-files', '--stage', '-z')
+            if git_snapshot.digest(listing) != record['before_listing_sha256']:
+                raise ReviewedGitError('Git index changed outside ARQUILO; no automatic recovery.')
+            self.head, self.index_bytes, self.initial_index = parent, current, listing
+            self._check_live_selection(contents)
+            self._check_publication_stop()
+            with self._source_locks():
                 self._check_source()
-                safe_io.atomic_write(self.index_path, index_bytes)
-            try:
-                self.git('update-ref', '-m', 'ARQUILO reviewed output', '--stdin',
-                    data=f'start\nupdate HEAD {new} {old_head}\nprepare\n'.encode(),
-                    prepared=publish_index)
-            except BaseException as exc:
-                # Restore only our exact index bytes, under our still-held
-                # index lock, if Git proves its reference update did not occur.
-                # An ambiguous result is retained for explicit owner recovery.
+                def publish_index():
+                    self._check_publication_stop()
+                    self._check_source()
+                    safe_io.atomic_write(self.index_path, after)
                 try:
-                    unchanged_ref = (self._oid(self.git('rev-parse', 'HEAD')) == old_head
-                        and self.git('symbolic-ref', '-q', 'HEAD').strip().decode() == self.branch)
-                    if unchanged_ref and self._index_bytes() == index_bytes and self.index_bytes is not None:
-                        safe_io.atomic_write(self.index_path, self.index_bytes)
-                except Exception:
-                    pass  # Preserve the original error and complete private index snapshots.
-                raise ReviewedGitError(f'Git transaction failed; candidate {new} and index recovery files retained. Inspect local HEAD/index before continuing: {exc}') from exc
-            self.head = new
+                    self._check_publication_stop()
+                    self.git('update-ref', '-m', 'ARQUILO reviewed output', '--stdin',
+                        data=f'start\nupdate HEAD {new} {parent}\nprepare\n'.encode(),
+                        prepared=publish_index)
+                except BaseException as exc:
+                    try:
+                        unchanged_ref = (self._oid(self.git('rev-parse', 'HEAD')) == parent
+                            and self.git('symbolic-ref', '-q', 'HEAD').strip().decode() == self.branch)
+                        if unchanged_ref and self._index_bytes() == after and current is not None:
+                            safe_io.atomic_write(self.index_path, current)
+                    except Exception:
+                        pass
+                    raise ReviewedGitError('Git transaction result is uncertain; publication ' + record['id']
+                        + ' retains the exact candidate and index snapshots for explicit retry.') from exc
+        else:
+            raise ReviewedGitError('Git HEAD/index differ from both verified publication states; inspect before retrying.')
+        self.head = new
+        self.index_bytes = after
+        self.initial_index = self.git('ls-files', '--stage', '-z')
+        for name in record['selected_paths']:
+            self.baseline[name] = contents[name]
+            if contents[name] is not None:
+                self.modes[name] = contents[name][1]
+        record.update(status='push_pending' if self.push else 'published', error_type=None)
+        self._save_publication(record)
+
+    def _verify_prepared_publication(self, record, contents):
+        """Reconcile an existing candidate without writing objects or an index."""
+        self._saved_index(record, 'after')
+        parents = self.git('rev-list', '--parents', '-n', '1', record['commit'], private=True).split()
+        tree = self._oid(self.git('rev-parse', record['commit'] + '^{tree}', private=True))
+        if parents != [record['commit'].encode(), record['parent'].encode()] or tree != record['tree']:
+            raise ReviewedGitError('Prepared publication commit identity changed.')
+        def entries(revision):
+            result = {}
+            for row in self.git('ls-tree', '-rz', revision, private=True).split(b'\0'):
+                if row:
+                    header, name = row.split(b'\t', 1)
+                    result[os.fsdecode(name)] = tuple(header.split(b' '))
+            return result
+        expected = entries(record['parent'])
+        for name in record['selected_paths']:
+            value = contents[name]
+            if value is None:
+                expected.pop(name, None)
+            else:
+                data, mode = value
+                oid = self.git('hash-object', '--stdin', data=data, private=True).strip()
+                expected[name] = (f'{mode:o}'.encode(), b'blob', oid)
+        selected = [name for name in self.paths
+                    if publication_state.fingerprint(contents[name]) != record['baseline'][name]]
+        if selected != record['selected_paths'] or entries(record['commit']) != expected:
+            raise ReviewedGitError('Prepared Git commit differs from the accepted selected outputs.')
+
+    def _finish_push(self, record):
+        self._check_push_destination()
+        remote_head = self._remote_head()
+        if remote_head == record['commit']:
+            record.update(status='published', error_type=None)
+            self._save_publication(record)
+            return
+        if remote_head != record['parent']:
+            raise ReviewedGitError('Remote branch changed since the review candidate was selected.')
+        self._check_source()
+        self._check_publication_stop()
+        self.git('push', '--porcelain', '--no-follow-tags', '--no-verify',
+            '--recurse-submodules=no', '--force-with-lease=' + self.remote_branch + ':' + record['parent'],
+            '--', os.fsdecode(self.push_destination), record['commit'] + ':' + self.remote_branch, private=True)
+        if self._remote_head() != record['commit']:
+            raise ReviewedGitError('Push completed without confirming the exact remote commit; retry reconciliation.')
+        record.update(status='published', error_type=None)
+        self._save_publication(record)
+
+    def _publish(self, record, candidate):
+        contents = candidate.contents()
+        if record['status'] in {'published', 'noop'}:
+            self.last_publication = publication_state.summary(record)
+            return self.last_publication
+        if record['status'] in {'accepted', 'preparing'}:
+            self._check_source()
+            self._check_live_selection(contents)
+            self._check_publication_stop()
+            record.update(status='preparing', error_type=None)
+            self._save_publication(record)
+            if self.push:
+                remote_head = self._remote_head()
+                if remote_head != record['parent'] and (record['commit'] is None or remote_head != record['commit']):
+                    raise ReviewedGitError('--git-push requires the reviewed parent at the actual push destination; no unrelated commits are published.')
+        if record['status'] in {'prepared', 'push_pending'}:
+            self._verify_prepared_publication(record, contents)
+        elif not self._prepare_publication(record, contents):
+            return None
+        if record['status'] != 'push_pending':
+            self._apply_local_publication(record, contents)
+        else:
+            # Pin the expected local post-commit state. Read-only remote
+            # reconciliation may succeed even if a later owner edit occurred;
+            # a new push still requires _check_source() and a clear STOP gate.
+            self.head = record['commit']
+            self.index_bytes = self._saved_index(record, 'after')
             self.initial_index = self.git('ls-files', '--stage', '-z')
-            self.index_bytes = index_bytes
-            for name in selected:
-                self.baseline[name] = contents[name]
-                if contents[name] is not None:
-                    self.modes[name] = contents[name][1]
         if self.push:
             try:
-                self._check_push_destination()
-                # Use an explicit expected OID, never a writable local tracking
-                # ref. Even a fast-forward remote advance must not be overwritten.
-                if self._remote_head() != old_head:
-                    raise ReviewedGitError('Remote branch changed since the review candidate was selected.')
-                self.git('push', '--porcelain', '--no-follow-tags', '--no-verify',
-                    '--recurse-submodules=no', '--force-with-lease=' + self.remote_branch + ':' + old_head,
-                    '--', os.fsdecode(self.push_destination), new + ':' + self.remote_branch, private=True)
+                self._finish_push(record)
             except ReviewedGitError as exc:
-                raise ReviewedGitError(f'Local reviewed commit {new} retained; push was refused or its result is uncertain. Do not retry blindly: {exc}') from exc
-        return {'commit': new, 'paths': selected, 'pushed': self.push,
-                'review_snapshot': candidate.token['sha256'], 'parent': old_head}
+                raise ReviewedGitError('Local reviewed commit ' + record['commit']
+                    + ' retained; push was refused or its result is uncertain. Use git retry for publication '
+                    + record['id'] + ' to reconcile the exact commit.') from exc
+        return publication_state.summary(record)
+
+    def commit(self, message: str, *, candidate: git_snapshot.ReviewedCandidate | None = None):
+        if not isinstance(candidate, git_snapshot.ReviewedCandidate):
+            raise ReviewedGitError('Git commit requires a controller-accepted pre-review snapshot.')
+        key = git_snapshot.canonical_bytes({'request': candidate.request, 'token': candidate.token})
+        if key not in self._accepted or candidate.request['binding']['parent'] != self.head:
+            raise ReviewedGitError('Git review candidate is stale, foreign or already consumed.')
+        publication_id = self._candidate_publications[key]
+        with publication_state.lock(self.state, self.workspace):
+            record = publication_state.load(self.state, self.workspace, publication_id)
+            if record['request'] != candidate.request or record['token'] != candidate.token:
+                raise ReviewedGitError('Publication receipt contradicts controller-accepted review.')
+            self._accepted.remove(key)
+            record['message'] = message
+            try:
+                return self._publish(record, candidate)
+            except BaseException as exc:
+                self._publication_failed(record, exc)
+                raise
+
+
+def list_publications(state: Path, workspace: Path):
+    """List private receipts by ID; never trust a workspace summary as authority."""
+    return publication_state.list_records(Path(state), Path(workspace))
+
+
+def _restore_publisher(record, workspace: Path, state: Path, executable=None):
+    """Restore only publication state, without replaying production or review."""
+    publisher = ReviewedGit.__new__(ReviewedGit)
+    publisher.workspace = workspace.resolve()
+    publisher.state = safe_io.lexical_path(state)
+    publisher.paths = list(record['paths'])
+    publisher.push = record['push']
+    publisher.directory = publication_state.root(state, workspace) / record['session']
+    publisher.empty = safe_io.check_path(publisher.directory / 'empty', missing_ok=False)
+    try:
+        publisher.executable = str(resolve_executable(executable or 'git',
+            workspace=publisher.workspace, env=os.environ))
+    except OSError as exc:
+        raise ReviewedGitError('Git launcher unavailable during publication recovery.') from exc
+    publisher.environment = launcher_environment(
+        {key: value for key, value in os.environ.items() if not key.upper().startswith('GIT_')},
+        workspace=publisher.workspace, executable=publisher.executable)
+    publisher.environment.update(GIT_LITERAL_PATHSPECS='1', GIT_OPTIONAL_LOCKS='0',
+        GIT_NO_REPLACE_OBJECTS='1', GIT_TERMINAL_PROMPT='0')
+    publisher.git_directory = None
+    publisher.publication = None
+    publisher.identity = {}
+    publisher.transport_config = []
+    publisher._capture_host_transport_configuration()
+    publisher.branch = record['branch']
+    publisher.git('check-ref-format', publisher.branch)
+    if Path(os.fsdecode(publisher.git('rev-parse', '--show-toplevel').strip())).resolve() != publisher.workspace:
+        raise ReviewedGitError('Publication recovery requires the original repository root.')
+    publisher.git_directory = safe_io.check_path(Path(os.fsdecode(
+        publisher.git('rev-parse', '--absolute-git-dir').strip())), missing_ok=False)
+    publisher.index_path = publisher._git_path('index')
+    publisher.head_path = publisher._git_path('HEAD')
+    publisher.head = record['parent']
+    publisher.index_bytes = publisher._saved_index(record, 'before')
+    publisher.initial_index = publisher.git('ls-files', '--stage', '-z')
+    publisher.object_format = publisher.git('rev-parse', '--show-object-format').strip().decode()
+    if publisher.object_format != record['object_format']:
+        raise ReviewedGitError('Publication repository object format changed.')
+    publisher.modes = dict(record['modes'])
+    publisher.baseline = {name: None for name in publisher.paths}
+    for field in ('name', 'email'):
+        value = publisher.git('config', '--get', 'user.' + field, optional=True).strip()
+        if value:
+            publisher.identity[field] = value.decode('utf-8')
+    publisher.publication = safe_io.check_path(publisher.directory / 'publication.git', missing_ok=False)
+    publisher._publication_ready = False
+    publisher.remote = record['remote']
+    publisher.remote_branch = record['remote_branch']
+    publisher.push_destination = None
+    if publisher.push:
+        publisher.git('check-ref-format', publisher.remote_branch)
+        publisher.push_destination = publisher._push_destination()
+        if git_snapshot.digest(publisher.push_destination) != record['destination_sha256']:
+            raise ReviewedGitError('Git push destination changed outside ARQUILO; no recovery transport.')
+        publisher._validate_destination(publisher.push_destination)
+    publisher._requests = {}
+    publisher._accepted = set()
+    publisher._candidate_publications = {}
+    publisher.last_publication = publication_state.summary(record)
+    return publisher
+
+
+def recover_publication(workspace: Path, state: Path, publication_id: str, executable=None):
+    """Idempotent, model-free retry of one exact accepted publication receipt.
+
+    A failed/uncertain push is reconciled against the pinned remote ref: the
+    candidate means success, its parent permits retry of that same SHA, and any
+    other head blocks publication. No task, model, Git reset or merge is run.
+    """
+    workspace, state = Path(workspace).resolve(), safe_io.lexical_path(Path(state))
+    publication_state.identifier(publication_id)
+    with publication_state.lock(state, workspace):
+        record = publication_state.load(state, workspace, publication_id)
+        candidate = git_snapshot.ReviewedCandidate(record['request'], record['token'])
+        candidate.contents()  # Even a retry cannot substitute later or forged bytes.
+        if record['status'] in {'published', 'noop'}:
+            return publication_state.summary(record)
+        publisher = _restore_publisher(record, workspace, state, executable)
+        if record['message'] is None:
+            record['message'] = ('[run_todos:' + record['request']['binding']['run'] + '] '
+                                 + record['request']['binding']['task'] + ' reviewed output')
+        try:
+            result = publisher._publish(record, candidate)
+            return result if result is not None else publisher.last_publication
+        except BaseException as exc:
+            publisher._publication_failed(record, exc)
+            raise

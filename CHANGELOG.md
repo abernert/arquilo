@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased — experimental Claude Code backend
+
+- Integrate the full 0.9.1 controller safety basis and the state metadata/lock
+  repairs from PR #35, preserving their ancestry, existing state keys and budgets.
+- Apply shared external-host launcher rules to Claude/Node, Decide and private
+  workers. Propagate original workspace/peer STOP context and cancel on opaque
+  sentinels. Pin one resolved CLI for metadata and each model invocation.
+- Latch rejected Claude event streams so later terminal events cannot revive
+  completion. Preserve strict FAIL/blocker vetoes and explicit legacy no-issue
+  semantics; add backend-paired controller and native-process regressions.
+- Keep Codex as default; no new tag/release, named MCP support or Git-package
+  integration. Native host sandbox and model-quality qualification remain
+  separate from synthetic/offline checks.
+
+- Recognize the `thinking_tokens` system progress event from owner-observed
+  Claude Code 2.1.310 runs. Validate only the documented numeric token estimates,
+  frame identity and exact allowed fields; never count this as tool permission,
+  model output, review success or a terminal result. Unknown hooks still fail closed.
+
+- Accept the exact built-in `cc-plugin-telemetry@builtin` identity reported by
+  Claude Code 2.1.310 in addition to the previously qualified built-ins.
+  Continue to reject unexpected plugins, tool expansions, malformed metadata,
+  and additional MCP services; this does not change Claude telemetry settings.
+- Add native 2.1.310 qualification and synthetic protocol/subprocess regressions
+  for known versus unqualified built-in components.
+
+- Add run-wide `--backend {codex,claude-code}`; Codex remains the default.
+- Route production, fixes, review, parent review, Decide, doctor/preflight and
+  parallel worker payloads without a Codex executable/authentication dependency
+  when Claude is selected. No runtime/provider fallback; OpenCode not yet enabled.
+- Add strict native session/result validation, tool-role boundaries, owned process
+  cancellation and raw evidence. Preserve shared status, review and budget gates.
+- Include backend modules in the runtime ZIP and document native sandbox limits.
+- Keep the released version/tag unchanged; this branch needs explicit host/model
+  qualification before client use.
+
+- Earlier integration introduced the 0.9.0 prompt/resource contracts; this update
+  retains them on the newer safety basis without modifying `main` or release tags.
+- Preserve prompt catalogs/snapshots through Claude execution, correction,
+  reviews, worker payloads and doctor/Decide; preserve Codex defaults.
+- Bind explicit skill instructions with backend-specific roots, never looking
+  up Codex home for Claude. Accept explicit empty MCP selections; reject named
+  MCP selections before execution rather than silently ignoring them.
+- Add 0.9.0 integration regressions and an isolated owner smoke-test recipe.
+
 ## 0.9.1 — 2026-10-23 (public preview; foundational control repairs)
 
 - Derive review provenance from the actual input format. A failed review or

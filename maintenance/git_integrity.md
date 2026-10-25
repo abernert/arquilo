@@ -1,3 +1,5 @@
+> **Historical PR #36 acceptance record.** The current combined checkout changes capture to selected outputs and separates task acceptance from optional delivery. Do not use the full-context/failed-run statements below as current operating instructions. See `maintenance/integration_review_091.md` for the new integration contract.
+
 # Git integrity repair acceptance
 
 Base: `557f4f1b9b1959002a0677315f809426de1aab9b`, the tested state-I/O
@@ -22,7 +24,7 @@ boundaries. Broader controller process/resource hardening remains separate.
 
 ## Compatibility
 
-See `docs/git-publication.md`. The low-level `ReviewedGit.commit` Python API now
+Historical PR #36 behavior is recorded below; the current combined behavior is in `docs/guides/operator-guide.en.md#git` and `docs/guides/technical-guide.en.md#git-reference`. The low-level `ReviewedGit.commit` Python API now
 requires an explicit accepted `ReviewedCandidate`; it never creates a review
 candidate after the supposed review. Controller CLI options do not change.
 Update controller and Python workers together. Serial subworkspace operation

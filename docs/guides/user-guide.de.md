@@ -1,9 +1,9 @@
 # ARQUILO Benutzerhandbuch
 
-**Deutsch · Laufzeitversion 0.9.1 · Integrationsdokumentation 24.10.2026**
+**Deutsch · Laufzeitversion 0.9.1 · Integrationsstand 25.10.2026**
 [English](user-guide.en.md) · [Alle Handbücher](../README.md) · [Fortgeschrittener Betrieb](operator-guide.en.md)
 
-> **Unveröffentlichter Integrationsstand, nicht das veröffentlichte v0.9.1-ZIP.** Die Laufzeitversionsnummer bleibt 0.9.1. Diese Ausgabe kombiniert die Zustandsreparaturen aus PR #35, die Git-Integritätsreparaturen aus PR #36 und die Handbücher aus PR #33. Siehe [Umfang, Quellcommits und verbleibende Grenzen](../integration-status.md). Daraus folgt kein Merge nach `main`, neuer Tag oder Release.
+> **Unveröffentlichter Integrationsstand, nicht das veröffentlichte v0.9.1-ZIP.** Die Versionsnummer bleibt 0.9.1. Diese Ausgabe verbindet die konsolidierten Handbücher und Git-Arbeit aus PR #37 mit der aktuellen main-Laufzeit einschließlich Claude Code und Zustandsreparaturen und trennt fachliche Abnahme von optionaler Veröffentlichung. Siehe [Quellcommits und verbleibende Grenzen](../integration-status.md). Ein vorhandenes Release-ZIP erhält diese Änderungen nicht automatisch.
 
 Dieses Handbuch richtet sich an Menschen, die ARQUILO verwenden und nicht seinen Python-Code verändern möchten. Du solltest ein Terminal öffnen, Dateien kopieren und Ergebnisse prüfen können. Die interne Controllerarchitektur musst du dafür nicht kennen. ARQUILO ist eine öffentliche Vorschauversion: Beginne mit beaufsichtigten Beispielen in einem entbehrlichen Arbeitsverzeichnis, bevor du wichtige Projekte bearbeitest.
 
@@ -14,7 +14,7 @@ Dieses Handbuch richtet sich an Menschen, die ARQUILO verwenden und nicht seinen
 <a id="purpose"></a>
 ## 1. Was ARQUILO macht
 
-ARQUILO macht aus einer Markdown-Aufgabenliste einen Ablauf aus modellgestützter Bearbeitung, gesonderten Reviews und gegebenenfalls Korrekturen. Es ruft eine separat installierte Codex CLI auf. Codex stellt Modellverbindung und Werkzeuge bereit; ARQUILO steuert den Ablauf und entscheidet, ob die Bedingungen für einen dokumentierten Aufgabenabschluss erfüllt sind.
+ARQUILO macht aus einer Markdown-Aufgabenliste modellgestützte Bearbeitung, gesonderte Reviews und gegebenenfalls Korrekturen. Eine separat installierte Agenten-CLI stellt Modellverbindung und Werkzeuge bereit: standardmäßig Codex, alternativ Claude Code mit `--backend claude-code`. ARQUILO steuert den Ablauf und entscheidet über die Abschlussbedingungen. Das gewählte Backend gilt für Produktion, Korrektur, Review, Parent-Review und Decide im gesamten Lauf; ein automatischer Backend-Fallback findet nicht statt.
 
 Gute Einstiegsaufgaben sind eine quellengebundene Zusammenfassung, eine kleine Codeänderung oder eine klar abgegrenzte Analyse. Jede Aufgabe braucht ein sichtbares Ergebnis und prüfbare Abnahmekriterien. „Verbessere dieses Projekt“ ist für den ersten Lauf zu unbestimmt.
 
@@ -44,7 +44,7 @@ Verwende ein normales Benutzerkonto. Der Kern benötigt Python ab 3.11 und keine
 
 Beziehe ARQUILO aus dem [Repository](https://github.com/abernert/arquilo) oder den [Releases](https://github.com/abernert/arquilo/releases). Entpacke bei einer ZIP-Installation das vollständige versionierte Runtime-ZIP, nicht nur eine einzelne Python-Datei. Bei einem Checkout klonst du das Repository und wechselst in dessen Hauptverzeichnis. Die folgenden Befehle setzen voraus, dass dein Terminal im Verzeichnis mit `arquilo.py` steht.
 
-Installiere und authentifiziere Codex separat nach der [offiziellen CLI-Anleitung](https://developers.openai.com/codex/cli). Unternehmensanbieter, Proxys und Zertifikate gehören in deine freigegebene Codex-/Hostkonfiguration und nicht als kopierte Geheimnisse in ARQUILO-Dateien. Für natives Windows beachte auch die [offiziellen Windows-Hinweise](https://developers.openai.com/codex/windows).
+Für das standardmäßige Codex-Backend installiere und authentifiziere Codex separat nach der [offiziellen CLI-Anleitung](https://developers.openai.com/codex/cli). Unternehmensanbieter, Proxys und Zertifikate gehören in deine freigegebene Codex-/Hostkonfiguration und nicht als kopierte Geheimnisse in ARQUILO-Dateien. Für natives Windows beachte auch die [offiziellen Windows-Hinweise](https://developers.openai.com/codex/windows).
 
 **macOS, Linux oder eine Ubuntu-Shell in WSL:**
 
@@ -70,11 +70,34 @@ Für die normale Codex-Anmeldung dient bei Bedarf `codex login`. Dein Unternehme
 
 ### Werkzeuge außerhalb des Arbeitsbereichs installieren
 
-ARQUILO startet für seine Arbeit vertrauenswürdige Programme des Rechners. Installiere **Codex und Git außerhalb der Verzeichnisse, die eine Aufgabe verändern kann**, einschließlich ihrer Unterarbeitsbereiche. Andernfalls könnte ein Agent im Projekt ein Programm austauschen und den Controller dazu bringen, diese Ersatzdatei auszuführen. Der Installationsort ist deshalb eine Voraussetzung, kein zusätzlicher Aufrufparameter.
+ARQUILO startet für seine Arbeit vertrauenswürdige Programme des Rechners. Installiere **Codex oder Claude Code sowie Git außerhalb der Verzeichnisse, die eine Aufgabe verändern kann**, einschließlich ihrer Unterarbeitsbereiche. Andernfalls könnte ein Agent im Projekt ein Programm austauschen und den Controller dazu bringen, diese Ersatzdatei auszuführen. Der Installationsort ist deshalb eine Voraussetzung, kein zusätzlicher Aufrufparameter.
 
 Trenne drei Orte: die ARQUILO-Installation, den Projekt-Workspace mit Eingaben und Ergebnissen sowie den privaten Controller-Zustand. Eine benutzerspezifische Codex-Installation in `~/.local/bin` kann beispielsweise ein Projekt unter `~/projects/bericht` bearbeiten; innerhalb dieses Projekts darf sie nicht liegen. Verwende in `PATH` einen absoluten vertrauenswürdigen Verzeichnispfad. ARQUILO prüft die ausführbare Datei einschließlich möglicher Symlink-Ziele vor dem Start; der normale Aufruf über den Programmnamen bleibt gleich. Wähle mit `--workdir` ein Projektverzeichnis, nicht das gesamte Home-Verzeichnis.
 
-Git ist nur für Installation/Updates über Git oder ausdrücklich aktivierte Git-Automatik erforderlich. Node wird nur benötigt, wenn die gewählte Codex-Installation den unterstützten npm-Launcher verwendet. Auch diese Programme gehören außerhalb der beschreibbaren Aufgabenverzeichnisse.
+Git ist nur für Installation/Updates über Git oder ausdrücklich aktivierte Git-Automatik erforderlich. Node wird nur benötigt, wenn die gewählte Codex- oder Claude-Installation einen unterstützten npm-Launcher verwendet. Auch diese Programme gehören außerhalb der beschreibbaren Aufgabenverzeichnisse.
+
+### Claude Code statt Codex auswählen
+
+Installiere und authentifiziere die offizielle Claude-Code-CLI separat. Ein reiner Claude-Lauf benötigt weder Codex-Installation noch Codex-Anmeldung, -Konfigurationssuche oder -Fallback. Verwende die für deine Umgebung freigegebene native Claude-Provider-/Modellkonfiguration. Die allgemeinen Beispiele unten verwenden standardmäßig Codex; ergänze beim Doctor und Aufgabenlauf `--backend claude-code`, wenn du Claude verwenden möchtest.
+
+Unter Windows benötigt Produktion **WSL2/Linux mit Linux-Python und Linux-Claude**. Unterstützung für rein lesende Metadatenaufrufe unter nativem Windows bedeutet keine Produktionsunterstützung. Unter Linux werden außerdem `bubblewrap`, `socat` und die Erlaubnis zur Nutzung der nativen Sandbox benötigt. Eine fehlende Sandbox ist ein Installationsfehler und wird nicht umgangen.
+
+Ersetze die Pfade vor diesem reinen Metadatencheck:
+
+<!-- example: claude-doctor -->
+```sh
+claude --version
+python3 -B arquilo.py doctor --backend claude-code --workdir /path/to/project
+```
+
+Der folgende Befehl startet echte Produktion und den verpflichtenden Review und kann Modellnutzung verbrauchen:
+
+<!-- example: claude-run -->
+```sh
+python3 -B arquilo.py tasklist run --backend claude-code --workdir /path/to/project --todo-file /path/to/project/tasks.md --mcp none --review-mcp none --prompt-config en --max-calls 12 --process-stop-policy controller-only
+```
+
+Der Claude-Adapter akzeptiert `--mcp none` und `--review-mcp none`; **benannte MCP-Server sind nicht unterstützt**, und auch bei weggelassener Option werden keine nativen MCPs aktiviert. Explizite ARQUILO-Skills binden Text und Hashes; native Claude-Skills, Plugins und Subagenten werden nicht aktiviert. Der Reviewer darf Read/Glob/Grep verwenden, hat aber **keine Bash- oder Schreibwerkzeuge**. Produktion/Korrektur muss deshalb die Nachweise ausgeführter Tests erzeugen. `--agent`/`CFG agent` und Codex-Provider-/Profil-Overrides werden für Claude nicht unterstützt. Die reine Review-Wiederaufnahme nach Reconnect bleibt Codex-spezifisch. Genaue Berechtigungen und Protokollkompatibilität stehen in der [Claude-Qualifikation](../claude-code-backend.md).
 
 <a id="preview"></a>
 ## 4. Die erste sichere Vorschau
@@ -212,11 +235,12 @@ Die Optionen des Aufgabenläufers stehen **nach `tasklist run`**. Die folgende T
 
 | Parameter | Verwendung | Standard / wichtige Regel |
 | --- | --- | --- |
+| `--backend codex/claude-code` | Agenten-CLI für alle Phasen des Laufs auswählen. | `codex`; kein automatischer Fallback oder gemischtes Review-Backend. |
 | `--todo-file DATEI` | Arbeitskopie der Aufgabenliste auswählen. | Für einen echten Aufgabenlauf erforderlich; beim Fortsetzen denselben Pfad verwenden. |
 | `--workdir VERZEICHNIS` | Projekt-Workspace festlegen. | Ohne Angabe: Verzeichnis der Aufgabenliste. |
 | `--todo-template DATEI` | Eine Vorlage kopieren, wenn die Arbeitsliste noch fehlt. | Aus; bestehende Listen werden nie ersetzt. Ausdrückliches Kopieren erfolgt auch im Dry-run. |
 | `--model MODELL_ID` | Modell oder Deployment für den Lauf wählen. | Ohne Angabe geerbt; die Kennung muss beim eigenen Provider verfügbar sein. |
-| `--reasoning-effort STUFE` | Gewünschten Reasoning-Aufwand anfordern. | Ohne Angabe geerbt. Zulässige Zeichenketten: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `--reasoning-effort STUFE` | Reasoning-Aufwand anfordern. | Ohne Angabe geerbt. Codex: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; Claude: `low`, `medium`, `high`, `xhigh`, `max`. Das Modell muss den Wert unterstützen. |
 | `--agent PROFIL` | Ein vorhandenes natives Codex-Profil auswählen. | Kein laufweiter Override; `CFG agent` einer Aufgabe kann ihn überschreiben. Kein Agententeam. |
 | `--prompt-config default/de/en/DATEI` | Eingebaute Texte oder einen vollständigen eigenen TOML-Katalog wählen. | `default`; eigene Aufgaben und Ergebnissprache bleiben davon getrennt. |
 | `--max-calls N` | Aufrufversuche je oberstem Aufgabenbaum begrenzen. | **0 = unbegrenzt**; für einen begrenzten Versuch einen positiven Wert verwenden. |
@@ -228,7 +252,7 @@ Die Optionen des Aufgabenläufers stehen **nach `tasklist run`**. Die folgende T
 | `--logs-in-workdir` | Sichtbare Diagnoseprotokolle im Workspace ablegen. | Aus; der maßgebliche Steuerzustand bleibt immer extern. |
 | `--state-dir VERZEICHNIS` | Privaten externen Zustandsordner auswählen. | Plattformstandard; über Neustarts hinweg beibehalten. |
 | `--network-access` | Shell-Netzwerkzugriff in der Sandbox freigeben. | Aus; Providerkommunikation, MCP und Websuche sind getrennte Wege. |
-| `--mcp NAMEN/none` | Explizite MCP-Serverauswahl begrenzen. | Ohne Angabe geerbt; die Server müssen bereits konfiguriert sein. |
+| `--mcp NAMEN/none` | Explizite MCP-Serverauswahl begrenzen. | Codex erbt bei Weglassen; Namen müssen konfiguriert sein. Claude erlaubt nur none/Weglassen. |
 | `--review-mcp NAMEN/none` | Eine Teilmenge für den Reviewer festlegen. | Bei explizitem `--mcp` standardmäßig none; externe Leserechte brauchen serverseitige Begrenzung. |
 | `--skills NAMEN/none` / `--skill-dir VERZEICHNIS` | Verfahrensanweisungen binden und gegebenenfalls Suchwurzeln wählen. | Keine explizite Bindung; Suchwurzeln mehrfach angebbar. |
 | `--runtime-profile DATEI` | Freigegebene Domänenregeln und optionalen Host-Preflight laden. | Keines; vorher prüfen, weil Preflight Programme auf dem Rechner ausführen kann. |
@@ -236,7 +260,8 @@ Die Optionen des Aufgabenläufers stehen **nach `tasklist run`**. Die folgende T
 | `--process-stop-policy model/controller-only` | Festlegen, wer laut Anweisung Prozessstopps anfordert. | `model`; beide Modi beachten vorhandene Stopps. |
 | `--accept-plan-changes` | Bewusst geprüfte externe Planänderungen übernehmen. | Aus; kein allgemeines Mittel gegen einen ungeklärten Fehler. |
 | `--allow-todo-modifications` | Einer Planungsaufgabe Änderungen an der Hauptliste erlauben. | Aus; mit einer bewussten Grenze und anschließender menschlicher Prüfung verwenden. |
-| `--git`, `--git-path DATEI`, `--git-push` | Geprüfte Git-Commits und separat Push einschalten. | Aus. Vorher das Git-Kapitel lesen; aktuelle Snapshotgrenzen können den Review blockieren. |
+| `--git`, `--git-path DATEI`, `--git-push` | Geprüfte Git-Commits und gesondert einen Push aktivieren. | Aus; Veröffentlichungsfehler sind von der fachlichen Abnahme getrennt. |
+| `--git-required` | Erfolgreiche Git-Auslieferung vor Fortsetzung verlangen. | Aus; benötigt `--git`. Fachlich abgenommene Aufgaben bleiben bei offener Auslieferung DONE. |
 
 ### Modell und Reasoning-Aufwand auswählen
 
@@ -247,22 +272,22 @@ Ersetze `YOUR_MODEL_ID` sowie die beiden Pfade durch dein konfiguriertes Modell/
 python3 -B arquilo.py tasklist run --workdir /path/to/project --todo-file /path/to/project/tasks.md --model YOUR_MODEL_ID --reasoning-effort high --prompt-config en --max-calls 20
 ```
 
-Reasoning-Aufwand ist eine Anforderung an das Modell beziehungsweise den Provider, keine Qualitätsgarantie. Eine höhere Stufe kann Arbeitsaufwand, Antwortdauer und Verbrauch erhöhen; wähle nur Werte, die dein Modell unterstützt. Eine unzulässige Kombination ist ein Fehler und keine Erlaubnis, still ein anderes Modell zu verwenden. Die Optionen ändern nicht deine native Codex-Konfigurationsdatei.
+Reasoning-Aufwand ist eine Anforderung an das Modell beziehungsweise den Provider, keine Qualitätsgarantie. Eine höhere Stufe kann Arbeitsaufwand, Antwortdauer und Verbrauch erhöhen; wähle nur Werte, die dein Modell unterstützt. Eine unzulässige Kombination ist ein Fehler und keine Erlaubnis, still ein anderes Modell zu verwenden. Die Optionen ändern nicht die native Konfiguration der gewählten Laufzeit.
 
 ### Herkunft und Vorrang der Einstellungen
 
 | Einstellung | Wirksame Reihenfolge |
 | --- | --- |
-| Modell | `--model` → `ARQUILO_CODEX_MODEL` → `CFG model` der Aufgabe → native Codex-Konfiguration. Eine globale Modellwahl hat also Vorrang vor Aufgabenmodellen. |
-| Reasoning-Aufwand | `--reasoning-effort` → `ARQUILO_CODEX_REASONING_EFFORT` → native Konfiguration. Ein aufgabenbezogenes `CFG reasoning_effort` gibt es in diesem Stand nicht. |
-| Natives Profil | `CFG agent` der Aufgabe → laufweites `--agent` → native Standardkonfiguration. |
+| Modell | `--model` → Backend-Umgebung (`ARQUILO_CODEX_MODEL` oder `ARQUILO_CLAUDE_CODE_MODEL`) → Aufgaben-`CFG model` → native Konfiguration dieser Laufzeit. |
+| Reasoning-Aufwand | `--reasoning-effort` → `ARQUILO_CODEX_REASONING_EFFORT` oder `ARQUILO_CLAUDE_CODE_REASONING_EFFORT` → native Konfiguration. Kein Aufgaben-`CFG reasoning_effort`. Codex-Modell-/Effort-Einstellungen konfigurieren Claude nicht. |
+| Natives Profil (nur Codex) | `CFG agent` der Aufgabe → laufweites `--agent` → native Standardkonfiguration. |
 | Eingebaute Prompttexte | Explizites `--prompt-config` oder `default`; keine automatische Suche nach einem Projektkatalog. |
 | Domänenregeln | `--runtime-profile` → `ARQUILO_RUNTIME_PROFILE`; getrennt vom nativen Profil und Promptkatalog. |
 | Gemeinsame Aufgabenanweisungen | Text vor der ersten echten Aufgabe, gesteuert durch `--todo-preamble`; konkrete Anforderungen stehen in der Aufgabe. |
 
-ARQUILO benötigt weder eine eigene YAML-Konfiguration noch eine automatisch geladene Workspace-`.env`. Für wiederverwendbare Modellvorgaben kannst du die beiden genannten Umgebungsvariablen in der startenden Shell setzen oder ein freigegebenes natives Profil verwenden. Zugangstoken gehören nicht in Aufgaben oder Handbücher. Für MCP und Skills gelten Rechteobergrenzen statt einer einfachen Überschreibungsreihenfolge; lies dazu den Operator Guide.
+ARQUILO benötigt weder eine eigene YAML-Konfiguration noch eine automatisch geladene Workspace-`.env`. Für wiederverwendbare Vorgaben setze die Modell-/Effort-Variablen des gewählten Backends in der startenden Shell; native Profilparameter gelten nur für Codex. Zugangstoken gehören nicht in Aufgaben oder Handbücher. Für MCP und Skills gelten Rechteobergrenzen statt einer einfachen Überschreibungsreihenfolge; lies dazu den Operator Guide.
 
-**Beim Fortsetzen einen endlichen `--max-calls`-Wert erneut angeben.** Ohne Angabe kann eine frühere endliche Grenze auf unbegrenzt wechseln; verbrauchte Versuche bleiben erhalten. Ein Codex-Aufruf kann mehrere interne Modellanfragen enthalten. Der Zähler ist deshalb kein Zeit-, Token- oder Geldlimit. Lass die automatische Git-Veröffentlichung für die Einstiegsbeispiele ausgeschaltet.
+**Beim Fortsetzen einen endlichen `--max-calls`-Wert erneut angeben.** Ohne Angabe kann eine frühere endliche Grenze auf unbegrenzt wechseln; verbrauchte Versuche bleiben erhalten. Ein Agentenaufruf kann mehrere interne Modellanfragen enthalten. Der Zähler ist deshalb kein Zeit-, Token- oder Geldlimit. Lass die automatische Git-Veröffentlichung für die Einstiegsbeispiele ausgeschaltet.
 
 <a id="results"></a>
 ## 10. Ergebnisse, Status und Logs lesen
@@ -311,7 +336,7 @@ Starte mit **demselben Workspace, Aufgabenpfad und State-Verzeichnis**, dem beab
 
 Lösche keinen State, benenne keinen Plan für ein neues Budget um und setze `DONE` nicht manuell zur Fehlerbehebung. Historische DONE-Werte, die als erste Eigentümervorgabe eingelesen wurden, beweisen keinen früheren Review. Version 0.9.1 repariert historisch falsch akzeptierte Läufe nicht automatisch.
 
-Es gibt ein eng begrenztes [Verfahren zur reinen Review-Wiederaufnahme](operator-guide.en.md#recovery-reference): für einen abgeschlossenen Produktionslauf, der früher ausschließlich wegen einer fälschlich als fatal behandelten, tatsächlich überwundenen Reconnect-Meldung abgewiesen wurde. Es verlangt vollständige passende Nachweise und einen neuen Review. Das ist kein allgemeiner Force-resume-Schalter; verwende das Verfahren nur unter seinen dokumentierten Voraussetzungen.
+Es gibt ein eng begrenztes, Codex-spezifisches [Verfahren zur reinen Review-Wiederaufnahme](operator-guide.en.md#recovery-reference): für einen abgeschlossenen Produktionslauf, der früher ausschließlich wegen einer fälschlich als fatal behandelten, tatsächlich überwundenen Reconnect-Meldung abgewiesen wurde. Es verlangt vollständige passende Nachweise und einen neuen Review. Das ist kein allgemeiner Force-resume-Schalter; verwende das Verfahren nur unter seinen dokumentierten Voraussetzungen.
 
 <a id="plan-changes"></a>
 ## 13. Einen bestehenden Plan absichtlich ändern
@@ -336,7 +361,7 @@ Im strikten Standardmodus dürfen Anforderungen und akzeptierter Zustand nicht s
 
 Weitere Hilfe bieten [Troubleshooting](operator-guide.en.md#troubleshooting-reference) und die [bekannten Grenzen](operator-guide.en.md#limitations). Löse Installationsfehler nicht durch routinemäßigen Administrator-/Rootbetrieb oder das Abschalten des Plattformschutzes.
 
-Bei automatischer Git-Veröffentlichung werden nur ausdrücklich ausgewählte Ausgabedateien aus einem verifizierten Vorab-Prüfstand committed. Verwende serielle Aufgaben; wähle weder `tasks.md` noch nachträglich ergänzte Ergebnisberichte aus. Eine verlinkte virtuelle Umgebung oder eine zu große Kontextdatei kann weiterhin **nach der Produktion, vor dem Review** abgewiesen werden. Prüfe den Workspace vorher oder veröffentliche manuell mit Git. Siehe [Git-Veröffentlichung](operator-guide.en.md#git).
+Bei automatischer Git-Veröffentlichung werden ausgewählte Ergebnisse vor dem Review eingefroren. Der Reviewer bleibt im normalen Workspace und erhält verbindliche Snapshotverweise. Nicht ausgewählte Links oder große Kontextdateien werden nicht in eine vollständige Workspacekopie übernommen. Optionale Veröffentlichung kann blockiert bleiben, während eine erfolgreiche Aufgabe DONE wird; `git status` und `git retry` prüfen beziehungsweise setzen die Auslieferung ohne erneute Modellarbeit fort. Mit `--git-required` hält offene Auslieferung den Lauf an. Manipulierte geprüfte Ausgaben oder Bindungen bleiben Abnahmefehler. Siehe [Git-Veröffentlichung](operator-guide.en.md#git).
 
 <a id="updating"></a>
 ## 15. Aktualisieren, ohne Fortschritt zu verlieren

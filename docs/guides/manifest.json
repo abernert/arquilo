@@ -1,8 +1,8 @@
 {
   "schema_version": "arquilo.documentation.v1",
   "runtime_version": "0.9.1",
-  "source_commit": "48331c7210d63787c578bf925ade41da9eb806a8",
-  "reviewed_date": "2026-10-24",
+  "source_commit": "cded22f337a0033a3b0934709a82e1ce3db7cdb3",
+  "reviewed_date": "2026-10-25",
   "guides": [
     {
       "id": "user",
@@ -61,7 +61,9 @@
     "software-prepare",
     "software-check",
     "stop-posix",
-    "model-and-effort"
+    "model-and-effort",
+    "claude-doctor",
+    "claude-run"
   ],
   "synthetic_examples": [
     "examples/minimal_todo.md",
@@ -79,7 +81,9 @@
     "--max-calls",
     "--process-stop-policy",
     "--allow-todo-modifications",
-    "--accept-plan-changes"
+    "--accept-plan-changes",
+    "--backend",
+    "--git-required"
   ],
   "status": "unreleased-integration",
   "release_baseline": "0c4de8a76d40821578a9aa6f544dcf5fb45d26d5",
@@ -90,6 +94,8 @@
     "36": "48331c7210d63787c578bf925ade41da9eb806a8"
   },
   "reference_inventory": "docs/guides/cli-reference.json",
-  "documentation_edition": "handbook-consolidation-2026-10-24",
-  "navigation": "docs/README.md"
+  "documentation_edition": "backend-publication-integration-2026-10-25",
+  "navigation": "docs/README.md",
+  "integration_base_commit": "209d5a709da9d53bad987720b3f5dcc6cbc3a837",
+  "source_commit_scope": "Current main input; local integration changes are described in docs/integration-status.md. Not a final integration commit or release claim."
 }

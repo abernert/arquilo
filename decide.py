@@ -7,6 +7,7 @@ from prompt_config import PromptConfig, PromptConfigError, load_prompt_config
 
 from dataclasses import replace
 import os
+import agent_backend
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
 from uuid import uuid4
@@ -37,7 +38,7 @@ def configure(*, api_key=None, base_url=None, client=None) -> None:
 
 def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | None = None,
                  max_attempts: int | None = None, model_provider: str | None = None,
-                 config_profile: str | None = None) -> DecisionCall:
+                 config_profile: str | None = None, backend: str | None = None) -> DecisionCall:
     """Structured API; every failed/cancelled attempt has no usable option.
 
     Model/provider defaults, authentication and network provisioning remain
@@ -52,10 +53,14 @@ def run_decision(request: DecisionRequest, *, settings: DecisionExecSettings | N
     # model=None is intentional: let Codex/provider configuration select its
     # effective default. Only an explicit request/CLI/config override should
     # add --model to the Codex invocation.
+    if backend is not None:
+        agent_backend.validate_backend(backend)
+        if settings is not None and settings.backend != backend:
+            raise ValueError("Decision settings/backend mismatch")
     if settings is None:
         project = Path.cwd().resolve()
-        settings = DecisionExecSettings(project_root=project,
-            env=dict(os.environ), log_root=project / ".codex_runs")
+        settings = DecisionExecSettings(project_root=project, backend=backend or "codex",
+            env=dict(os.environ), log_root=project / agent_backend.logs_name(backend or "codex"))
     overrides = {key: value for key, value in (("max_attempts", max_attempts),
         ("model_provider", model_provider), ("config_profile", config_profile)) if value is not None}
     if overrides:

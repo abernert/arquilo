@@ -1,111 +1,64 @@
-# Reviewunterlage: gemeinsamer Stand aus PR #33, #35 und #36
+# Reviewunterlage: gemeinsamer Backend-, Git- und Handbuchstand
 
-**Schritt 1A · unveröffentlicht · 24. Oktober 2026 · Versionsnummer weiterhin 0.9.1.**
-Diese Unterlage erleichtert die Eigentümerprüfung; sie ersetzt sie nicht. Der
-Integrationsbranch verändert weder `main` noch die drei ursprünglichen PR-Branches.
-Es gibt keinen neuen Tag, Release oder Ersatz des veröffentlichten Runtime-ZIPs.
+**Unveröffentlichte Integration · 25. Oktober 2026 · Versionsnummer 0.9.1.**
+Diese Unterlage beschreibt den kombinierten Arbeitsstand. Sie ist keine
+rückwirkende Freigabe der Vorgänger oder der bereits veröffentlichten ZIP-Datei.
 
-## Festgelegte Eingänge
+## Eingänge und bereits erfolgte Integration
 
-| Bestandteil | Commit |
+| Eingang | Commit | Bedeutung |
+| --- | --- | --- |
+| Öffentliches 0.9.1 | `0c4de8a76d40821578a9aa6f544dcf5fb45d26d5` | Frühere Releasebasis. |
+| Main mit #35 und #30 | `cded22f337a0033a3b0934709a82e1ce3db7cdb3` | Zustands-I/O und Claude bereits in main übernommen. |
+| Konsolidierter #37-Stand | `209d5a709da9d53bad987720b3f5dcc6cbc3a837` | Enthält #36, #33 und die Handbuchkonsolidierung. |
+
+Die Anleitung „erst #35, danach #30 mergen“ gehört zur früheren Entwicklung
+und ist für diesen Stand überholt. Die neue Integration übernimmt die
+konsolidierten vier Handbücher, ergänzt die Claude-Architektur und verändert
+den Git-Ablauf. Sie ist deshalb weder eine reine Dokumentationsänderung noch
+bytegleich zum früheren #36-Produktcode.
+
+## Gewünschtes Verhalten und Prüffälle
+
+| Szenario | Erforderliches Ergebnis |
 | --- | --- |
-| Release-/Main-Basis | `0c4de8a76d40821578a9aa6f544dcf5fb45d26d5` |
-| #35: Zustands-I/O | `557f4f1b9b1959002a0677315f809426de1aab9b` |
-| #36: Git, einschließlich #35 | `48331c7210d63787c578bf925ade41da9eb806a8` |
-| #33: Handbücher | `0e57df59ea067596b0ab0db987347aa31e7870de` |
+| Codex oder Claude | Gemeinsame fachliche Abnahme-/Plan-/STOP-/Budgetregeln; Claude ohne Codex-Fallback. |
+| Claude mit benanntem MCP | Ablehnung vor Modellarbeit; keine stillschweigende Erweiterung. |
+| Gewöhnlicher Lauf ohne Git | Normaler Workspace und verpflichtender Review. |
+| Git mit nicht ausgewählter verlinkter Umgebung oder großer Kontextdatei | Kein vollständiger Kontextsnapshot; solche Nachbardateien blockieren den normalen Review nicht. |
+| Ausgewählte Ausgabe | Vor Review eingefrorene Bytes, verbindliche Reviewreferenz und spätere Bindungsprüfung. |
+| Snapshot vor Review nicht verfügbar | Gewöhnlicher Review möglich; Veröffentlichung ohne akzeptierten Kandidaten blockiert. |
+| Token-/Snapshot-/Ausgabemanipulation nach Review | Fachliche Abnahme scheitert; kein Ausweichen auf „nur Git-Fehler“. |
+| Optionale Commit-/Push-Störung | Fachlich DONE bleibt erhalten; Auslieferungsstatus getrennt, normale Fortsetzung möglich. |
+| `--git-required` und Auslieferung offen | Fachlich DONE bleibt; Lauf hält mit unvollständiger Auslieferung an. |
+| Unklare Pushantwort | Privaten Beleg und exakten geprüften Commit erhalten; tatsächliche Remote-/HEAD-/Indexlage vor Wiederholung abgleichen. |
+| `git status` / `git retry` | Keine Modell-/Reviewaufrufe und keine blinde Commitneuerzeugung. |
+| Parallele Git-Automatik | Weiterhin unzulässige Konfiguration. |
+| Paket/Handbücher | Beide Backendpfade, aktuelle CLI, DE/EN-Parität und konsolidierte Navigation. |
 
-Der Anwendungscode einschließlich Promptkatalogen, Versionsdateien und Workflows
-bleibt bytegleich zu #36. Dazu kommen die Dokumentation aus #33, redaktionelle
-Konfliktlösungen, zehn additive Integrationstests und diese Unterlage. Das
-Paketmanifest enthält die Vereinigung beider Paketlisten plus die neue
-`docs/integration-status.md`: 105 Runtime-Dateien. Tests und Maintenance-Dateien
-werden weiterhin nicht ausgeliefert.
+Die alten #37-Tests belegten noch einen Abbruch nach Produktion vor Review bei
+ungeeignetem Vollkontext. Dieses damalige Verhalten ist historische Evidenz und
+keine Sollvorgabe für die neue Entkopplung. Eine frühere Größenprüfung allein
+hätte den Produktkonflikt nicht gelöst.
 
-## Die drei getrennten Reviewentscheidungen
+## Abnahme des tatsächlichen Endstands
 
-| PR | Problem und Änderung | Nutzerauswirkung | Nachweis und verbleibende Grenze |
-| --- | --- | --- | --- |
-| #35 | Windows-Metadatenleser blockierten den atomaren Austausch; gleichzeitiges erstmaliges Öffnen permanenter POSIX-Sperren war nicht robust. Eng begrenztes Read/Delete-Sharing, atomarer Windows-Austausch und exklusives POSIX-Anlegen. | Keine neuen CLI-Optionen; vorhandene Identitäten/Journale/Budgets bleiben bestehen. Unterstütztes Dateisystem erforderlich. | Ursprüngliche Tests plus zehn gezielte Tests. Kernursache des ursprünglichen macOS-ENOENT nicht als bewiesen behauptet; keine pauschale Ausnahmebehandlung. |
-| #36 | Review, Commit-Inhalt und tatsächlicher Remotezustand waren nicht ausreichend gebunden. Privater Vorab-Prüfstand, gebundene Annahme, private Objekterzeugung, Index-/Ref-Sperren und festgelegtes Pushziel mit explizitem alten OID. | Git-Automatik nur seriell; Taskplan/Berichte nicht auswählen. Links/Spezialdateien und große Kontexte werden abgewiesen. Ohne `--git` kein neuer Snapshotpfad. | 35 Git-Tests einschließlich Windows-Langpfaden. Keine Modellwahrheitsgarantie, keine Same-UID-Isolation und keine atomare Transaktion über Journal, Index, Branch und Remote. |
-| #33 | Anleitungen waren verteilt und nicht durchgehend zweisprachig. User Guides DE/EN, Operator Guide EN, Technical Guide EN sowie Pflege-/Manifest-/Beispielprüfungen. | Zusammenhängende Lesepfade; vorhandene Referenzpfade bleiben bestehen. | Neun Dokumentationstests. Struktur- und Befehlsparität beweisen keine vollständige semantische Übersetzungsqualität. Ursprünglicher Branch bleibt als 0.9.1-Dokumentationsbasis erhalten. |
-
-## Abgleich in diesem Integrationsbranch
-
-Das ältere Operator-Beispiel mit `--git-path tasks.md` und einem nachträglich
-veränderten Ergebnisbericht wurde durch eine reine Ausgabedateiauswahl ersetzt.
-Alle vier Guides unterscheiden jetzt veröffentlichtes 0.9.1 und den
-Integrationscheckout. Git-Verhalten, Status-/Recovery-Aussagen, State-I/O,
-Architekturfluss und Manifestquellen sind aktualisiert. Die deutsch/englischen
-User Guides behalten dieselben Kapitelanker und 13 ausführbaren Befehlsbeispiele.
-
-In `docs/controller-safety.md` bleibt der neue Git-Vertrag aus #36 erhalten; die
-Guide-Verweise aus #33 kommen hinzu. `docs/testing.md` enthält beide Testbereiche.
-Das Paketmanifest wird vereinigt, nicht durch die ältere Liste überschrieben.
-
-## Konkrete Alltagsszenarien
-
-`tests/test_integration_091.py` ergänzt zehn Tests. Die Modellantworten sind
-synthetisch, der Controller, private Zustandsübergänge und lokale Git-Objekte sind
-real. Es werden keine Produktionsdaten, Credentials oder externen Pushziele verwendet.
-
-| Szenario | Geprüfte Aussage |
-| --- | --- |
-| Dokumentenbeispiel aus dem Guide | Quellbrief im Prüfstand, Daten/Offene-Frage-Summary, genau diese Commitbytes, DONE im privaten Journal. |
-| Softwarebeispiel mit zwei Aufgaben | Produktion und separater Review beider Tasks; drei bekannte unittest-Fälle auf der Reviewkopie; Taskplan/Berichte nicht im Ausgabecommit. |
-| Andere vorgemerkte Datei | Bleibt im Index erhalten, wird aber nicht in den Ausgabestand committed. |
-| Gleicher Ablauf ohne Git | Review bleibt im normalen Workspace; kein Git-Prüfstand und keine Git-Historienänderung. |
-| Verlinkte virtuelle Umgebung | Lauf bleibt vor Review/DONE/Commit stehen, aber erst nach Produktion; Ziel außerhalb des Workspace bleibt unberührt. |
-| Zu große nicht ausgewählte Kontextdatei | Derselbe späte Abbruchzeitpunkt bei Quotenüberschreitung; kleine Testquote statt Speicher-/Durchsatzbenchmark. |
-| Parallel + Git | Erste parallele Gruppe wird vor Modellaufruf abgewiesen; keine Behauptung eines universellen Start-Preflights. |
-| Taskplan als Git-Ausgabe | Ablehnung bei Einrichtung. |
-| Manifest/Paket/Guide-Abgleich | Quellcommits getrennt, beide Paketerweiterungen enthalten, veraltete Git-Empfehlungen nicht mehr im Operator Guide. |
-
-## Verbleibender Befund: vollständiger Kontextcheck kommt spät
-
-Die Link-/Größenprüfung des gesamten Reviewkontexts liegt in der Snapshotanlage
-nach der Produktion. Eine schon vorher vorhandene verlinkte `.venv` oder zu große
-Kontextdatei kann deshalb einen Produktionsaufruf kosten, bevor der Lauf anhält.
-Auch eine Dry-run-Vorschau ist kein Eignungstest für den vollständigen Snapshot.
-Die neuen Tests dokumentieren diesen bestehenden Ablauf, **sie reparieren ihn nicht**.
-Die Guides nennen kleine dedizierte Worktrees bzw. manuelle Veröffentlichung als
-Alternative; keine Empfehlung zum blinden Löschen von Abhängigkeiten.
-
-Mögliche Folgearbeit nach der Integration: nichtschreibender Snapshot-Preflight
-mit denselben Regeln vor dem ersten Modellaufruf. Die Prüfung vor Review bleibt
-trotzdem zwingend, weil Produktion den Kontext anschließend ändern kann. Dies
-ist nicht Teil von 1A und wird nicht still in die reviewbereiten Code-PRs eingebaut.
-
-## Abnahme und Herkunft
-
-Die PR-Beschreibung hält den tatsächlich geprüften Integrationscommit, Tree,
-lokale Ergebnisse und native CI-Läufe fest. Ein grüner Elterncommit ist kein
-Nachweis für die kombinierte Fassung. Plattform-Skips separat ausweisen. Eine
-vom Werkzeug unterbrochene Suite nicht als bestanden zählen. Keine Tests,
-Branchschutzregeln oder Release-Gates abschwächen.
-
-Reproduzierbare Befehle aus einem vollständigen Checkout:
+Prüfe Runtime und Dokumentation gemeinsam. Erfasse den endgültigen Commit/Tree,
+volle Suite und gezielte Backend-/Git-/Recovery-/Dokumentationsregressionen,
+Paketvalidierung sowie native CI für genau diese Fassung. Plattform-Skips sind
+keine ausgeführten Tests. Alte grüne Elternprüfungen ersetzen diese Abnahme nicht.
+Die Parserinventur muss nach den letzten CLI-Änderungen neu erzeugt und geprüft
+werden. Gegenüber dem bisherigen #37 kommt kein neues Versionsversprechen hinzu.
 
 ```sh
-python3 -B -m unittest discover -s tests -p test_documentation_guides.py -v
-python3 -B -m unittest discover -s tests -p test_integration_091.py -v
+python3 -B scripts/documentation_reference.py --check
+python3 -B -m unittest discover -s tests -p 'test_documentation*.py' -v
 python3 -B -m unittest discover -s tests -v
 python3 -B scripts/check_release.py
 python3 -B scripts/build_runtime_zip.py /absolute/new/path/integration-runtime.zip
 ```
 
-## Spätere Integration nach Eigentümerfreigabe
-
-Zuerst #35 prüfen/übernehmen, dann #36 gegen den tatsächlichen `main`-Stand
-retargeten und erneut prüfen. Für #33 die hier erhaltene Dokumentation und
-Konfliktlösung verwenden; die ursprüngliche Dokumentationsfassung nicht darüber
-kopieren. Bei Squash-/Rebase-Merges ändern sich Commitidentitäten: Ancestry nicht
-blind voraussetzen, resultierenden Tree vergleichen und CI wiederholen. Der
-Integrations-PR ist ein Prüfstand, kein automatischer Sammelmergeauftrag.
-
-Prozessaufsicht, allgemeine Ausgabequoten/Deadlines, strengere Kontrollstreams,
-weiteres Recovery-/Ressourcenhardening und ein dauerhaftes Release-Gate bleiben
-außerhalb dieses Auftrags. Keine Behauptung, dass alle 42 Auditbefunde geschlossen sind.
-
-## Ergänzung aus dem Dokumentationsreview vom 24. Oktober 2026
-
-Die Handbücher werden als zusammenhängende Anleitungen mit vollständiger Operator-Referenz konsolidiert. Frühere Einzelreferenzen sind eingearbeitet; die Retirement-Liste steht in `maintenance/documentation_consolidation.md`. Die vorgeschlagene frühere Größenprüfung allein löst den inzwischen festgestellten Produktkonflikt nicht: optionale Git-Veröffentlichung und fachlicher Review sollen entkoppelt werden. Diese Codeänderung ist weiterhin offen; die hier beschriebenen Tests bestätigen noch den bisherigen Ablauf und sind keine Freigabe für das gewünschte neue Verhalten.
+Es gibt keine automatische Freigabe, Veröffentlichung oder rückwirkende
+Reparatur historischer DONE-Einträge. Allgemeine Prozessaufsicht,
+Ausgabequoten/Deadlines, Ressourcengrenzen und dauerhaft erzwungene Release-Gates
+bleiben eigene Pakete. Die Integration schließt nicht pauschal alle Auditbefunde.
