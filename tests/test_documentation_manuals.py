@@ -149,7 +149,7 @@ class HandbookConsolidationTests(unittest.TestCase):
         self.assertIn('git retry --workdir', self.operator)
         self.assertIn('do not call a model', self.operator)
         self.assertIn('serial only', self.operator)
-        self.assertEqual((ROOT/'VERSION').read_text().strip(), '0.9.1')
+        self.assertEqual((ROOT/'VERSION').read_text().strip(), self.manifest['runtime_version'])
 
 
 if __name__ == '__main__':

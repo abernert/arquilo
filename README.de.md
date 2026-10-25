@@ -6,7 +6,7 @@
 
 ARQUILO bearbeitet Aufgaben aus einer Markdown-Liste in einem Projekt-Workspace. Auf Produktions- und Korrekturschritte folgt ein separater Review gegen den ursprünglichen Auftrag. Der Controller entscheidet über Abnahme, Korrektur, Zerlegung verbleibender Arbeit oder Stopp. Ergebnisdateien, Reviews und Ausführungsprotokolle bleiben nachvollziehbar. Ein Modell-PASS ist keine Garantie für inhaltliche Richtigkeit.
 
-**Laufzeitversion: 0.9.1 — öffentliche Vorschau.** Dieser **unveröffentlichte Integrationsstand** verbindet die aktuelle Codex-/Claude-Laufzeit, die konsolidierten Handbücher und die reviewgebundene Git-Veröffentlichung. Das veröffentlichte v0.9.1-ZIP ist ein früherer Stand. Maßgeblich sind [Quellcommits und Grenzen](docs/integration-status.md); die Versionsnummer allein identifiziert diese Änderungen nicht.
+**Laufzeitversion: 0.10.0 — öffentliche Vorschau.** Diese Version ergänzt Claude Code als alternativen Unterbau, trennt fachliche Abnahme von Git-Veröffentlichung und enthält vier konsolidierte Handbücher. Codex bleibt der Standard. Siehe [Releasebasis und verbleibende Grenzen](docs/integration-status.md).
 
 ## Das passende Handbuch
 
@@ -37,6 +37,6 @@ Review, Statusänderungen, gemeinsame Budgets und Stopps sind Controllerregeln, 
 
 Git-Automatik ist standardmäßig aus. Mit `--git` werden ausgewählte Ergebnisse für Review und Veröffentlichung eingefroren; fachliche Abnahme und Veröffentlichung haben getrennte Ergebnisse. `--git-required` hält den Lauf bei offener Auslieferung an und erhält bereits abgenommene Arbeit. Lies vor dem Einschalten das [Git-Kapitel](docs/guides/operator-guide.en.md#git).
 
-Der Claude-Adapter unterstützt keine benannten MCP-Server, keine Bash-Aufrufe im Review und keinen Backendwechsel innerhalb eines Laufs. Produktion unter Windows benötigt WSL2/Linux. Siehe [Backendwahl](docs/guides/operator-guide.en.md#backends) und [Claude-Qualifikation](docs/claude-code-backend.md). Teams, GUI, ein allgemeiner Pipeline-Runner und ein ARQUILO-MCP-Service sind in diesem Checkout nicht implementiert.
+Der Claude-Adapter unterstützt keine benannten MCP-Server, keine Bash-Aufrufe im Review und keinen Backendwechsel innerhalb eines Laufs. Produktion unter Windows benötigt WSL2/Linux. Siehe [Backendwahl](docs/guides/operator-guide.en.md#backends) und [Claude-Qualifikation](docs/claude-code-backend.md). Teams, GUI, ein allgemeiner Pipeline-Runner und ein ARQUILO-MCP-Service sind in Version 0.10.0 nicht implementiert.
 
 [Mitwirken](CONTRIBUTING.md) · [Sicherheit und Meldungen](SECURITY.md) · [Apache-2.0-Lizenz](LICENSE) · [NOTICE](NOTICE) · [Autoren](AUTHORS.md) · [Drittkomponenten](THIRD_PARTY.md) · [Änderungsverlauf](CHANGELOG.md)

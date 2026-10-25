@@ -7,13 +7,12 @@ preflight, configuration-home lookup, or fallback is used on that path. Shared
 Python result/policy helpers retain some historical names; that is not a Codex
 process or provider dependency. OpenCode is reserved, **not implemented**.
 
-The backend and state-I/O repairs are included in main commit
-`cded22f337a0033a3b0934709a82e1ce3db7cdb3`. This combined checkout also integrates
-reviewed Git publication and the consolidated manuals. `VERSION` remains 0.9.1;
-the already published v0.9.1 ZIP is an earlier baseline. See
-[source inputs and integration scope](integration-status.md). Native compatibility
-evidence below qualifies specific adapter behavior, not every combined workflow
-or a new release. Use the [Operator Guide](guides/operator-guide.en.md#backends)
+Claude Code is an execution backend in ARQUILO 0.10.0. This release combines
+the backend from PR #30, state-I/O repairs from PR #35, and reviewed Git publication
+and the consolidated manuals from PR #37. The older v0.9.1 ZIP does not contain
+these additions. See [release inputs and scope](integration-status.md). Native
+compatibility evidence below qualifies specific adapter behavior; complete release
+and live-host acceptance are separate checks. Use the [Operator Guide](guides/operator-guide.en.md#backends)
 for normal configuration and the [Technical Guide](guides/technical-guide.en.md#transport)
 for the integrated architecture.
 
@@ -44,12 +43,12 @@ extra permissive Decide call. Valid no-issue prose still uses Claude Decide.
 Metadata recognition is not pre-execution confinement. Native Claude roles and
 sandbox limitations remain as documented below: no reviewer Bash, no named MCPs,
 no automatic Codex fallback. More general process/output supervision, additional
-resource isolation remain separate work. This combined checkout includes the
+resource isolation remain separate work. Version 0.10.0 includes the
 reviewed-publication path; verify it with the common acceptance and delivery
 regressions for both backends. [Git operation and retry](guides/operator-guide.en.md#git)
 have the same controller-owned contract; no Claude reviewer Bash is enabled.
 
-## Compatibility with ARQUILO 0.9.1
+## Compatibility with ARQUILO 0.10.0
 
 - `--prompt-config default|de|en|FILE` works across production, fixes, reviews,
   parent-review calls, Decide, doctor and worker serialization. Omission selects
@@ -70,7 +69,7 @@ have the same controller-owned contract; no Claude reviewer Bash is enabled.
 - `--agent` / `CFG agent` are Codex profile selectors, not Claude subagents.
   They are rejected for Claude, as are Codex-only provider/profile overrides.
 - Historical `tasklist resume-review` remains Codex-only; native Claude session resume
-  and cross-backend recovery are not added in this integration.
+  and cross-backend recovery are not added in this release.
 
 ## Install and select
 
@@ -126,7 +125,7 @@ Every invocation uses a fresh UUID session and UTF-8 stdin. The adapter requests
 native stream-json output, no session persistence, `dontAsk` permission handling,
 explicit built-in tools, no arbitrary MCP servers, and safe mode. Project/local
 settings, CLAUDE.md, native skill discovery, custom agents and installed plugins
-are not used by this integration. Relevant project instructions must be in the captured task, an explicitly
+are not used by this adapter. Relevant project instructions must be in the captured task, an explicitly
 bound skill instruction snapshot, or an additive ARQUILO runtime profile. Trusted user authentication/model/provider
 settings are retained. Mandatory corporate policy can still apply; a company
 policy is not silently bypassed. Unknown integration or tool events fail the
@@ -309,7 +308,7 @@ home discovery. These fixtures are not real-model quality evidence.
 
 Use a separate installation of the exact revision being qualified and a new
 disposable workspace. Keep the stable runner and existing client workspaces
-separate. Do not assume an old feature-branch name resolves to this integration.
+separate. Use the v0.10.0 tag or an explicitly recorded commit rather than assuming an old feature-branch name identifies the intended version.
 From the selected installation, check:
 
 ```bash

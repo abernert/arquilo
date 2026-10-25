@@ -215,19 +215,21 @@ class IntegratedWorkflowTests(IsolatedControllerCase):
 class IntegrationDocumentationTests(unittest.TestCase):
     def test_manifest_records_code_docs_and_release_separately(self):
         manifest = json.loads((ROOT / 'docs/guides/manifest.json').read_text(encoding='utf-8'))
-        self.assertEqual(manifest['status'], 'unreleased-integration')
+        version = (ROOT / 'VERSION').read_text().strip()
+        self.assertEqual(manifest['status'], 'release')
+        self.assertEqual(manifest['runtime_version'], version)
+        self.assertEqual(manifest['release_tag'], 'v' + version)
         self.assertNotEqual(manifest['source_commit'], manifest['integrated_pull_requests']['36'])
         self.assertRegex(manifest['source_commit'], r'^[a-f0-9]{40}$')
         self.assertRegex(manifest['integration_base_commit'], r'^[a-f0-9]{40}$')
-        self.assertIn('main input', manifest['source_commit_scope'])
-        self.assertIn('Not a final integration commit or release claim', manifest['source_commit_scope'])
+        self.assertEqual(manifest['source_commit'], manifest['integrated_pull_requests']['37'])
+        self.assertIn('source input is not the release commit', manifest['source_commit_scope'])
         self.assertEqual(manifest['documentation_base_commit'], manifest['integrated_pull_requests']['33'])
         self.assertNotEqual(manifest['source_commit'], manifest['release_baseline'])
         for guide in manifest['guides']:
             text = (ROOT / guide['path']).read_text(encoding='utf-8')
             self.assertIn('../integration-status.md', text)
-            self.assertIn('0.9.1', text)
-        self.assertEqual((ROOT / 'VERSION').read_text().strip(), '0.9.1')
+            self.assertIn(version, text)
 
     def test_combined_package_keeps_both_pr_additions(self):
         package = json.loads((ROOT / 'documents/lean_package.json').read_text(encoding='utf-8'))

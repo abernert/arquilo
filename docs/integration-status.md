@@ -1,24 +1,26 @@
-# Integration baseline and release distinction
+# Release 0.10.0: source basis and limits
 
-**Unreleased combined checkout, 2026-10-25. Runtime version string: 0.9.1.**
-The version string alone does not identify the installed behavior. The published
-v0.9.1 tag/ZIP predates the later main and integration changes listed here. This
-checkout does not replace a published asset or imply a new release.
+**ARQUILO 0.10.0 — public preview, 2026-10-25.**
+This version includes Claude Code support, state-I/O repairs, reviewed Git
+publication and the four consolidated handbooks. Install the complete 0.10.0
+runtime package or check out `v0.10.0`; do not mix individual modules from older
+installations. The published v0.9.1 tag and ZIP retain their original contents.
 
 | Source input | Pinned commit | Role |
 | --- | --- | --- |
-| Published v0.9.1 baseline | `0c4de8a76d40821578a9aa6f544dcf5fb45d26d5` | Foundational review/plan/STOP/state/launcher repair. |
-| Current main input | `cded22f337a0033a3b0934709a82e1ce3db7cdb3` | Includes merged state-I/O PR #35 and Claude-backend PR #30. |
-| Consolidated integration input, PR #37 | `209d5a709da9d53bad987720b3f5dcc6cbc3a837` | Git work from #36 and the consolidated four-handbook edition. |
-| Git repair source inside #37 | `48331c7210d63787c578bf925ade41da9eb806a8` | Original reviewed-byte/local/remote publication controls. |
-| Original handbook source inside #37 | `0e57df59ea067596b0ab0db987347aa31e7870de` | Initial user/operator/technical guides, subsequently consolidated. |
+| Earlier v0.9.1 release | `0c4de8a76d40821578a9aa6f544dcf5fb45d26d5` | Foundational review/plan/STOP/state/launcher repair. |
+| State-I/O merge, PR #35 | `f716aadcbb5bade403680c0cbb43d598ea26dcf1` | Immutable metadata sharing, atomic replacement and shared-lock creation repairs. |
+| Claude Code merge, PR #30 | `cded22f337a0033a3b0934709a82e1ce3db7cdb3` | Alternative execution backend on the shared controller basis. |
+| Reviewed integration, PR #37 | `0d5dc9a1d580ddb4b5dd571daaa46455c4e78076` | Acceptance/publication separation, durable recovery, selected-absence correction and consolidated handbooks. |
+| Original Git repair source | `48331c7210d63787c578bf925ade41da9eb806a8` | Reviewed-byte/local/remote publication controls retained in the integration. |
+| Original handbook source | `0e57df59ea067596b0ab0db987347aa31e7870de` | Initial four-handbook edition, subsequently consolidated and updated. |
 
-This integration reconciles those inputs and changes publication behavior.
-Runtime code is **not** claimed byte-identical to the earlier #36 or #37 tree.
-The source inputs above are provenance, not a final-commit validation statement.
-Use the exact combined commit, its tests and package checksum for acceptance;
-a green result on one parent does not validate the combined checkout. No
-version, tag or release-asset change is part of the integration.
+These pinned commits identify source provenance. The `v0.10.0` tag identifies the
+complete versioned release revision, including the release metadata and manuals.
+In the guide manifest, `source_commit` identifies the reviewed PR #37 input and
+`release_baseline` identifies the older v0.9.1 package; neither is the final
+release commit. Check validation evidence and package checksums for the exact
+release revision rather than inheriting a green result from a parent commit.
 
 ## What changed for users
 
