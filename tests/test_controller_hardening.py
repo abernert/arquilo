@@ -21,6 +21,7 @@ import safe_io
 from controller_state import PlanAuthority, PlanIntegrityError, state_directory
 from execution_budget import CallBudget, BudgetExhausted
 from reviewed_git import ReviewedGit, ReviewedGitError
+from git_review_fixture import publish, reviewed_candidate
 from runtime_files import atomic_write_text, unique_directory
 import run_todos
 from runtime_profile import _parse_preflight, RuntimeProfileError
@@ -508,7 +509,7 @@ class GitTests(Fixture):
         (self.workspace / 'new.txt').write_text('new reviewed')
         logs = self.workspace / '.codex_runs'; logs.mkdir()
         (logs / 'raw-prompts.jsonl').write_text('sensitive synthetic content')
-        result = g.commit('Reviewed task')
+        result = publish(g, 'Reviewed task')
         self.assertFalse(result['pushed'])
         changed = set(self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').decode().splitlines())
         self.assertEqual(changed, {'first.txt', 'new.txt'})
@@ -533,14 +534,19 @@ class GitTests(Fixture):
         before = self.git('rev-parse', 'HEAD')
         (self.workspace / 'first.txt').write_text('result')
         (self.workspace / 'staged-note').write_text('late user edit'); self.git('add', 'staged-note')
-        with self.assertRaises(ReviewedGitError): g.commit('must not commit')
+        with self.assertRaises(ReviewedGitError): publish(g, 'must not commit')
         self.assertEqual(before, self.git('rev-parse', 'HEAD'))
 
     def test_symlink_selected_after_review_is_rejected(self):
         g = ReviewedGit(self.workspace, ['first.txt'], self.state)
+        before = self.git('rev-parse', 'HEAD')
+        candidate = reviewed_candidate(g)
         other = self.base / 'secret'; other.write_text('keep')
         (self.workspace / 'first.txt').unlink(); self.link(other, self.workspace / 'first.txt')
-        with self.assertRaises(safe_io.UnsafePathError): g.commit('must not include outside')
+        with self.assertRaises(safe_io.UnsafePathError):
+            g.commit('must not include outside', candidate=candidate)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+        self.assertEqual(other.read_text(), 'keep')
 
     def test_literal_pathspec_special_characters_and_deletion(self):
         # No shell expansion or pathspec globbing; [a] is an ordinary filename.
@@ -548,7 +554,7 @@ class GitTests(Fixture):
         (self.workspace / '[a].txt').write_text('literal')
         (self.workspace / 'a.txt').write_text('not selected')
         (self.workspace / 'first.txt').unlink()
-        g.commit('Selected creation and deletion')
+        publish(g, 'Selected creation and deletion')
         self.assertIn(b'[a].txt\0', self.git('ls-files', '-z'))
         self.assertNotIn(b'a.txt\0', self.git('ls-files', '-z'))
         self.assertNotIn(b'first.txt\0', self.git('ls-files', '-z'))
@@ -559,7 +565,7 @@ class GitTests(Fixture):
         self.git('push','-qu','origin','HEAD')
         g=ReviewedGit(self.workspace,['first.txt'],self.state,push=True)
         (self.workspace/'first.txt').write_text('reviewed')
-        result=g.commit('Explicit local test push')
+        result=publish(g, 'Explicit local test push')
         self.assertTrue(result['pushed'])
         remote_head=subprocess.check_output(['git','--git-dir',str(remote),'rev-parse',g.remote_branch])
         self.assertEqual(remote_head.strip().decode(),result['commit'])
@@ -567,9 +573,15 @@ class GitTests(Fixture):
     def test_push_refuses_unrelated_unpushed_commits(self):
         remote = self.bare_remote()
         self.git('remote','add','origin',str(remote)); self.git('push','-qu','origin','HEAD')
+        published_head = self.git('rev-parse', 'HEAD')
         self.git('commit','--allow-empty','-qm','Unrelated owner commit')
+        unpublished_head = self.git('rev-parse', 'HEAD')
+        g = ReviewedGit(self.workspace, ['first.txt'], self.state, push=True)
+        (self.workspace / 'first.txt').write_text('reviewed output')
         with self.assertRaises(ReviewedGitError):
-            ReviewedGit(self.workspace,['first.txt'],self.state,push=True)
+            publish(g, 'must not publish unrelated history')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), unpublished_head)
+        self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', g.remote_branch), published_head)
 
     def test_push_is_never_implicit(self):
         g = ReviewedGit(self.workspace, ['first.txt'], self.state)
@@ -580,7 +592,7 @@ class GitTests(Fixture):
             seen.append(args[0])
             if args[0] == 'push': self.fail('Unexpected network push')
             return original(*args, **kwargs)
-        with patch.object(g, 'git', side_effect=record): g.commit('Reviewed')
+        with patch.object(g, 'git', side_effect=record): publish(g, 'Reviewed')
         self.assertNotIn('push', seen)
 
 

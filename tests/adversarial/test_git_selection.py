@@ -10,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from reviewed_git import ReviewedGit, ReviewedGitError
+from git_review_fixture import publish
+from git_snapshot import GitSnapshotUnavailable
 from safe_io import UnsafePathError
 
 
@@ -53,7 +55,7 @@ class GitSelectionTests(unittest.TestCase):
         (self.work / 'selected.txt').write_text('approved\n', newline="")
         (self.work / '[literal].txt').write_text('literal\n', newline="")
         (self.work / 'literal.txt').write_text('not selected\n', newline="")
-        result = selected.commit('local selection')
+        result = publish(selected, 'local selection')
         self.assertFalse(result['pushed'])
         self.assertEqual(self.tree_paths(), {b'selected.txt', b'[literal].txt'})
         self.assertEqual(self.git('show', 'HEAD:selected.txt'), b'approved\n')
@@ -77,7 +79,7 @@ class GitSelectionTests(unittest.TestCase):
         selected = ReviewedGit(self.work, names, self.state)
         for name in names:
             (self.work / name).write_text('literal\n', encoding='utf-8', newline="")
-        selected.commit('literal option-like paths')
+        publish(selected, 'literal option-like paths')
         self.assertEqual(self.tree_paths(), {os.fsencode(name) for name in names})
 
     def test_initial_dirty_staged_and_untracked_selection_rejected(self):
@@ -105,8 +107,8 @@ class GitSelectionTests(unittest.TestCase):
         except OSError:
             self.skipTest('symlink creation unavailable')
         old = self.git('rev-parse', 'HEAD')
-        with self.assertRaises(UnsafePathError):
-            selected.commit('linked')
+        with self.assertRaises((UnsafePathError, GitSnapshotUnavailable)):
+            publish(selected, 'linked')
         self.assertEqual(self.git('rev-parse', 'HEAD'), old)
         self.assertEqual(victim.read_text(), 'sentinel\n')
 
@@ -120,12 +122,12 @@ class GitSelectionTests(unittest.TestCase):
         except OSError:
             self.skipTest('hardlink creation unavailable')
         before = self.git('rev-parse', 'HEAD')
-        with self.assertRaises(UnsafePathError):
-            selected.commit('hardlinked')
+        with self.assertRaises((UnsafePathError, GitSnapshotUnavailable)):
+            publish(selected, 'hardlinked')
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
         self.assertEqual(victim.read_text(), 'sentinel\n')
         (self.work / 'selected.txt').unlink()
-        result = selected.commit('selected deletion')
+        result = publish(selected, 'selected deletion')
         self.assertEqual(result['paths'], ['selected.txt'])
         self.assertEqual(self.tree_paths(), {b'selected.txt'})
         self.assertNotIn(b'selected.txt\0', self.git('ls-tree', '-rz', '--name-only', 'HEAD'))
@@ -144,7 +146,7 @@ class GitSelectionTests(unittest.TestCase):
                 (self.work / 'selected.txt').write_text('worker output', newline="")
                 current = self.git('rev-parse', 'HEAD')
                 with self.assertRaises(ReviewedGitError):
-                    selected.commit('must refuse')
+                    publish(selected, 'must refuse')
                 self.assertEqual(self.git('rev-parse', 'HEAD'), current)
                 if mutation == 'branch':
                     self.git('switch', '-q', '-')
@@ -163,13 +165,19 @@ class GitSelectionTests(unittest.TestCase):
         self.git('push', '-qu', 'origin', 'HEAD')
         selected = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
         (self.work / 'selected.txt').write_text('approved\n', newline="")
-        result = selected.commit('reviewed local push')
+        result = publish(selected, 'reviewed local push')
         self.assertTrue(result['pushed'])
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', selected.remote_branch).strip(),
                          result['commit'].encode())
         self.git('commit', '--allow-empty', '-qm', 'owner unpushed')
+        unpublished_head = self.git('rev-parse', 'HEAD')
+        pending = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
+        (self.work / 'selected.txt').write_text('another reviewed change\n', newline="")
         with self.assertRaises(ReviewedGitError):
-            ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
+            publish(pending, 'must not deliver unreviewed parent')
+        self.assertEqual(self.git('rev-parse', 'HEAD'), unpublished_head)
+        self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', selected.remote_branch).strip(),
+                         result['commit'].encode())
 
     def test_configured_remote_is_unchanged_without_push_opt_in(self):
         remote = self.bare('remote.git')
@@ -179,7 +187,7 @@ class GitSelectionTests(unittest.TestCase):
         original = self.git('--git-dir', str(remote), 'rev-parse', branch).strip()
         selected = ReviewedGit(self.work, ['selected.txt'], self.state)
         (self.work / 'selected.txt').write_text('local only\n', newline="")
-        result = selected.commit('local only')
+        result = publish(selected, 'local only')
         self.assertFalse(result['pushed'])
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', branch).strip(), original)
         self.assertEqual(self.git('show', 'HEAD:selected.txt'), b'local only\n')
@@ -198,26 +206,29 @@ class GitSelectionTests(unittest.TestCase):
             return real_git(*args, **kwargs)
         with patch.object(selected, 'git', side_effect=fail_commit_tree):
             with self.assertRaisesRegex(ReviewedGitError, 'commit-tree failure'):
-                selected.commit('must fail')
+                publish(selected, 'must fail')
         self.assertEqual(self.git('rev-parse', 'HEAD').strip(), original)
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', selected.remote_branch).strip(), original)
 
-    def test_remote_divergence_refuses_push_and_reports_local_commit(self):
+    def test_remote_divergence_before_publication_preserves_local_and_remote_refs(self):
         remote = self.bare('remote.git')
         self.git('remote', 'add', 'origin', str(remote))
         self.git('push', '-qu', 'origin', 'HEAD')
         selected = ReviewedGit(self.work, ['selected.txt'], self.state, push=True)
         initial_head = self.git('rev-parse', 'HEAD').strip()
-        self.git('commit', '--allow-empty', '-qm', 'other local writer')
-        other = self.git('rev-parse', 'HEAD').strip()
-        self.git('push', '-q', 'origin', 'HEAD')
-        self.git('reset', '--hard', initial_head.decode())
+        tree = self.git('rev-parse', 'HEAD^{tree}').strip().decode()
+        other = self.git('--git-dir', str(remote), '-c', 'user.name=Other',
+                         '-c', 'user.email=other@example.invalid', 'commit-tree', tree,
+                         '-p', initial_head.decode(), '-m', 'concurrent remote writer').strip()
+        self.git('--git-dir', str(remote), 'update-ref', selected.remote_branch, other.decode(), initial_head.decode())
         (self.work / 'selected.txt').write_text('reviewed local bytes\n', newline="")
         with self.assertRaises(ReviewedGitError):
-            selected.commit('push must fail')
-        self.assertNotEqual(self.git('rev-parse', 'HEAD').strip(), initial_head)
-        self.assertEqual(self.git('show', 'HEAD:selected.txt'), b'reviewed local bytes\n')
+            publish(selected, 'push must fail')
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), initial_head)
+        self.assertEqual((self.work / 'selected.txt').read_bytes(), b'reviewed local bytes\n')
         self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', selected.remote_branch).strip(), other)
+        self.assertEqual(selected.last_publication['status'], 'preparing')
+        self.assertIsNone(selected.last_publication['commit'])
 
     def test_changed_push_destination_is_rejected_before_commit(self):
         original = self.bare('original.git')
@@ -229,7 +240,7 @@ class GitSelectionTests(unittest.TestCase):
         (self.work / 'selected.txt').write_text('reviewed bytes\n', newline="")
         self.git('config', 'remote.origin.pushurl', str(redirect))
         try:
-            result = selected.commit('must not redirect')
+            result = publish(selected, 'must not redirect')
         except ReviewedGitError:
             pass
         else:
@@ -264,14 +275,16 @@ class GitSelectionTests(unittest.TestCase):
         def git_and_change_destination(*args, **kwargs):
             nonlocal changed
             result = real_git(*args, **kwargs)
-            if args[0] == 'update-index' and kwargs.get('index') is None and not changed:
+            if args[0] == 'update-ref' and kwargs.get('prepared') is not None and not changed:
                 self.git('config', 'remote.origin.pushurl', str(redirect))
                 changed = True
             return result
 
         with patch.object(selected, 'git', side_effect=git_and_change_destination):
-            with self.assertRaisesRegex(ReviewedGitError, 'destination changed'):
-                selected.commit('reviewed output')
+            with self.assertRaises(ReviewedGitError) as rejected:
+                publish(selected, 'reviewed output')
+        self.assertIn('destination changed', str(rejected.exception.__cause__))
+        self.assertEqual(selected.last_publication['status'], 'push_pending')
         self.assertTrue(changed)
         self.assertNotEqual(self.git('rev-parse', 'HEAD').strip(), initial_head)
         self.assertEqual(self.git('show', 'HEAD:selected.txt'), b'reviewed bytes\n')

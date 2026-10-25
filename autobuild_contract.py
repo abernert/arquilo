@@ -84,8 +84,15 @@ class AutoBuildContext:
     allow_todo_modifications: bool = False
     process_stop_paths: tuple[str | Path, ...] = ()
     launcher_workspace: str | Path | None = None
+    git_review: dict | None = None
+    git_review_optional: bool = False
 
     def __post_init__(self):
+        if type(self.git_review_optional) is not bool:
+            raise ValueError("git_review_optional must be bool")
+        if self.git_review is not None:
+            from git_snapshot import validate_request
+            object.__setattr__(self, "git_review", json.loads(json.dumps(validate_request(self.git_review))))
         if self.launcher_workspace is not None:
             if (not isinstance(self.launcher_workspace, (str, Path))
                     or "\0" in str(self.launcher_workspace)
@@ -209,10 +216,23 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
     """Validate the same summary at the in-process and Python-worker boundaries."""
     if not isinstance(payload, dict):
         raise AutoBuildResultError("AutoBuild summary must be an object")
+    try:
+        backend = agent_backend.validate_backend(payload.get("backend", "codex"))
+    except ValueError as exc:
+        raise AutoBuildResultError("Invalid AutoBuild backend") from exc
     for name in ("completed", "process_stop_triggered", "review_required"):
         if type(payload.get(name)) is not bool:
             raise AutoBuildResultError(f"Invalid AutoBuild summary field: {name}")
     _validate_diagnostic_metadata(payload)
+    publication_error = payload.get("git_publication_error")
+    if publication_error is not None:
+        if (not isinstance(publication_error, dict)
+                or set(publication_error) != {"code", "message"}
+                or publication_error["code"] != "git_review_unavailable"
+                or not isinstance(publication_error["message"], str)
+                or not 0 < len(publication_error["message"]) <= 4096
+                or payload.get("git_review") is not None):
+            raise AutoBuildResultError("Invalid optional Git capture diagnostic")
     code = payload.get("exit_code")
     if type(code) is not int or code not in {int(v) for v in ExitCode}:
         raise AutoBuildResultError("Invalid AutoBuild exit_code")
@@ -275,10 +295,11 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
             needs_decision = needs_decision or raw_review.get("source_format") == "text_legacy"
         if needs_decision:
             decision = payload.get("decision")
+            expected_source = "claude_code" if backend == "claude-code" else "codex_exec"
             if (not isinstance(decision, dict) or decision.get("selected_option") != "COMPLETE"
-                    or decision.get("source") != "codex_exec" or decision.get("error") is not None
+                    or decision.get("source") != expected_source or decision.get("error") is not None
                     or decision.get("fallback_used") is not False):
-                raise AutoBuildResultError("Legacy prose requires a successful explicit Codex decision")
+                raise AutoBuildResultError("Legacy prose requires a successful explicit decision from the selected backend")
     if process_exit_code is not None and process_exit_code != code:
         raise AutoBuildResultError(f"AutoBuild exit mismatch: summary {code}, process {process_exit_code}")
     return payload

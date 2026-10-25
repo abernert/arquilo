@@ -26,7 +26,7 @@ class Provider(ThreadingHTTPServer):
     daemon_threads=True
     def __init__(self):
         super().__init__(('127.0.0.1',0), Handler)
-        self.case='text';self.calls=[];self.outputs=[];self.workspace=None;self.step=0
+        self.case='text';self.calls=[];self.outputs=[];self.workspace=None;self.private_output=None;self.step=0
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -50,9 +50,11 @@ class Handler(BaseHTTPRequestHandler):
         names=[tool['name'] for tool in body.get('tools',[])]
         blocks=[{'type':'text','text':'Synthetic native execution completed.'}]
         stop='end_turn'
-        if server.case in {'write','read','forbidden_write'} and server.step==1:
-            tool='Read' if server.case=='read' else 'Write'
-            inp={'file_path':str(server.workspace/('forbidden.txt' if server.case=='forbidden_write' else 'hello.txt'))}
+        if server.case in {'write','read','read_private_output','forbidden_write'} and server.step==1:
+            tool='Read' if server.case in {'read','read_private_output'} else 'Write'
+            path=(server.private_output if server.case=='read_private_output' else
+                  server.workspace/('forbidden.txt' if server.case=='forbidden_write' else 'hello.txt'))
+            inp={'file_path':str(path)}
             if tool=='Write':inp['content']='native fixture\n'
             blocks=[{'type':'tool_use','id':'toolu_fixture_1','name':tool,'input':inp}];stop='tool_use'
         elif server.case=='structured':
@@ -99,6 +101,10 @@ def main():
             'started_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),
             'limitations':['No real model or client authentication tested','No general OS sandbox certification']}
     server=Provider();server.workspace=work;env['ANTHROPIC_BASE_URL']=f'http://127.0.0.1:{server.server_port}'
+    private=root/'review-candidate';private.mkdir()
+    server.private_output=private/'selected.txt'
+    server.private_output.write_text('private frozen reviewed fixture\n')
+    if os.name!='nt':server.private_output.chmod(0o400)
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
     def save(name,value):(root/name).write_text(json.dumps(value,indent=2,default=str)+'\n')
     try:
@@ -107,7 +113,7 @@ def main():
         schema=logs/'schema.json';schema.write_text(json.dumps({'type':'object','properties':{
             'option':{'type':'string','enum':['FOUR','FIVE']},'explanation':{'type':'string'}},
             'required':['option','explanation'],'additionalProperties':False}))
-        for case in ('text','write','read','structured','provider_error','forbidden_write'):
+        for case in ('text','write','read','read_private_output','structured','provider_error','forbidden_write'):
             server.case=case;server.step=0
             before=len(server.calls)
             request=ClaudeRequest(prompt='Synthetic contract test '+case+'. Follow the requested local fixture actions.',
@@ -122,6 +128,10 @@ def main():
             if case=='write':ok=ok and (work/'hello.txt').is_file() and (work/'hello.txt').read_text()=='native fixture\n'
             if case=='structured':ok=ok and json.loads(result.execution.answer).get('option')=='FOUR'
             if case=='read':ok=ok and any('native fixture' in json.dumps(row['request'].get('messages')) for row in server.calls[before:])
+            if case=='read_private_output':
+                ok=ok and any('private frozen reviewed fixture' in json.dumps(row['request'].get('messages')) for row in server.calls[before:])
+                ok=ok and server.private_output.read_text()=='private frozen reviewed fixture\n'
+                ok=ok and all('Bash' not in [tool['name'] for tool in row['request'].get('tools',[])] for row in server.calls[before:])
             if case in {'provider_error','forbidden_write'}:
                 # The intended native fault must be reached. A startup/parser
                 # failure unrelated to this case is not a successful negative test.

@@ -1,8 +1,9 @@
 # Foundational control repair acceptance
 
 Base: `35e5f17457bfd1c42b439f522f83c4d435421e1c` (0.9.0).
-Development branch: `fix/control-invariants-090`. This is an unreleased repair
-set; existing version metadata is deliberately unchanged.
+Implemented via PR #31 and released as 0.9.1. The original development branch
+was `fix/control-invariants-090`; this page records its repair scope, not an
+unreleased version or closure of the complete audit register.
 
 ## Implemented scope
 

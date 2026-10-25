@@ -34,6 +34,7 @@ from review_contract import (
     review_requires_runner_handling, build_review_context_reference,
 )
 import codex_transport
+import git_snapshot
 import agent_backend
 from claude_transport import run_claude_exec_json
 from host_launcher import launcher_environment, trusted_path
@@ -260,6 +261,8 @@ class AutoBuildSummary:
     budget_exhausted: Optional[Dict[str, Any]] = None
     terminal_attempt: Optional[Dict[str, Any]] = None
     decision_history: List[RunResult] = field(default_factory=list)
+    git_review: Optional[Dict[str, Any]] = None
+    git_publication_error: Optional[Dict[str, str]] = None
     backend: str = "codex"
 
 
@@ -349,6 +352,9 @@ class SummaryDocument(TypedDict, total=False):
     exit_code: int
     status: str
     review_required: bool
+    backend: str
+    git_review: Dict[str, Any]
+    git_publication_error: Dict[str, str]
 
 
 def _normalize_command_entry(
@@ -604,6 +610,10 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
     payload["process_stop_details"] = (stop_reason(summary.process_stop_details)
                                        if summary.process_stop_triggered else None)
     payload["review_findings"] = summary.review_findings
+    if summary.git_review is not None:
+        payload["git_review"] = summary.git_review
+    if summary.git_publication_error is not None:
+        payload["git_publication_error"] = summary.git_publication_error
     payload["review_contract_version"] = AUTOBUILD_REVIEW_CONTRACT_VERSION
     payload["final_failure_contract_version"] = AUTOBUILD_FINAL_FAILURE_CONTRACT_VERSION
     payload["parent_review_contract_version"] = AUTOBUILD_PARENT_REVIEW_CONTRACT_VERSION
@@ -1062,6 +1072,10 @@ def start(
     def budget_phase(stage: str) -> str:
         return f"{decision_phase}:{stage}"
 
+    review_workspace = workspace
+    git_review_token = None
+    git_publication_error = None
+
     def one_run(
         prompt: str,
         sandbox_override: Optional[str] = None,
@@ -1072,6 +1086,9 @@ def start(
             sandbox_override if sandbox_override is not None else sandbox
         )
         extra_args = list(base_extra_args)
+        if (backend == "codex" and stage == "review" and context.git_review is not None
+                and "--skip-git-repo-check" not in extra_args):
+            extra_args.append("--skip-git-repo-check")
         try:
             reason = process_stop_requested()
             if reason:
@@ -1081,7 +1098,7 @@ def start(
             execute_agent = run_codex_exec_json if backend == "codex" else run_claude_exec_json
             result = execute_agent(
                 prompt=prompt,
-                cwd=workspace,
+                cwd=review_workspace if stage == "review" else workspace,
                 sandbox=effective_sandbox,
                 output_last_message_path=None,
                 raw_log=raw_log,
@@ -1284,6 +1301,30 @@ def start(
             contract_path=review_contract_path,
             contract_text=review_contract_text, prompt_config=prompts,
         )
+        if context.git_review is not None:
+            git_review_token = None
+            git_publication_error = None
+            review_workspace = workspace
+            try:
+                git_review_token, review_workspace = git_snapshot.capture(
+                    context.git_review, workspace, review_runs + 1)
+                review_prompt += git_snapshot.review_instructions(context.git_review, git_review_token)
+            except git_snapshot.GitSnapshotUnavailable as exc:
+                if not context.git_review_optional:
+                    runtime_error = execution_error(str(exc), code="git_review_snapshot_failed", phase="review")
+                    completed = False
+                    break
+                # Only a capture refusal BEFORE review may fall back to the
+                # ordinary mandatory review. It grants no publication authority.
+                git_publication_error = {"code": "git_review_unavailable", "message": str(exc)[:4096]}
+                append(pretty_log, f"[{ts()}] [git_publication_unavailable] {json.dumps(git_publication_error, ensure_ascii=False)}\n")
+                review_prompt += ("\n\nOptional Git publication is unavailable for this attempt. "
+                                  "Perform the full ordinary review in the current workspace. "
+                                  "A passing review does not authorize a Git commit or push.\n")
+            except (OSError, ValueError) as exc:
+                runtime_error = execution_error(str(exc), code="git_review_snapshot_failed", phase="review")
+                completed = False
+                break
         print("Last answer:", last_answer)
         try:
             review_result = one_run(
@@ -1314,6 +1355,13 @@ def start(
             last_answer = note
             break
 
+        if context.git_review is not None and git_review_token is not None:
+            try:
+                git_snapshot.verify_live(context.git_review, git_review_token, review_runs)
+            except (OSError, ValueError) as exc:
+                runtime_error = execution_error(str(exc), code="git_review_snapshot_changed", phase="review")
+                completed = False
+                break
         review_findings = review_result.end_answer
         latest_review_findings = review_findings
         latest_review_classification = parse_review_classification(review_findings)
@@ -1512,6 +1560,8 @@ def start(
     summary_obj.decision = decision_payload
     summary_obj.review_findings = latest_review_findings
     summary_obj.review_classification = latest_review_classification
+    summary_obj.git_review = git_review_token if completed else None
+    summary_obj.git_publication_error = git_publication_error
 
     def note_archive_failure(exc: Exception) -> None:
         summary_obj.completed = False

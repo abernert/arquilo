@@ -16,7 +16,7 @@ not have a separate maintenance commitment.
 
 ## Trust boundaries
 
-- Production uses Codex `workspace-write`; review requests use `read-only`.
+- With the default Codex backend, production uses `workspace-write`; review requests use `read-only`.
   ARQUILO does not add filesystem hardening inside `workspace-write`: it keeps
   Codex exec-policy rules and Codex's standard/configured writable roots, including
   normal temporary-directory handling. ARQUILO is not itself an OS sandbox. Native
@@ -26,7 +26,7 @@ not have a separate maintenance commitment.
   atomic-write and path-integrity checks. Those checks protect controller authority;
   they are not injected into Codex, do not filter worker shell commands, and do not
   restrict ordinary project files inside the Codex workspace.
-- Codex and controller Git launchers must be installed outside the workspace.
+- Codex, Claude Code and controller Git launchers must be installed outside the workspace.
   Resolution uses only absolute host PATH entries; empty, relative and
   workspace-contained entries, including aliases into the workspace, are
   excluded. Explicit launcher paths must also be absolute and external. The
@@ -42,7 +42,7 @@ not have a separate maintenance commitment.
   tool/unknown events, but this is an acceptance gate, not a pre-tool interceptor.
   Configured tools, MCP servers, hooks and auth/notification commands may start
   under Codex's own rules. Do not treat config inheritance as zero side effects
-  or a blanket tool-disable mechanism. See [Decide configuration](docs/decide-configuration.md).
+  or a blanket tool-disable mechanism. See [Decide configuration](docs/guides/operator-guide.en.md#decide-reference).
   Never populate its host settings/environment from model-controlled input.
 - Shell network access and Git operations are explicit opt-ins. Disabling shell
   networking does not disable model-provider communication or prove that every
@@ -69,7 +69,7 @@ sandbox or protection against arbitrary code with the user's credentials.
 
 Use local, user-owned state storage. POSIX state roots require user ownership and
 mode 0700; on Windows use the default private LocalAppData or an equivalently
-restricted, user-owned directory with appropriate ACLs. Do not grant Codex,
+restricted, user-owned directory with appropriate ACLs. Do not grant agent runtimes,
 external tools or other users extra access to the state root. Profiles with
 `preflight.command` are **trusted executable code with host permissions**, not
 untrusted configuration; do not run downloaded profiles without inspection.
@@ -81,7 +81,7 @@ Do not edit the selected files, Git index or branch concurrently with a run.
 The allowlist is not a content/secret scanner or proof that every output is
 correct. Inspect sensitive deliverables before publishing.
 
-See [controller safety](docs/controller-safety.md) for migration and recovery.
+See [controller safety](docs/guides/technical-guide.en.md#controller-reference) for migration and recovery.
 
 ## Operational baseline
 
@@ -108,15 +108,32 @@ tamper-proof evidence. Authoritative plan/budget/worker IPC stays external.
 statuses/removal. It does not certify those edits as reviewed work. Use the
 original-assignment `reviewed_this_run` and recorded plan mutations, and perform
 human review of generated plans. Both switches are off by default and neither
-changes Codex permission settings. See [details](docs/operator-controls.md).
+changes Codex permission settings. See [details](docs/guides/operator-guide.en.md#operator-controls-reference).
 
-## Experimental Claude Code backend
 
-`--backend claude-code` has its own execution path. Its read-only roles exclude
-Bash/write tools and Decide excludes task tools. Its production Bash requires
-Claude native sandbox availability without an unsandboxed escape. Native file
-tools and mandatory managed configuration are not a whole-process sandbox;
-trusted host/user permissions and provider behavior still matter. Review event
-validation is not a pre-tool interceptor. Use isolated client environments and
-read [the backend-specific limits](docs/claude-code-backend.md). Neither this
-backend nor a green offline test is a data-residency or production certification.
+## Claude Code backend
+
+`--backend claude-code` selects an independent path for all phases, without a
+Codex executable/configuration lookup or fallback. Claude uses the shared
+external-launcher, accepted-plan, STOP, budget and review/DONE controls. Review
+and parent review exclude Bash and write tools; Decide excludes task tools.
+Production Bash requires native sandbox availability with no unsandboxed escape.
+Linux needs the native sandbox prerequisites; Windows production uses WSL2/Linux.
+Named MCP selections fail before model calls. Explicit ARQUILO skill text does
+not enable native Claude plugins, skills, subagents or external MCP tools.
+
+Native file tools, mandatory managed integrations, authentication and provider
+behavior are not a whole-process sandbox. Event validation is an acceptance
+gate, not a pre-tool interceptor. Accepting a known built-in telemetry identity
+does not disable telemetry. See [backend permissions](docs/guides/operator-guide.en.md#backends)
+and [Claude qualification](docs/claude-code-backend.md).
+
+## Acceptance and optional publication
+
+A publication error does not invalidate an otherwise accepted task. `--git`
+records delivery separately; `--git-required` makes unfinished delivery stop
+the run while keeping the task's accepted state. Neither mode permits a changed
+snapshot, forged token or modified selected output to masquerade as the bytes
+that passed review. Model-free publication retry uses retained private evidence
+and reconciles uncertain local/remote outcomes; it does not rerun production or
+approve new content. See [Git operations](docs/guides/operator-guide.en.md#git).

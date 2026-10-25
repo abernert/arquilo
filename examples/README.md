@@ -21,4 +21,10 @@ reports and controller status must be checked after execution.
 `tasks.md` in a fresh workspace, run with `--allow-todo-modifications --stop 2`,
 and inspect the generated open tasks before a separate strict continuation.
 Do not use this example without the opt-in: strict mode rejects plan mutations.
-[Full commands and trust boundaries](../docs/operator-controls.md).
+[Full commands and trust boundaries](../docs/guides/operator-guide.en.md#operator-controls-reference).
+
+`python_function_todo.md` is a small software tutorial: an integer addition
+function, discovered standard-library tests and a second verification task.
+Copy it into a fresh workspace as described in the [User Guide](../docs/guides/user-guide.en.md#software).
+Review generated code before executing it yourself; zero discovered tests is
+not acceptance. [Deutsche Anleitung](../docs/guides/user-guide.de.md#software).

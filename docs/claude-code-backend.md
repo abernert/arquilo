@@ -1,4 +1,4 @@
-# Claude Code backend (experimental branch)
+# Claude Code backend qualification
 
 `--backend codex` is the default. `--backend claude-code` selects Claude Code for
 **the entire run**: production, fixes, reviews, parent reviews, semantic Decide,
@@ -7,12 +7,15 @@ preflight, configuration-home lookup, or fallback is used on that path. Shared
 Python result/policy helpers retain some historical names; that is not a Codex
 process or provider dependency. OpenCode is reserved, **not implemented**.
 
-This is unreleased backend work on **ARQUILO 0.9.1 plus the state-I/O repairs
-from PR #35**. The original Claude branch is retained in ancestry, including the
-owner-tested native 2.1.310 compatibility fixes. `VERSION` is 0.9.1, but this
-checkout is not the already published v0.9.1 ZIP. No release tag, `main`, or
-existing release asset is changed by this integration. Review and apply #35
-before merging this backend update into the stable main line.
+The backend and state-I/O repairs are included in main commit
+`cded22f337a0033a3b0934709a82e1ce3db7cdb3`. This combined checkout also integrates
+reviewed Git publication and the consolidated manuals. `VERSION` remains 0.9.1;
+the already published v0.9.1 ZIP is an earlier baseline. See
+[source inputs and integration scope](integration-status.md). Native compatibility
+evidence below qualifies specific adapter behavior, not every combined workflow
+or a new release. Use the [Operator Guide](guides/operator-guide.en.md#backends)
+for normal configuration and the [Technical Guide](guides/technical-guide.en.md#transport)
+for the integrated architecture.
 
 ## Security baseline and shared acceptance
 
@@ -41,9 +44,10 @@ extra permissive Decide call. Valid no-issue prose still uses Claude Decide.
 Metadata recognition is not pre-execution confinement. Native Claude roles and
 sandbox limitations remain as documented below: no reviewer Bash, no named MCPs,
 no automatic Codex fallback. More general process/output supervision, additional
-resource isolation and the Git publication work in PR #36 are **not** included.
-Use this backend qualification without automatic Git publication; integration
-with that separate package needs its own corrected review/publication tests.
+resource isolation remain separate work. This combined checkout includes the
+reviewed-publication path; verify it with the common acceptance and delivery
+regressions for both backends. [Git operation and retry](guides/operator-guide.en.md#git)
+have the same controller-owned contract; no Claude reviewer Bash is enabled.
 
 ## Compatibility with ARQUILO 0.9.1
 
@@ -65,7 +69,7 @@ with that separate package needs its own corrected review/publication tests.
   metadata reports this limitation rather than claiming feature parity.
 - `--agent` / `CFG agent` are Codex profile selectors, not Claude subagents.
   They are rejected for Claude, as are Codex-only provider/profile overrides.
-- Historical `review resume` remains Codex-only; native Claude session resume
+- Historical `tasklist resume-review` remains Codex-only; native Claude session resume
   and cross-backend recovery are not added in this integration.
 
 ## Install and select
@@ -107,8 +111,10 @@ Optional **trusted host** variables (never set from agent-controlled task text):
 | `ARQUILO_CLAUDE_CODE_MODEL` | Optional Claude-native model selection. CLI `--model` takes precedence. |
 | `ARQUILO_CLAUDE_CODE_REASONING_EFFORT` | Optional `low`, `medium`, `high`, `xhigh`, or `max`. CLI `--reasoning-effort` wins. |
 
-No `ARQUILO_CODEX_*`, `CODEX_HOME`, or historical decision-model default is
-translated into Claude settings. Omit model/effort to leave selection to the
+Codex model/effort settings, `CODEX_HOME`, and the historical decision-model
+default are not translated into Claude provider settings. The common transport
+timeouts retain their historical `ARQUILO_CODEX_*_SECONDS` names for both
+backends; see the [environment reference](guides/operator-guide.en.md#environment-reference). Omit model/effort to leave selection to the
 trusted native Claude configuration. Unsupported explicit effort values fail;
 they are not guessed. `--codex-profile`, Codex provider overrides and raw extra
 arguments are rejected for Claude. Native proxy, certificate and authentication
@@ -236,7 +242,7 @@ metadata but are not encrypted and are not safe to publish unreviewed.
 `--no-session-persistence` is not a promise of zero native logs or zero retention
 at the model provider. Set client-specific retention and deletion rules.
 
-The existing `review resume` command validates **historical Codex reconnect archives**;
+The existing `tasklist resume-review` command validates **historical Codex reconnect archives**;
 it remains Codex-specific and refuses `--backend claude-code` before dispatch.
 No Claude request is silently converted into a Codex recovery. Native Claude
 session resume/mixed-runtime review routing are not part of this first backend.
@@ -285,21 +291,28 @@ identities and reject untrusted substitutions. Native CLI tests
 and real-model/client-host tests are distinct levels; passing an offline suite
 does not establish native tool isolation or model quality.
 
+The current native fixture has seven scenarios, including `read_private_output`:
+the reviewer retains the live workspace as cwd and reads an explicit private
+selected-output snapshot without Bash or write tools. Earlier six-case native
+results did not test this new review/publication boundary. Record the actual
+seven-case native result for the combined checkout separately from those
+historical runs; this paragraph is a test requirement, not a claim that an
+unobserved native run passed.
+
 The 0.9.0 integration regression suite additionally covers all built-in catalogs,
 custom/frozen catalogs through correction loops and actual Python workers,
 Claude doctor prompt selection, legacy-review Decide, explicit empty MCPs,
 fail-closed named MCP requests, and skill instruction bindings without Codex
 home discovery. These fixtures are not real-model quality evidence.
 
-## Isolated owner smoke test before merge
+## Isolated owner smoke test of a selected revision
 
-Keep the stable runner and client workspaces untouched. From your existing
-ARQUILO repository, create a separate test worktree (choose a new target path):
+Use a separate installation of the exact revision being qualified and a new
+disposable workspace. Keep the stable runner and existing client workspaces
+separate. Do not assume an old feature-branch name resolves to this integration.
+From the selected installation, check:
 
 ```bash
-git fetch origin
-git worktree add --detach ../arquilo-claude-test origin/feat/claude-code-backend
-cd ../arquilo-claude-test
 python3 -B arquilo.py --version
 claude --version
 ```

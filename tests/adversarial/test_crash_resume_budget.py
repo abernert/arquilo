@@ -236,11 +236,12 @@ class CrashResumeBudgetTests(IsolatedControllerCase):
         self.assertEqual(resumed.exit_code, 0)
         self.assertEqual(json.loads((self.budget(resumed) / "reservations.json").read_text()), 2)
 
-    def test_optional_git_failure_is_run_failure_after_reviewed_status(self):
+    def test_optional_git_failure_preserves_reviewed_status_with_publication_pending(self):
         runner = self.runner()
         runner.git_enabled = True
         runner.git_selection = type("SyntheticGit", (), {
-            "commit": lambda self, message: (_ for _ in ()).throw(OSError("synthetic Git failure"))
+            "begin_review": lambda self, **kwargs: None,
+            "commit": lambda self, message, **kwargs: (_ for _ in ()).throw(OSError("synthetic Git failure"))
         })()
 
         def successful(**kwargs):
@@ -250,11 +251,15 @@ class CrashResumeBudgetTests(IsolatedControllerCase):
             return answer(json.dumps(PASS))
 
         with self.fake_codex(successful):
-            with self.assertRaisesRegex(OSError, "Git failure"):
-                runner.run()
-        self.assertNotEqual(runner.exit_code, 0)
+            runner.run()
+        self.assertEqual(runner.exit_code, 0)
         self.assertEqual(runner.reviewed_this_run, {"1"})
-        self.assertEqual(json.loads((runner.run_dir / "run.json").read_text())["status"], "failed")
+        record = json.loads((runner.run_dir / "run.json").read_text())
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["publication_status"], "pending")
+        self.assertTrue(record["publication_records"])
+        self.assertIsNone(record["execution_error"])
+        self.assertIsNone(runner.terminal_execution_error)
         self.assert_accepted_artifact(runner, plan=DONE, artifact="proof.txt", data=b"verified\n")
         self.assertFalse((self.work / "process_stop").exists())
 
