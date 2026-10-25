@@ -203,7 +203,7 @@ Runtime profiles are JSON-based domain extensions and trusted preflights. Some p
 
 `ReviewedGit.begin_review()` establishes request identity. On a captured candidate, `accept_review()` verifies the request/token, task/attempt, review round, frozen bytes and selected live outputs. Snapshot/token/output mutation after review still vetoes acceptance. If capture was unavailable before review, the controller can accept a valid ordinary review while recording publication as blocked; it cannot manufacture an accepted candidate afterward from live files.
 
-After deterministic plan/review/STOP checks, the controller records task acceptance independently of delivery. Optional commit/push failures preserve DONE and a separate publication record. `--git-required` changes the run's delivery requirement: accepted work stays DONE, but incomplete delivery stops continuation with the incomplete exit code. Neither mode weakens candidate validation.
+After deterministic plan/review/STOP checks, the controller records task acceptance independently of delivery. Optional commit/push failures preserve DONE and a separate publication record. When no accepted receipt can be obtained, the controller must persist a private blocked obligation before DONE; failure to persist that obligation is a controller failure, not an optional transport error. `--git-required` changes the run's delivery requirement: accepted work stays DONE, but incomplete delivery stops continuation with the incomplete exit code, including on restart. Neither mode weakens candidate validation.
 
 Private publication receipts retain the exact reviewed candidate/commit and operation progress outside the model workspace. The `git status` and `git retry` commands use those receipts without model or review dispatch. Retry reconciles the actual index, symbolic HEAD/branch and remote; it reuses the recorded reviewed commit and refuses conflicting or missing evidence. There is no transaction spanning plan journal, local index/branch and remote server.
 
@@ -219,6 +219,7 @@ Object construction uses the private publisher and frozen output bytes, not new 
 | Private worker return | Input to boundary validation | A success solely because it is parseable JSON. |
 | Original contract/prompt snapshot | Reproducible request evidence | A snapshot of every workspace or native configuration file. |
 | Private publication receipt | Durable delivery status, exact reviewed commit and reconciliation evidence | Authority to re-review new live content or blindly repeat an uncertain push. |
+| Private blocked publication obligation | Durable unmet delivery request across restarts | An accepted candidate or authority for model-free publication. |
 | Private Git review manifest/token | Exact candidate and request binding for selected output publication | Proof of model correctness, same-user isolation or remote push success. |
 | Capture bytes, raw/pretty logs and public summaries | Diagnostics and execution evidence | Encrypted, immutable audit storage or trusted instructions. |
 | Readable result report | Model-authored explanation and observed checks | Independent proof of correctness or authorization to publish. |
@@ -492,9 +493,26 @@ relative to the original request and also covers a successful local-only commit;
 it does not by itself assert a remote push. `accepted`, `preparing`, `prepared`
 and `push_pending` remain pending until reconciliation completes that request.
 
+Setup, pre-review capture or receipt-persistence failure can instead produce a
+separate `obligation-<32hex>` record. Its `blocked` status survives restart and
+appears in `git status`, but it cannot authorize `git retry`. New v2 receipts pin
+the matching existing obligation IDs in `supersedes` when accepted. Only their
+successful `published` or `noop` transition marks those obligations
+`superseded` and records the publication ID in `resolved_by`; history remains.
+An older v1 receipt remains retryable but cannot resolve a later obligation.
+
 ### Optional and required delivery
 
-With ordinary `--git`, publication failure is reported separately and does not undo an accepted DONE transition. With `--git-required`, the same accepted task remains DONE, but incomplete requested delivery stops the run with `EXIT_INCOMPLETE`. A commit-only request and a push request have different delivery requirements. A publication error is not a failed review; a corrupted review candidate is not merely a publication error.
+With ordinary `--git`, publication failure is reported separately and does not undo an accepted DONE transition. Before that transition, either the accepted publication evidence or its blocked obligation must be durably recorded; an unwritable required controller journal prevents DONE. With `--git-required`, the same accepted task remains DONE, but incomplete requested delivery stops the run with `EXIT_INCOMPLETE`, including when all selected tasks were already DONE at restart. A commit-only request and a push request have different delivery requirements. A publication error is not a failed review; a corrupted review candidate is not merely a publication error.
+
+An unbound obligation requires an explicit owner-requested new task attempt:
+inspect and preserve existing outputs, prepare a valid clean Git baseline for
+the selected files, reopen the affected task, adopt the inspected plan change
+and use ordinary optional `--git` for a fresh production/review cycle. The
+clean-selection constructor boundary remains unchanged. The required-delivery
+barrier remains in force otherwise. A later matching successful receipt can
+supersede the pinned old obligation; retry never manufactures a candidate from
+current live files. Existing accepted receipts retain model-free recovery.
 
 Automatic Git remains serial only. Existing selection/target safety conditions remain enforced. Snapshot capacity applies to selected publication data, not the entire context tree. History-pack bounds remain separate from the still-open comprehensive process supervisor. There is no universal exactly-once guarantee or atomic transaction spanning all local and remote stores.
 

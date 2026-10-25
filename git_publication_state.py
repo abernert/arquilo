@@ -21,6 +21,9 @@ FIELDS = {'schema_version', 'id', 'workspace', 'session', 'request', 'token',
           'before_index_sha256', 'before_listing_sha256', 'after_index_sha256',
           'push', 'remote', 'remote_branch', 'destination_sha256', 'status',
           'commit', 'tree', 'selected_paths', 'message', 'error_type'}
+OBLIGATION_FIELDS = {'schema_version', 'id', 'workspace', 'run', 'task', 'attempt',
+                     'paths', 'push', 'branch', 'destination_sha256', 'error',
+                     'status', 'resolved_by'}
 _MUTEX = threading.RLock()
 
 
@@ -41,6 +44,12 @@ def identifier(value):
     return value
 
 
+def obligation_identifier(value):
+    if not isinstance(value, str) or not re.fullmatch(r'obligation-[0-9a-f]{32}', value):
+        raise PublicationStateError('Invalid blocked publication identity.')
+    return value
+
+
 def _hash(value, *, nullable=False):
     return nullable and value is None or isinstance(value, str) and bool(re.fullmatch(r'[0-9a-f]{64}', value))
 
@@ -55,9 +64,19 @@ def root(state: Path, workspace: Path) -> Path:
 
 def validate(record, state: Path, workspace: Path):
     base = root(state, workspace)
-    if (not isinstance(record, dict) or set(record) != FIELDS
-            or record['schema_version'] != 'arquilo.git_publication.v1'):
+    version = record.get('schema_version') if isinstance(record, dict) else None
+    expected_fields = FIELDS | {'supersedes'} if version == 'arquilo.git_publication.v2' else FIELDS
+    if (not isinstance(record, dict) or set(record) != expected_fields
+            or version not in ('arquilo.git_publication.v1', 'arquilo.git_publication.v2')):
         raise PublicationStateError('Invalid Git publication receipt schema.')
+    if version == 'arquilo.git_publication.v2':
+        supersedes = record['supersedes']
+        if (not isinstance(supersedes, list) or len(supersedes) > MAX_PUBLICATIONS
+                or any(not isinstance(value, str) for value in supersedes)
+                or len(set(supersedes)) != len(supersedes)):
+            raise PublicationStateError('Invalid bound publication obligations.')
+        for value in supersedes:
+            obligation_identifier(value)
     identifier(record['id'])
     if record['workspace'] != str(workspace.resolve()):
         raise PublicationStateError('Git publication belongs to a different workspace.')
@@ -196,8 +215,7 @@ def lock(state: Path, workspace: Path):
                 fcntl.flock(stream, fcntl.LOCK_UN)
 
 
-def list_records(state: Path, workspace: Path):
-    directory = root(state, workspace) / 'receipts'
+def _entries(directory: Path):
     try:
         with safe_io.directory(directory) as (base, fd):
             import os
@@ -209,8 +227,185 @@ def list_records(state: Path, workspace: Path):
                     entries.append(entry.name)
     except FileNotFoundError:
         return []
+    return sorted(entries)
+
+
+def list_records(state: Path, workspace: Path):
     records = []
-    for name in sorted(entries):
+    for name in _entries(root(state, workspace) / 'receipts'):
         if re.fullmatch(r'publication-[0-9a-f]{32}\.json', name):
             records.append(summary(load(state, workspace, name[:-5])))
+    for name in _entries(root(state, workspace) / 'obligations'):
+        if re.fullmatch(r'obligation-[0-9a-f]{32}\.json', name):
+            records.append(obligation_summary(load_obligation(state, workspace, name[:-5])))
     return records
+
+
+def normalize_task(value):
+    return value.removesuffix('-review')
+
+
+def _identity_text(value):
+    return (isinstance(value, str) and bool(value) and len(value.encode('utf-8')) <= 2048
+            and not any(ord(char) < 32 for char in value))
+
+
+def validate_obligation(record, state: Path, workspace: Path):
+    root(state, workspace)
+    if (not isinstance(record, dict) or set(record) != OBLIGATION_FIELDS
+            or record['schema_version'] != 'arquilo.git_publication_obligation.v1'):
+        raise PublicationStateError('Invalid blocked publication schema.')
+    obligation_identifier(record['id'])
+    if record['workspace'] != str(workspace.resolve()):
+        raise PublicationStateError('Blocked publication belongs to a different workspace.')
+    if any(not _identity_text(record[field]) for field in ('run', 'task', 'attempt')):
+        raise PublicationStateError('Invalid blocked publication attempt identity.')
+    paths = record['paths']
+    if (not isinstance(paths, list) or not paths or len(paths) > git_snapshot.MAX_FILES
+            or any(not isinstance(value, str) for value in paths) or len(set(paths)) != len(paths)):
+        raise PublicationStateError('Invalid blocked publication selection.')
+    for value in paths:
+        git_snapshot.relative_name(value)
+    if type(record['push']) is not bool or not _hash(record['destination_sha256'], nullable=True):
+        raise PublicationStateError('Invalid blocked publication destination.')
+    if not record['push'] and record['destination_sha256'] is not None:
+        raise PublicationStateError('Unexpected destination for a local publication block.')
+    if record['branch'] is not None and (not _identity_text(record['branch'])
+            or not record['branch'].startswith('refs/heads/')):
+        raise PublicationStateError('Invalid blocked publication source branch.')
+    error = record['error']
+    if (not isinstance(error, dict) or set(error) != {'code', 'message'}
+            or not isinstance(error['code'], str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,95}', error['code'])
+            or not isinstance(error['message'], str) or '\0' in error['message']
+            or len(error['message'].encode('utf-8')) > 16384):
+        raise PublicationStateError('Invalid blocked publication diagnostic.')
+    if record['status'] == 'blocked':
+        if record['resolved_by'] is not None:
+            raise PublicationStateError('An unresolved publication cannot name a resolver.')
+    elif record['status'] == 'superseded':
+        identifier(record['resolved_by'])
+    else:
+        raise PublicationStateError('Invalid blocked publication lifecycle state.')
+    return record
+
+
+def obligation_path(state: Path, workspace: Path, obligation_id: str):
+    return root(state, workspace) / 'obligations' / (obligation_identifier(obligation_id) + '.json')
+
+
+def load_obligation(state: Path, workspace: Path, obligation_id: str):
+    data = git_snapshot.read_regular(obligation_path(state, workspace, obligation_id), limit=MAX_RECEIPT_BYTES)
+    if data is None:
+        raise PublicationStateError('Blocked publication identity not found.')
+    try:
+        record = json.loads(data[0], object_pairs_hook=git_snapshot._json_object,
+            parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Nonfinite JSON')))
+    except (ValueError, UnicodeError) as exc:
+        raise PublicationStateError('Invalid blocked publication JSON.') from exc
+    validate_obligation(record, state, workspace)
+    if record['id'] != obligation_id:
+        raise PublicationStateError('Blocked publication identity mismatch.')
+    if record['status'] == 'superseded':
+        receipt = load(state, workspace, record['resolved_by'])
+        if (receipt['status'] not in {'published', 'noop'}
+                or obligation_id not in receipt.get('supersedes', [])
+                or not _can_supersede(record, receipt)):
+            raise PublicationStateError('Blocked publication has no matching successful resolution authority.')
+    return record
+
+
+def save_obligation(record, state: Path, workspace: Path, *, create=False):
+    validate_obligation(record, state, workspace)
+    data = git_snapshot.canonical_bytes(record)
+    if len(data) > MAX_RECEIPT_BYTES:
+        raise PublicationStateError('Blocked publication exceeds its size limit.')
+    destination = obligation_path(state, workspace, record['id'])
+    if create:
+        safe_io.write_bytes(destination, data, exclusive=True)
+    else:
+        safe_io.atomic_write(destination, data)
+
+
+def obligation_summary(record):
+    return {'id': record['id'], 'status': record['status'], 'commit': None, 'pushed': False,
+            'paths': list(record['paths']), 'review_snapshot': None, 'parent': None,
+            'run': record['run'], 'task': record['task'], 'attempt': record['attempt'],
+            'code': record['error']['code'], 'message': record['error']['message'],
+            'error_type': None, 'retryable': False, 'resolved_by': record['resolved_by']}
+
+
+def record_block(state: Path, workspace: Path, *, run, task, attempt, paths, push,
+                 destination_sha256, branch, error):
+    if not isinstance(paths, (list, tuple)) or len(paths) > git_snapshot.MAX_FILES:
+        raise PublicationStateError('Blocked publication paths must be explicit selections.')
+    if not isinstance(error, dict):
+        raise PublicationStateError('Blocked publication needs a structured diagnostic.')
+    normalized, seen = [], set()
+    for name in paths:
+        if not isinstance(name, str):
+            raise PublicationStateError('Blocked publication paths must be strings.')
+        literal = git_snapshot.relative_name(Path(name).as_posix())
+        if literal not in seen:
+            normalized.append(literal)
+            seen.add(literal)
+    record = {'schema_version': 'arquilo.git_publication_obligation.v1',
+              'workspace': str(workspace.resolve()), 'run': run, 'task': task, 'attempt': attempt,
+              'paths': normalized, 'push': push, 'branch': branch,
+              'destination_sha256': destination_sha256, 'error': dict(error),
+              'status': 'blocked', 'resolved_by': None}
+    # Repeated reporting of the same failed accepted attempt is idempotent.
+    identity = {key: value for key, value in record.items()
+                if key not in {'schema_version', 'error', 'status', 'resolved_by'}}
+    record['id'] = 'obligation-' + git_snapshot.digest(git_snapshot.canonical_bytes(identity))[:32]
+    validate_obligation(record, state, workspace)
+    try:
+        save_obligation(record, state, workspace, create=True)
+    except FileExistsError:
+        previous = load_obligation(state, workspace, record['id'])
+        if any(previous[key] != record[key] for key in identity):
+            raise PublicationStateError('Conflicting blocked publication attempt identity.')
+        return obligation_summary(previous)
+    return obligation_summary(record)
+
+
+def _can_supersede(block, receipt):
+    binding = receipt['request']['binding']
+    return (block['branch'] is not None and block['branch'] == receipt['branch']
+            and normalize_task(block['task']) == normalize_task(binding['task'])
+            and (block['run'], block['attempt']) != (binding['run'], binding['attempt'])
+            and set(block['paths']) <= set(receipt['paths'])
+            and (not block['push'] or receipt['push'] and block['destination_sha256'] is not None
+                 and block['destination_sha256'] == receipt['destination_sha256']))
+
+
+def eligible_blocks(state: Path, workspace: Path, receipt):
+    """Freeze only already existing matching blocks into a newly accepted receipt."""
+    result = []
+    for name in _entries(root(state, workspace) / 'obligations'):
+        if re.fullmatch(r'obligation-[0-9a-f]{32}\.json', name):
+            block = load_obligation(state, workspace, name[:-5])
+            if block['status'] == 'blocked' and _can_supersede(block, receipt):
+                result.append(block['id'])
+    return result
+
+
+def resolve_blocks(state: Path, workspace: Path, publication_id):
+    receipt = load(state, workspace, publication_id)
+    if receipt['status'] not in {'published', 'noop'}:
+        return []
+    git_snapshot.verify(receipt['request'], receipt['token'], receipt['token']['review_index'])
+    resolved = []
+    # Legacy v1 receipts have no resolution capability. In particular, retrying
+    # an old successful receipt can never erase a subsequently created block.
+    for obligation_id in receipt.get('supersedes', []):
+        block = load_obligation(state, workspace, obligation_id)
+        if not _can_supersede(block, receipt):
+            raise PublicationStateError('Bound publication obligation changed scope.')
+        if block['status'] == 'superseded':
+            if block['resolved_by'] == publication_id:
+                resolved.append(obligation_id)
+            continue
+        block.update(status='superseded', resolved_by=publication_id)
+        save_obligation(block, state, workspace)
+        resolved.append(obligation_id)
+    return resolved

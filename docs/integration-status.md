@@ -38,10 +38,20 @@ a valid ordinary review still accepts the task.
 Task acceptance and delivery are separate. Optional commit/push failures retain
 accepted DONE work and a publication record. `--git-required` requires the
 requested delivery before continuation and stops with incomplete delivery while
-retaining task acceptance. `git status` and `git retry` inspect/reconcile retained
-publication evidence without production or model review. They do not create a
-fresh reviewed candidate from current live files. Automatic parallel Git remains
-unsupported. See [publication and retry](guides/operator-guide.en.md#git).
+retaining task acceptance. A private blocked obligation preserves incomplete
+delivery across restarts even when setup, capture or receipt persistence failed
+without an accepted candidate. That obligation must be durable before DONE;
+failure to persist it is a controller acceptance failure.
+
+`git status` shows receipts and blocked obligations. `git retry` reconciles an
+accepted receipt without production or model review; it cannot authorize an
+unbound obligation. Resolve such a block by inspecting and preserving outputs,
+preparing a valid clean Git baseline for selected files, deliberately reopening
+the task, adopting the inspected plan change and requesting a fresh ordinary
+optional `--git` attempt. A matching successful new receipt supersedes the old block
+while retaining history. Required delivery remains a barrier otherwise.
+Automatic parallel Git remains unsupported. See
+[publication and retry](guides/operator-guide.en.md#git).
 
 State-I/O fixes retain keys, journals and used budgets. Keep the same workspace,
 task-list path and state root when continuing. Update controller and workers

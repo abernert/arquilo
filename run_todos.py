@@ -13,7 +13,9 @@ import argparse
 import safe_io
 from controller_state import PlanAuthority, PlanIntegrityError, state_directory, default_state_root
 from project_logs import project_logs, validate_project_id, timestamp_name, reserve_directory
-from reviewed_git import ReviewedGit, ReviewedGitError, PublicationUnavailable, list_publications
+from reviewed_git import (ReviewedGit, ReviewedGitError, PublicationUnavailable,
+                          list_publications, record_publication_block,
+                          resolve_publication_blocks)
 from git_snapshot import ReviewedCandidate
 import git_snapshot
 from codex_launcher import resolve_launcher
@@ -690,6 +692,7 @@ class TaskOutcome:
     capture_directory: Optional[Path] = None
     git_candidate: Optional[ReviewedCandidate] = None
     git_publication_error: Optional[Dict[str, str]] = None
+    git_publication_block: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         if self.process_stop_triggered:
@@ -922,7 +925,7 @@ class TodoRunner:
             self.git_repo_root = self._assert_git_repository()
             if not self.dry_run:
                 pending_publications = [row for row in list_publications(self.state_dir, self.workdir)
-                                        if row.get("status") not in {"published", "noop"}
+                                        if row.get("status") not in {"published", "noop", "superseded"}
                                         and self._publication_record_in_scope(row)]
                 existing_plan = (read_utf8(self.todo_workspace_file) if self.todo_workspace_file.is_file()
                                  else self.initial_resource_plan)
@@ -1030,7 +1033,7 @@ class TodoRunner:
         if self.git_enabled and not self.dry_run:
             self.publication_records = [dict(record, required=self.git_required, previous_run=True)
                 for record in list_publications(self.state_dir, self.workdir)
-                if record.get("status") not in {"published", "committed", "unchanged", "noop"}
+                if record.get("status") not in {"published", "committed", "unchanged", "noop", "superseded"}
                 and self._publication_record_in_scope(record)]
 
 
@@ -1962,11 +1965,13 @@ class TodoRunner:
             return
         self.plan_authority.check()
         if outcome.git_publication_error is not None:
-            result = {"status": "blocked", **outcome.git_publication_error}
+            if outcome.git_publication_block is None:
+                raise PlanIntegrityError("Blocked publication was not durably recorded before task acceptance.")
+            result = dict(outcome.git_publication_block)
         else:
             try:
                 result = self.git_selection.commit(self._compose_git_commit_message(todo), candidate=outcome.git_candidate)
-                result = result or {"status": "unchanged", "pushed": False}
+                result = result or getattr(self.git_selection, "last_publication", None) or {"status": "unchanged", "pushed": False}
                 result.setdefault("status", "published" if result.get("pushed") else "committed")
             except (ReviewedGitError, OSError, ValueError) as exc:
                 result = dict(getattr(self.git_selection, "last_publication", None) or {})
@@ -1976,6 +1981,15 @@ class TodoRunner:
                     result["status"] = "pending"
                 result.setdefault("status", "blocked")
                 result.update(code="git_publication_failed", message=str(exc)[:4096])
+        if result.get("status") in {"published", "committed", "unchanged", "noop"} and result.get("id"):
+            try:
+                resolved = set(resolve_publication_blocks(self.state_dir, self.workdir, result["id"]))
+                for previous in self.publication_records:
+                    if previous.get("id") in resolved:
+                        previous.update(status="superseded", resolved_by=result["id"])
+            except (ReviewedGitError, OSError, ValueError) as exc:
+                result.update(status="pending", code="git_publication_resolution_failed",
+                              message=str(exc)[:4096])
         record = {**result, "task": todo.identifier, "required": self.git_required}
         self.publication_records.append(record)
         write_log_json(self.run_dir / ("git_" + todo.identifier.replace(".", "_") + ".json"), record)
@@ -1989,7 +2003,7 @@ class TodoRunner:
                 print("[info] Git-Publikation gezielt prüfen/wiederholen: " + record["id"])
 
     def _publication_pending(self) -> bool:
-        return any(record.get("status") not in {"published", "committed", "unchanged", "noop"}
+        return any(record.get("status") not in {"published", "committed", "unchanged", "noop", "superseded"}
                    for record in self.publication_records)
 
     def _publication_record_in_scope(self, record: dict) -> bool:
@@ -2002,11 +2016,32 @@ class TodoRunner:
         return ((not self.start_id or number(task) >= number(self.start_id))
                 and (not self.stop_id or number(task) <= number(self.stop_id)))
 
-    def _verify_git_acceptance(self, outcome: TaskOutcome) -> None:
+    def _verify_git_acceptance(self, outcome: TaskOutcome, *, todo: TodoItem) -> None:
         """The last review binding is a hard gate, independent of publication."""
         if outcome.git_candidate is not None:
             candidate = outcome.git_candidate
             git_snapshot.verify_live(candidate.request, candidate.token, candidate.token["review_index"])
+        if (self.git_enabled and not self.dry_run and outcome.git_publication_error is not None
+                and outcome.git_publication_block is None):
+            # Persist the non-authorizing delivery obligation before DONE. A
+            # normal Git/capture failure remains separate from acceptance;
+            # failure to retain controller state itself must not acknowledge
+            # an unjournaled transition that a restart could forget.
+            selection = self.git_selection
+            if selection is None:
+                raise PlanIntegrityError("Cannot retain blocked publication without its original Git selection.")
+            attempt = (outcome.git_candidate.request["binding"]["attempt"]
+                       if outcome.git_candidate is not None else
+                       f"{outcome.log_dir.name if outcome.log_dir else 'task'}.{outcome.attempt or 1}")
+            try:
+                outcome.git_publication_block = record_publication_block(
+                    self.state_dir, self.workdir, run=self.run_id, task=todo.identifier,
+                    attempt=attempt, paths=list(selection.paths), push=selection.push,
+                    destination_sha256=(git_snapshot.digest(selection.push_destination)
+                                        if selection.push else None),
+                    branch=selection.branch, error=outcome.git_publication_error)
+            except (OSError, ValueError, ReviewedGitError) as exc:
+                raise PlanIntegrityError("Cannot durably retain the blocked publication before DONE.") from exc
 
     def _stop_marker_before(self, todo: TodoItem) -> bool:
         if todo.preceding_line is None:
@@ -2510,7 +2545,7 @@ class TodoRunner:
             self.attempted.add(todo.identifier)
             if outcome.completed:
                 self._finalize_post_todo_log(outcome)
-                self._verify_git_acceptance(outcome)
+                self._verify_git_acceptance(outcome, todo=todo)
                 if not self._mark_todo_as_done(todo):
                     outcome = self._stop_outcome_if_requested(outcome)
                     outcomes[todo.identifier] = outcome, context, primary_result_file
@@ -2651,7 +2686,7 @@ class TodoRunner:
             return replace(outcome, completed=False)
         if outcome.completed:
             self._finalize_post_todo_log(outcome)
-            self._verify_git_acceptance(outcome)
+            self._verify_git_acceptance(outcome, todo=todo)
             if not self._mark_todo_as_done(todo):
                 return self._stop_outcome_if_requested(outcome)
             self.completed.add(todo.identifier)
@@ -4357,7 +4392,7 @@ class TodoRunner:
                         )
                         return
                 else:
-                    self._verify_git_acceptance(review.task_outcome)
+                    self._verify_git_acceptance(review.task_outcome, todo=parent_todo)
                     if not self._mark_todo_as_done(parent_todo):
                         return
                 if self._poll_process_stop():

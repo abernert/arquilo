@@ -585,7 +585,7 @@ For diagnosis, preserve the original error, exact versions and invocation withou
 
 Raw archives are not encrypted, append-only evidence stores or sanitized support bundles. Share a reviewed minimal diagnostic extract, not the whole state root. [Project logs](#logs-reference) · [Controller safety](technical-guide.en.md#controller-reference)
 
-`run.json` reports `publication_required`, `publication_status` and `publication_records` separately from task completion. The aggregate publication status is `not_requested`, `complete` or `pending`; a verified no-change publication is successful. A pending/blocked delivery can coexist with DONE tasks. Existing pending receipts remain visible when a later run has no unfinished tasks; merely restarting does not mark them delivered. The private receipts, not a mutable public summary, authorize model-free retry.
+`run.json` reports `publication_required`, `publication_status` and `publication_records` separately from task completion. The aggregate publication status is `not_requested`, `complete` or `pending`; a verified no-change publication is successful. A pending/blocked delivery can coexist with DONE tasks. Private pending receipts and blocked obligations remain visible when a later run has no unfinished tasks; merely restarting does not mark them delivered. An obligation records an unmet delivery request without authorizing publication. Only an accepted private receipt authorizes model-free retry; mutable run summaries do not.
 
 <a id="git"></a>
 ## 12. Automatic Git: acceptance and publication are separate
@@ -594,7 +594,7 @@ Raw archives are not encrypted, append-only evidence stores or sanitized support
 
 Before review, the controller freezes **selected outputs only** and binds their identity and bytes to that review. The reviewer remains in the normal workspace and receives explicit instructions to judge the frozen output references; other context remains accessible under the normal review policy. There is no full-workspace copy. An unrelated linked `.venv` or large unselected context file does not make publication capture fail merely by existing.
 
-If selected-output capture is unavailable before review, ordinary review may still accept the work, but publication remains blocked without accepted snapshot evidence. This is different from a snapshot, token or selected-live-output mismatch discovered after review: such a mismatch still vetoes acceptance. Optional publication never authorizes substituting unreviewed live bytes.
+If publication setup, selected-output capture before review or accepted-receipt persistence is unavailable, ordinary review may still accept the work. Before DONE, the controller must durably record the blocked obligation in private state. It remains visible across restarts without supplying publication authority. If neither an accepted receipt nor the blocked obligation can be persisted, controller persistence failure prevents DONE. A snapshot, token or selected-live-output mismatch still vetoes acceptance when discovered after review. Optional publication never authorizes substituting unreviewed live bytes.
 
 | Result | Default `--git` | With `--git-required` |
 | --- | --- | --- |
@@ -602,6 +602,7 @@ If selected-output capture is unavailable before review, ordinary review may sti
 | Task accepted and requested delivery succeeds | DONE; continue | DONE; continue |
 | Task accepted but capture/commit/push cannot complete | DONE; record delivery separately and continue within normal run controls | DONE; stop the run with incomplete delivery (exit 9) |
 | Push outcome is uncertain | Preserve the reviewed commit and recovery evidence; inspect/reconcile | Same evidence retained; required delivery remains incomplete |
+| Neither receipt nor blocked obligation can be durably recorded | Controller persistence failure; no DONE | Same |
 
 `--git-required` requires `--git`. A successful local commit satisfies a commit-only request; a request containing `--git-push` also requires the requested remote delivery. Automatic Git is **serial only**: `CFG parallel` with Git remains an unsupported configuration, not a reason to weaken workspace ownership. Task plans and rewritten result reports are not selectable publication outputs. Existing selected files must meet the documented starting conditions; unrelated staging is preserved.
 
@@ -614,6 +615,10 @@ successful verified no-change outcome. `accepted`, `preparing`, `prepared` and
 `push_pending` are unfinished delivery states, even when the task is already
 DONE. The run-level aggregate remains `pending` while required recorded work is
 unfinished; restarting a DONE-only plan does not erase old pending receipts.
+An `obligation-<32hex>` record with status `blocked` represents delivery without
+an authorizing candidate and also keeps the selected scope pending. A
+`superseded` obligation retains its history and identifies its successful
+replacement through `resolved_by`; it no longer blocks delivery.
 
 ### Inspect and retry publication without model work
 
@@ -624,9 +629,11 @@ python3 -B arquilo.py git status --workdir /path/to/project --todo-file /path/to
 python3 -B arquilo.py git retry --workdir /path/to/project --todo-file /path/to/project/tasks.md --publication PUBLICATION_ID
 ```
 
-Replace `PUBLICATION_ID` with the identifier shown by status. Add the original `--state-dir` when a custom state root was used. These commands do not call a model, rerun production or perform another review. Retry uses private retained evidence and the exact reviewed commit. It reconciles current HEAD/index and the actual remote before proceeding; it does not blindly create another commit or push a changed branch. An already delivered request must not be duplicated.
+Replace `PUBLICATION_ID` with an accepted `publication-<32hex>` identifier shown by status. Add the original `--state-dir` when a custom state root was used. These commands do not call a model, rerun production or perform another review. Retry uses private retained evidence and the exact reviewed commit. It reconciles current HEAD/index and the actual remote before proceeding; it does not blindly create another commit or push a changed branch. An already delivered request must not be duplicated. Retry refuses `obligation-<32hex>` identifiers because those records contain no accepted candidate.
 
-A missing or invalid accepted candidate cannot be repaired by snapshotting current live files after the review. Diagnose the blocked record and obtain any newly required review through an explicit task workflow. Do not clear controller state, overwrite the receipt, switch branches or reset an index just to make retry proceed. A failed/uncertain push may already have created a valid local commit or reached the remote.
+A missing or invalid accepted candidate cannot be repaired by snapshotting current live files after the review. To resolve an unbound block, fix its recorded cause, inspect and preserve the existing outputs, and prepare a valid clean Git baseline for the selected files. The normal clean-selection starting condition still applies. Then deliberately change the affected task from DONE to its open Task/Auftrag status, inspect the plan and adopt that change with `--accept-plan-changes`. Run that task with ordinary optional `--git` and the intended output selection, keeping the original workspace, task-list path and state root. This is an explicitly requested new production/review attempt. Do not add `--git-required` to that recovery attempt: the existing required-delivery barrier otherwise stops it before fresh model work. A matching new receipt supersedes the recorded block only after successful `published` or `noop` delivery; the old record remains in history. New unrelated publications cannot clear it.
+
+Do not clear controller state, overwrite the receipt, switch branches or reset an index just to make retry proceed. A failed/uncertain push may already have created a valid local commit or reached the remote; an existing accepted receipt still uses the model-free retry procedure above.
 
 The selected-file allowlist is not a secret scanner. Native Git/authentication and remote behavior remain trusted boundaries; local state, index, branch and remote are not one distributed transaction. See [implementation and recovery](technical-guide.en.md#git-reference).
 
@@ -963,7 +970,7 @@ The compatibility layer accepts the historical prefix for retained options with 
 
 ### Values that are not configurable CLI options
 
-The Git snapshot's 32 MiB/file, 128 MiB total, 20,000 entries, depth 64 and 8 MiB manifest are implementation limits. Preamble input is limited to 65,536 UTF-8 bytes. Prompt catalogs use 512 KiB file/combined-text and 128 KiB per-element bounds. No documented flag silently raises these limits. Full-run deadlines, output quotas and a separate optional-publication policy remain development work, not available parameters.
+The Git snapshot's 32 MiB/file, 128 MiB total, 20,000 entries, depth 64 and 8 MiB manifest are implementation limits. Preamble input is limited to 65,536 UTF-8 bytes. Prompt catalogs use 512 KiB file/combined-text and 128 KiB per-element bounds. No documented flag silently raises these limits. Full-run deadlines and output quotas remain development work, not available parameters.
 
 <a id="task-format-reference"></a>
 ## 18. Task file, preamble and status syntax

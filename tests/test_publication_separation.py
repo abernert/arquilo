@@ -28,6 +28,7 @@ import arquilo
 import autobuild
 from autobuild_contract import AutoBuildResultError, validate_result
 from agent_types import RunResult
+from controller_state import PlanIntegrityError
 import git_snapshot
 import reviewed_git
 from reviewed_git import ReviewedGitError
@@ -116,6 +117,233 @@ class PublicationWorkflow:
 
     def record(self, runner):
         return json.loads((runner.run_dir / 'run.json').read_text())
+
+    def _budget_snapshot(self, state):
+        return {p.relative_to(state).as_posix(): p.read_bytes()
+                for p in (state / 'call_budgets').rglob('*.json')}
+
+    def _git_snapshot(self):
+        directory = self.work / '.git'
+        return {p.relative_to(directory).as_posix(): p.read_bytes()
+                for p in directory.rglob('*') if p.is_file()}
+
+    @contextmanager
+    def _publication_without_receipt(self, failure):
+        if failure == 'capture':
+            with patch.object(git_snapshot, 'capture', side_effect=git_snapshot.GitSnapshotUnavailable(
+                    'Synthetic pre-review capture unavailable')):
+                yield
+        elif failure == 'receipt':
+            save = reviewed_git.publication_state.save
+            def fail_receipt(record, *args, **kwargs):
+                if record.get('id', '').startswith('publication-') and record.get('status') == 'accepted':
+                    raise OSError('Synthetic accepted-receipt persistence unavailable')
+                return save(record, *args, **kwargs)
+            with patch.object(reviewed_git.publication_state, 'save', side_effect=fail_receipt):
+                yield
+        else:
+            self.fail('Unknown publication failure fixture: ' + failure)
+
+    def _accepted_with_blocked_publication(self, failure):
+        runner = self.new_runner(git_required=True, run_id='blocked-original')
+        with self._publication_without_receipt(failure), self.dispatch(self.success):
+            runner.run()
+        self.assertEqual(self.phases, ['auftrag', 'review'])
+        self.assertEqual(runner.exit_code, int(ExitCode.INCOMPLETE))
+        self.assert_plan(runner, done=True)
+        self.assertEqual((self.work / 'proof.txt').read_bytes(), RIGHT)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.original_head)
+        self.assertEqual(self.record(runner)['publication_status'], 'pending')
+        rows = reviewed_git.list_publications(runner.state_dir, self.work)
+        self.assertEqual(len(rows), 1, 'A blocked obligation must survive without an accepted receipt')
+        blocked = rows[0]
+        self.assertRegex(blocked['id'], r'^obligation-[a-f0-9]{32}$')
+        self.assertEqual(blocked['status'], 'blocked')
+        self.assertEqual(blocked['task'], '1')
+        self.assertEqual(blocked['run'], runner.run_id)
+        self.assertTrue(blocked['attempt'])
+        self.assertEqual(blocked['paths'], ['proof.txt'])
+        self.assertIsNone(blocked.get('commit'))
+        self.assertFalse(blocked.get('pushed', False))
+        return runner, blocked
+
+    def _required_restart_without_receipt(self, failure):
+        runner, blocked = self._accepted_with_blocked_publication(failure)
+        state = runner.state_dir
+        budget_before = self._budget_snapshot(state)
+        self.assertTrue(budget_before)
+        runner.close()
+        for selection in (['proof.txt'], ['later.txt']):
+            with self.subTest(selection=selection):
+                resumed = self.new_runner(git_required=True, git_paths=selection)
+                with self.dispatch(lambda **kw: self.fail('A blocked required restart must not call a model')):
+                    resumed.run()
+                self.assertEqual(resumed.state_dir, state)
+                self.assertEqual(resumed.exit_code, int(ExitCode.INCOMPLETE))
+                self.assert_plan(resumed, done=True)
+                record = self.record(resumed)
+                self.assertEqual(record['publication_status'], 'pending')
+                retained = [row for row in record['publication_records'] if row['id'] == blocked['id']]
+                self.assertEqual(len(retained), 1)
+                self.assertEqual(retained[0]['status'], 'blocked')
+                self.assertEqual(retained[0]['paths'], ['proof.txt'])
+                self.assertEqual(self._budget_snapshot(state), budget_before)
+                resumed.close()
+        self.assertEqual(self.phases, ['auftrag', 'review'])
+
+        arguments = ['--workdir', str(self.work), '--todo-file', str(self.todo),
+                     '--state-dir', str(self.state_root)]
+        git_before = self._git_snapshot()
+        plan_before = (state / 'plan.json').read_bytes()
+        status_output, retry_error = io.StringIO(), io.StringIO()
+        with self.dispatch(lambda **kw: self.fail('Status/retry must not call a model')):
+            with redirect_stdout(status_output):
+                self.assertEqual(arquilo.main(['git', 'status', *arguments]), 0)
+            with redirect_stdout(io.StringIO()), redirect_stderr(retry_error):
+                self.assertEqual(arquilo.main(['git', 'retry', *arguments,
+                    '--publication', blocked['id']]), int(ExitCode.INCOMPLETE))
+        visible = json.loads(status_output.getvalue())['publications']
+        self.assertEqual([(row['id'], row['status']) for row in visible], [(blocked['id'], 'blocked')])
+        self.assertEqual(json.loads(retry_error.getvalue())['status'], 'blocked')
+        self.assertEqual(self._git_snapshot(), git_before)
+        self.assertEqual(self._budget_snapshot(state), budget_before)
+        self.assertEqual((state / 'plan.json').read_bytes(), plan_before)
+        self.assertEqual(reviewed_git.list_publications(state, self.work), [blocked])
+        self.assertEqual((self.work / 'proof.txt').read_bytes(), RIGHT)
+
+    def test_capture_unavailable_obligation_survives_required_restart_without_retry_authority(self):
+        self._required_restart_without_receipt('capture')
+
+    def test_receipt_write_failure_obligation_survives_required_restart_without_retry_authority(self):
+        self._required_restart_without_receipt('receipt')
+
+    def test_required_push_without_receipt_survives_identical_restart_after_producer_commit(self):
+        remote = self.base / 'local-remote.git'
+        self.git('init', '--bare', '-q', str(remote))
+        self.git('remote', 'add', 'origin', str(remote))
+        self.git('push', '-qu', 'origin', 'HEAD')
+        branch = self.git('symbolic-ref', 'HEAD').strip().decode()
+        remote_before = {p.relative_to(remote).as_posix(): p.read_bytes()
+                         for p in remote.rglob('*') if p.is_file()}
+        runner = self.new_runner(git_required=True, git_push=True)
+        def producer_commits(**kw):
+            result = self.success(**kw)
+            if kw['phase'] == 'auftrag':
+                # A producer-side commit leaves a clean selected baseline on
+                # restart, but it does not fulfill the owner's required push.
+                self.git('add', '--', 'proof.txt')
+                self.git('commit', '-qm', 'producer-created local commit')
+            return result
+        with self._publication_without_receipt('capture'), self.dispatch(producer_commits):
+            runner.run()
+        self.assertEqual(runner.exit_code, int(ExitCode.INCOMPLETE))
+        self.assert_plan(runner, done=True)
+        self.assertEqual(self.record(runner)['publication_status'], 'pending')
+        state = runner.state_dir
+        rows = reviewed_git.list_publications(state, self.work)
+        self.assertEqual(len(rows), 1)
+        blocked = rows[0]
+        self.assertRegex(blocked['id'], r'^obligation-[a-f0-9]{32}$')
+        self.assertEqual(blocked['status'], 'blocked')
+        self.assertIsNone(blocked.get('commit'))
+        committed_head = self.git('rev-parse', 'HEAD')
+        self.assertNotEqual(committed_head, self.original_head)
+        self.assertEqual(self.git('show', 'HEAD:proof.txt'), RIGHT)
+        self.assertEqual(self.git('--git-dir', str(remote), 'rev-parse', branch), self.original_head)
+        git_before = self._git_snapshot()
+        budget_before = self._budget_snapshot(state)
+        self.assertTrue(budget_before)
+        runner.close()
+
+        resumed = self.new_runner(git_required=True, git_push=True)
+        with self.dispatch(lambda **kw: self.fail('An identical required restart must not call a model')):
+            resumed.run()
+        self.assertEqual(resumed.state_dir, state)
+        self.assertEqual(resumed.exit_code, int(ExitCode.INCOMPLETE))
+        self.assertEqual(self.record(resumed)['publication_status'], 'pending')
+        self.assertEqual(self.phases, ['auftrag', 'review'])
+        self.assert_plan(resumed, done=True)
+        resumed.close()
+        arguments = ['--workdir', str(self.work), '--todo-file', str(self.todo),
+                     '--state-dir', str(self.state_root), '--publication', blocked['id']]
+        with self.dispatch(lambda **kw: self.fail('An obligation has no model-free retry authority')):
+            self.assertEqual(arquilo.main(['git', 'retry', *arguments]), int(ExitCode.INCOMPLETE))
+        self.assertEqual(self.git('rev-parse', 'HEAD'), committed_head)
+        self.assertEqual(self._git_snapshot(), git_before)
+        self.assertEqual({p.relative_to(remote).as_posix(): p.read_bytes()
+                          for p in remote.rglob('*') if p.is_file()}, remote_before)
+        self.assertEqual(self._budget_snapshot(state), budget_before)
+        self.assertEqual(reviewed_git.list_publications(state, self.work), [blocked])
+
+    def test_blocked_obligation_journal_failure_prevents_done(self):
+        runner = self.new_runner(git_required=True)
+        with self._publication_without_receipt('capture'), \
+             patch('run_todos.record_publication_block', side_effect=OSError('Synthetic obligation journal failure')), \
+             self.dispatch(self.success):
+            with self.assertRaises(PlanIntegrityError):
+                runner.run()
+        self.assertEqual(self.phases, ['auftrag', 'review'])
+        self.assertNotEqual(runner.exit_code, 0)
+        self.assert_plan(runner, done=False)
+        self.assertEqual((self.work / 'proof.txt').read_bytes(), RIGHT)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.original_head)
+        self.assertEqual(reviewed_git.list_publications(runner.state_dir, self.work), [])
+
+    def _owner_reopened_fresh_review(self, *, owner_committed=False):
+        runner, blocked = self._accepted_with_blocked_publication('capture')
+        state = runner.state_dir
+        runner.close()
+        # The owner explicitly reopens the task with a clean selected baseline.
+        # No old block is promoted to publication authority, even when the
+        # owner has already committed RIGHT and the new review yields a no-op.
+        self.write_plan(PLAN)
+        if owner_committed:
+            self.git('add', '--', 'proof.txt')
+            self.git('commit', '-qm', 'owner commits the previously reviewed output')
+        else:
+            (self.work / 'proof.txt').unlink()
+        fresh_parent = self.git('rev-parse', 'HEAD')
+        fresh = self.new_runner(git_required=False, accept_plan_changes=True,
+                                run_id='owner-reopened-fresh-review')
+        self.assertEqual(fresh.state_dir, state)
+        self.assertNotEqual(fresh.run_id, blocked['run'])
+        with self.dispatch(self.success):
+            fresh.run()
+        self.assertEqual(self.phases, ['auftrag', 'review'] * 2)
+        self.assertEqual(fresh.exit_code, 0)
+        self.assert_plan(fresh, done=True)
+        run_record = self.record(fresh)
+        self.assertEqual(run_record['publication_status'], 'complete')
+        rows = reviewed_git.list_publications(state, self.work)
+        retained = [row for row in rows if row['id'] == blocked['id']]
+        self.assertEqual(len(retained), 1, 'The old blocked obligation remains as history')
+        self.assertEqual(retained[0]['status'], 'superseded')
+        published = [row for row in rows if row['id'].startswith('publication-')]
+        self.assertEqual(len(published), 1)
+        self.assertEqual(published[0]['status'], 'noop' if owner_committed else 'published')
+        self.assertEqual(published[0]['run'], fresh.run_id)
+        run_publications = {row.get('id'): row for row in run_record['publication_records']}
+        self.assertEqual(run_publications[blocked['id']]['status'], 'superseded')
+        self.assertEqual(run_publications[published[0]['id']]['status'], published[0]['status'])
+        self.assertEqual(self.git('show', 'HEAD:proof.txt'), RIGHT)
+        if owner_committed:
+            self.assertIsNone(published[0]['commit'])
+            self.assertEqual(self.git('rev-parse', 'HEAD'), fresh_parent)
+        else:
+            self.assertEqual(self.git('show', published[0]['commit'] + ':proof.txt'), RIGHT)
+            self.assertEqual(self.git('rev-parse', 'HEAD^'), fresh_parent)
+        fresh.close()
+        required = self.new_runner(git_required=True)
+        with self.dispatch(lambda **kw: self.fail('A resolved DONE-only restart must not call a model')):
+            required.run()
+        self.assertEqual(required.exit_code, 0)
+        self.assertEqual(self.record(required)['publication_status'], 'complete')
+
+    def test_owner_reopened_fresh_review_supersedes_blocked_publication(self):
+        self._owner_reopened_fresh_review()
+
+    def test_owner_reopened_fresh_noop_review_supersedes_blocked_publication(self):
+        self._owner_reopened_fresh_review(owner_committed=True)
 
     def test_commit_error_preserves_reviewed_done_and_records_pending_publication(self):
         runner = self.new_runner()

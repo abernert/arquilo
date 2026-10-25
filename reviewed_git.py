@@ -475,7 +475,7 @@ class ReviewedGit:
         candidate = git_snapshot.ReviewedCandidate(json.loads(json.dumps(request)), json.loads(json.dumps(token)))
         key = git_snapshot.canonical_bytes({'request': request, 'token': token})
         publication_id = 'publication-' + hashlib.sha256(key).hexdigest()[:32]
-        record = {'schema_version': 'arquilo.git_publication.v1', 'id': publication_id,
+        record = {'schema_version': 'arquilo.git_publication.v2', 'id': publication_id,
             'workspace': str(self.workspace), 'session': self.directory.name,
             'request': candidate.request, 'token': candidate.token,
             'branch': self.branch, 'parent': self.head, 'object_format': self.object_format,
@@ -486,8 +486,9 @@ class ReviewedGit:
             'push': self.push, 'remote': self.remote, 'remote_branch': self.remote_branch,
             'destination_sha256': git_snapshot.digest(self.push_destination) if self.push else None,
             'status': 'accepted', 'commit': None, 'tree': None, 'selected_paths': [],
-            'message': None, 'error_type': None}
+            'message': None, 'error_type': None, 'supersedes': []}
         try:
+            record['supersedes'] = publication_state.eligible_blocks(self.state, self.workspace, record)
             if self.index_bytes is not None:
                 safe_io.write_bytes(self.directory / (publication_id + '.index.before'), self.index_bytes, exclusive=True)
             publication_state.save(record, self.state, self.workspace, create=True)
@@ -797,7 +798,9 @@ class ReviewedGit:
             self._accepted.remove(key)
             record['message'] = message
             try:
-                return self._publish(record, candidate)
+                result = self._publish(record, candidate)
+                publication_state.resolve_blocks(self.state, self.workspace, publication_id)
+                return result
             except BaseException as exc:
                 self._publication_failed(record, exc)
                 raise
@@ -806,6 +809,27 @@ class ReviewedGit:
 def list_publications(state: Path, workspace: Path):
     """List private receipts by ID; never trust a workspace summary as authority."""
     return publication_state.list_records(Path(state), Path(workspace))
+
+
+def record_publication_block(state: Path, workspace: Path, *, run, task, attempt,
+                             paths, push, destination_sha256, branch, error):
+    """Persist an unbound delivery obligation; never mint publication authority.
+
+    The controller must call this before DONE and treat a write/validation
+    failure as an authoritative state failure, not a memory-only warning.
+    """
+    state, workspace = Path(state), Path(workspace)
+    with publication_state.lock(state, workspace):
+        return publication_state.record_block(state, workspace, run=run, task=task,
+            attempt=attempt, paths=paths, push=push, destination_sha256=destination_sha256,
+            branch=branch, error=error)
+
+
+def resolve_publication_blocks(state: Path, workspace: Path, publication_id: str):
+    """Resolve only older obligations explicitly bound to a successful receipt."""
+    state, workspace = Path(state), Path(workspace)
+    with publication_state.lock(state, workspace):
+        return publication_state.resolve_blocks(state, workspace, publication_id)
 
 
 def _restore_publisher(record, workspace: Path, state: Path, executable=None):
@@ -878,12 +902,17 @@ def recover_publication(workspace: Path, state: Path, publication_id: str, execu
     other head blocks publication. No task, model, Git reset or merge is run.
     """
     workspace, state = Path(workspace).resolve(), safe_io.lexical_path(Path(state))
+    if isinstance(publication_id, str) and publication_id.startswith('obligation-'):
+        publication_state.load_obligation(state, workspace, publication_id)
+        raise ReviewedGitError('This publication obligation has no accepted immutable candidate. '
+            'Explicitly reopen and adopt the owner task for a fresh reviewed attempt; git retry cannot authorize it.')
     publication_state.identifier(publication_id)
     with publication_state.lock(state, workspace):
         record = publication_state.load(state, workspace, publication_id)
         candidate = git_snapshot.ReviewedCandidate(record['request'], record['token'])
         candidate.contents()  # Even a retry cannot substitute later or forged bytes.
         if record['status'] in {'published', 'noop'}:
+            publication_state.resolve_blocks(state, workspace, publication_id)
             return publication_state.summary(record)
         publisher = _restore_publisher(record, workspace, state, executable)
         if record['message'] is None:
@@ -891,6 +920,7 @@ def recover_publication(workspace: Path, state: Path, publication_id: str, execu
                                  + record['request']['binding']['task'] + ' reviewed output')
         try:
             result = publisher._publish(record, candidate)
+            publication_state.resolve_blocks(state, workspace, publication_id)
             return result if result is not None else publisher.last_publication
         except BaseException as exc:
             publisher._publication_failed(record, exc)
