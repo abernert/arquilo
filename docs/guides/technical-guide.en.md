@@ -1,11 +1,11 @@
 # ARQUILO Technical / Architecture Guide
 
-**English · runtime 0.9.1 · integration checkout 2026-10-25**
+**English · runtime 0.10.0 · release edition 2026-10-25**
 [Documentation index](../README.md) · [Operator Guide](operator-guide.en.md) · [Architecture summary](#system)
 
-> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The version string remains 0.9.1. This edition combines the consolidated manuals/Git work from PR #37 with the current main runtime, including Claude Code and state-I/O repairs, and separates task acceptance from optional publication. See [source commits and remaining limits](../integration-status.md). An existing release ZIP does not acquire these changes automatically.
+> **ARQUILO 0.10.0 — public preview.** This edition includes Claude Code support, state-I/O repairs, separate task acceptance and Git publication, and the consolidated handbooks. See the [release basis and remaining limits](../integration-status.md). Older release ZIPs retain their original contents.
 
-This guide explains the implementation and its trust boundaries for developers and technically advanced integrators. The integration combines the PR #37 handbook/Git baseline with main commit `cded22f337a0033a3b0934709a82e1ce3db7cdb3`, including Claude Code and state-I/O repairs, plus the local publication-separation changes. These source inputs identify provenance, not a completed final-commit acceptance. The version string remains 0.9.1; this does not replace the published ZIP.
+This guide explains the implementation and its trust boundaries for developers and technically advanced integrators. Version 0.10.0 combines the Claude Code backend from PR #30, state-I/O repairs from PR #35, and the reviewed Git publication and consolidated handbooks from PR #37. Source inputs and remaining limits are recorded in the [release basis](../integration-status.md). The release tag identifies the complete versioned source; validation evidence must refer to that exact source tree.
 
 ## Contents
 
@@ -132,7 +132,7 @@ Old standalone budget-only stores without recoverable identity still require ori
 
 ### State metadata and permanent shared locks (#32 and #34)
 
-This integration includes PR #35. Advisory legacy identity reads of `projects.json`, `project.json`, `latest-run.txt` and `run.json` permit Windows read/delete sharing, **never write sharing**. A reader keeps its old opened file object while a new complete object is published. Ordinary readers remain strict, as do no-follow/single-link checks and parent-directory leases. On Windows errors 5/32 from ordinary replacement, the implementation uses `FileRenameInfoEx` with `REPLACE_IF_EXISTS | POSIX_SEMANTICS`; unsupported operations fail closed with the pending recovery file retained. It does not use in-place overwrite or retry-until-success.
+Version 0.10.0 includes PR #35. Advisory legacy identity reads of `projects.json`, `project.json`, `latest-run.txt` and `run.json` permit Windows read/delete sharing, **never write sharing**. A reader keeps its old opened file object while a new complete object is published. Ordinary readers remain strict, as do no-follow/single-link checks and parent-directory leases. On Windows errors 5/32 from ordinary replacement, the implementation uses `FileRenameInfoEx` with `REPLACE_IF_EXISTS | POSIX_SEMANTICS`; unsupported operations fail closed with the pending recovery file retained. It does not use in-place overwrite or retry-until-success.
 
 POSIX shared-lock opening first opens an existing file, otherwise creates exclusively, and reopens a competing creator's file only on `EEXIST`. These operations use the same anchored parent. Disappearance after competing creation, unsafe links and permission errors remain failures. Permanent coordination locks are not deleted. This changes neither state keys nor consumed budget. Native regressions cover both races; the original macOS kernel-level cause is not claimed proven. The published v0.9.1 ZIP does not include these repairs.
 
@@ -274,7 +274,7 @@ Testing has distinct layers: pure contracts/parsers, synthetic real subprocess a
 
 The normal CI covers three operating systems and three Python versions; separate workflows cover configured Codex and Claude native compatibility scenarios. Check the run for the exact content/commit rather than an older green reference. A successful rerun is evidence of that run, not proof that an earlier intermittent failure was harmless.
 
-The runtime package is selected by `documents/lean_package.json`. New guide files and examples must enter the allowlist and file count; repository presence alone does not ship them. `VERSION`, runtime version and citation metadata remain unchanged for this unreleased integration; runtime behavior does change as described here. Do not overwrite existing versioned release assets merely to add manuals.
+The runtime package is selected by `documents/lean_package.json`. New guide files and examples must enter the allowlist and file count; repository presence alone does not ship them. Version 0.10.0 updates `VERSION`, the runtime version, citation metadata, the guide manifest and changelog together. Existing versioned release assets retain their original contents.
 
 The regular tag workflow does not yet bind the complete native compatibility matrix to every release as a general permanent policy. Future release hardening should bind the actual source commit, checks and generated artifacts. Documentation tests added with these guides check structural parity, referenced files/anchors and offline example behavior; they do not certify translation semantics or model responses. See [documentation maintenance](#documentation-reference).
 
@@ -287,7 +287,7 @@ Before a remote or recursive service, define root/parent/run/task/attempt identi
 
 A future team mode needs explicit member roles, shared/conflicting workspace semantics and review authority. Several agents in sibling directories are not automatically isolated, independent judges. A future GUI should present recorded state and controlled operations rather than mutating journals behind the controller.
 
-Keep proposals separate from implemented guarantees. The [pipeline concept](https://github.com/abernert/arquilo/blob/integration/hardening-guides-091-20261024/design/pipeline-mvp-concept.md) is a design document, not an executable schema. The existing runtime, known open findings and regression evidence are the baseline from which an extension must demonstrate compatibility.
+Keep proposals separate from implemented guarantees. The [pipeline concept](https://github.com/abernert/arquilo/blob/v0.10.0/design/pipeline-mvp-concept.md) is a design document, not an executable schema. The existing runtime, known open findings and regression evidence are the baseline from which an extension must demonstrate compatibility.
 
 ## Reference appendices
 
@@ -748,9 +748,9 @@ real model output correctness. See [maintenance instructions](#documentation-ref
 
 ### Combined state/Git/backend acceptance
 
-`tests/test_integration_091.py` and the publication/backend suites exercise the combined checkout using synthetic model answers and local repositories. The final integration must test both Codex and Claude through the same acceptance rules. Original #37 tests that expected a full-context snapshot failure after production belong to the earlier behavior; updated tests must instead show selected-output capture, ordinary workspace review and independent publication outcomes.
+`tests/test_integration_091.py` and the publication/backend suites exercise the combined checkout using synthetic model answers and local repositories. Release acceptance must test both Codex and Claude through the same controller rules. Original #37 tests that expected a full-context snapshot failure after production belong to the earlier behavior; updated tests must instead show selected-output capture, ordinary workspace review and independent publication outcomes.
 
-Documentation tests check live parser inventory, bilingual examples and resolvable packaged links. A passing parent revision does not validate this combined runtime. Record the actual final source tree and complete test outcome, including skips, separately from the published v0.9.1 asset.
+Documentation tests check live parser inventory, bilingual examples and resolvable packaged links. A passing parent revision does not validate this combined runtime. Record the actual release source tree and complete test outcome, including skips; validation of an older release asset does not certify a newer package.
 
 <a id="distribution-reference"></a>
 ## D. Runtime package and release procedure
@@ -797,14 +797,16 @@ Their canonical sources are Markdown files in `docs/guides/`. The product versio
 remains in `VERSION`; a documentation-only edit does not require a tag, version
 bump, runtime dependency or replacement of an existing release asset.
 
-### Integration identity
+### Release and integration identity
 
-For an unreleased integration, keep `runtime_version` unchanged and record
-`status`, `release_baseline`, `source_commit` (the pinned main input, with its scope recorded explicitly),
-`documentation_base_commit` and pinned `integrated_pull_requests` in the guide
-manifest. The documentation revision is identified by the checkout commit, not
-by embedding its own hash into itself. Keep a clear release-versus-checkout
-notice in every guide. The source branches remain separate review units.
+For a release, keep `runtime_version` aligned with `VERSION`, record `status`
+and `release_tag`, and retain the pinned source inputs with their scope made
+explicit. In the 0.10.0 guide manifest, `release_baseline` identifies the older
+v0.9.1 package and `source_commit` identifies the reviewed PR #37 runtime input;
+neither field claims to be the final release commit. The tag identifies the
+complete release revision without embedding that revision's own hash into itself.
+For a subsequent unreleased integration, label it accordingly in the manifest
+and guides and distinguish its changes from the last published package.
 
 ### Documentation responsibilities
 

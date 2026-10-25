@@ -1,9 +1,9 @@
 # ARQUILO Benutzerhandbuch
 
-**Deutsch · Laufzeitversion 0.9.1 · Integrationsstand 25.10.2026**
+**Deutsch · Laufzeitversion 0.10.0 · Releaseausgabe 25.10.2026**
 [English](user-guide.en.md) · [Alle Handbücher](../README.md) · [Fortgeschrittener Betrieb](operator-guide.en.md)
 
-> **Unveröffentlichter Integrationsstand, nicht das veröffentlichte v0.9.1-ZIP.** Die Versionsnummer bleibt 0.9.1. Diese Ausgabe verbindet die konsolidierten Handbücher und Git-Arbeit aus PR #37 mit der aktuellen main-Laufzeit einschließlich Claude Code und Zustandsreparaturen und trennt fachliche Abnahme von optionaler Veröffentlichung. Siehe [Quellcommits und verbleibende Grenzen](../integration-status.md). Ein vorhandenes Release-ZIP erhält diese Änderungen nicht automatisch.
+> **ARQUILO 0.10.0 — öffentliche Vorschau.** Diese Ausgabe enthält Claude-Code-Unterstützung, Zustandsreparaturen, getrennte fachliche Abnahme und Git-Veröffentlichung sowie die konsolidierten Handbücher. Siehe [Releasebasis und verbleibende Grenzen](../integration-status.md). Ältere Release-ZIPs behalten ihren ursprünglichen Inhalt.
 
 Dieses Handbuch richtet sich an Menschen, die ARQUILO verwenden und nicht seinen Python-Code verändern möchten. Du solltest ein Terminal öffnen, Dateien kopieren und Ergebnisse prüfen können. Die interne Controllerarchitektur musst du dafür nicht kennen. ARQUILO ist eine öffentliche Vorschauversion: Beginne mit beaufsichtigten Beispielen in einem entbehrlichen Arbeitsverzeichnis, bevor du wichtige Projekte bearbeitest.
 
@@ -18,7 +18,7 @@ ARQUILO macht aus einer Markdown-Aufgabenliste modellgestützte Bearbeitung, ges
 
 Gute Einstiegsaufgaben sind eine quellengebundene Zusammenfassung, eine kleine Codeänderung oder eine klar abgegrenzte Analyse. Jede Aufgabe braucht ein sichtbares Ergebnis und prüfbare Abnahmekriterien. „Verbessere dieses Projekt“ ist für den ersten Lauf zu unbestimmt.
 
-Ein Review ist verpflichtend, bleibt aber eine Modellbeurteilung. `DONE` garantiert weder sachliche Richtigkeit noch rechtliche Eignung oder Produktionsreife. Prüfe folgenreiche Ergebnisse unabhängig. Der hier beschriebene öffentliche Ablauf in 0.9.1 ist die Ausführung von Aufgabenlisten. Eine grafische Workbench, ein allgemeiner Pipeline-Befehl, Agententeam-Konfigurationen und ein ARQUILO-MCP-Service gehören nicht zu dieser dokumentierten Laufzeitversion.
+Ein Review ist verpflichtend, bleibt aber eine Modellbeurteilung. `DONE` garantiert weder sachliche Richtigkeit noch rechtliche Eignung oder Produktionsreife. Prüfe folgenreiche Ergebnisse unabhängig. Der hier beschriebene öffentliche Ablauf in 0.10.0 ist die Ausführung von Aufgabenlisten. Eine grafische Workbench, ein allgemeiner Pipeline-Befehl, Agententeam-Konfigurationen und ein ARQUILO-MCP-Service gehören nicht zu dieser dokumentierten Laufzeitversion.
 
 <a id="concepts"></a>
 ## 2. Das Arbeitsmodell
@@ -334,7 +334,7 @@ Beende zunächst einen noch laufenden alten Controller. Lies Fehler und letzte A
 
 Starte mit **demselben Workspace, Aufgabenpfad und State-Verzeichnis**, dem beabsichtigten endlichen Aufruflimit und den benötigten Ressourcen-/Profileinstellungen. Bereits akzeptierte Aufgaben werden normalerweise übersprungen. Eine offene Aufgabe kann ihre Bearbeitung erneut beginnen; der normale Neustart setzt nicht „ab der nächsten Zeile“ fort und garantiert keine einmalige Ausführung. Das ist besonders bei Nachrichtenversand oder Änderungen externer Systeme wichtig.
 
-Lösche keinen State, benenne keinen Plan für ein neues Budget um und setze `DONE` nicht manuell zur Fehlerbehebung. Historische DONE-Werte, die als erste Eigentümervorgabe eingelesen wurden, beweisen keinen früheren Review. Version 0.9.1 repariert historisch falsch akzeptierte Läufe nicht automatisch.
+Lösche keinen State, benenne keinen Plan für ein neues Budget um und setze `DONE` nicht manuell zur Fehlerbehebung. Historische DONE-Werte, die als erste Eigentümervorgabe eingelesen wurden, beweisen keinen früheren Review. Version 0.10.0 repariert historisch falsch akzeptierte Läufe nicht automatisch.
 
 Es gibt ein eng begrenztes, Codex-spezifisches [Verfahren zur reinen Review-Wiederaufnahme](operator-guide.en.md#recovery-reference): für einen abgeschlossenen Produktionslauf, der früher ausschließlich wegen einer fälschlich als fatal behandelten, tatsächlich überwundenen Reconnect-Meldung abgewiesen wurde. Es verlangt vollständige passende Nachweise und einen neuen Review. Das ist kein allgemeiner Force-resume-Schalter; verwende das Verfahren nur unter seinen dokumentierten Voraussetzungen.
 
@@ -357,7 +357,7 @@ Im strikten Standardmodus dürfen Anforderungen und akzeptierter Zustand nicht s
 | Budget vor Review erschöpft | Teilresultate prüfen, endliches Limit bewusst unter Erhalt des Verbrauchs erhöhen und den Stoppmarker klären. |
 | Reconnect-Meldungen | Überwundene Diagnosemeldungen vom Endergebnis unterscheiden. Die Meldung allein bedeutet weder Erfolg noch endgültigen Fehler. |
 | Gutes Artefakt, aber Aufgabe offen | Review oder abschließende Controllerannahme können gescheitert sein. Dokumentierte Phase lesen; DONE nicht manuell setzen. |
-| Windows-Zugriffsfehler bei paralleler Projektregistrierung | Fehler und vollständige Pending-Datei erhalten, konkurrierende Läufe stoppen. Dieser Integrationsstand enthält die Reparatur aus PR #35 für Issue #32; das veröffentlichte v0.9.1-ZIP nicht. Ein erneuter Fehler muss untersucht werden; State nicht löschen. |
+| Windows-Zugriffsfehler bei paralleler Projektregistrierung | Fehler und vollständige Pending-Datei erhalten, konkurrierende Läufe stoppen. Version 0.10.0 enthält die Reparatur aus PR #35 für Issue #32; das ältere v0.9.1-ZIP nicht. Ein erneuter Fehler muss untersucht werden; State nicht löschen. |
 
 Weitere Hilfe bieten [Troubleshooting](operator-guide.en.md#troubleshooting-reference) und die [bekannten Grenzen](operator-guide.en.md#limitations). Löse Installationsfehler nicht durch routinemäßigen Administrator-/Rootbetrieb oder das Abschalten des Plattformschutzes.
 
@@ -372,7 +372,7 @@ Ohne akzeptierten Kandidaten ist ein neuer Review nötig: Prüfe und sichere zun
 
 Stoppe aktive Läufe und sichere relevante Projekteingaben sowie Controller-Nachweise. Aktualisiere die **gesamte Installation einschließlich Python-Workern**; vermische nicht einzelne alte und neue Module. Prüfe bei einem Git-Checkout lokale Änderungen vor einem normalen Fast-forward-Update. Entpacke bei einer ZIP-Installation die neue Fassung in ein separates Installationsverzeichnis und kontrolliere ihre Version, bevor du den Aufruf umstellst.
 
-Lasse laufende Projektpfade und ihr State-Verzeichnis unverändert. Lies Changelog und Kompatibilitätshinweise und führe einen neuen entbehrlichen Smoke-Test aus. Ein Dateiaustausch allein macht die Fortsetzung eines älteren unvollständigen Plans nicht automatisch sicher. Ein reiner Dokumentationsbranch verändert veröffentlichte Release-Dateien nicht; neuere Anleitungen beziehst du aus der entsprechenden Repository-Revision oder dem Dokumentationspaket.
+Lasse laufende Projektpfade und ihr State-Verzeichnis unverändert. Lies Changelog und Kompatibilitätshinweise und führe einen neuen entbehrlichen Smoke-Test aus. Ein Dateiaustausch allein macht die Fortsetzung eines älteren unvollständigen Plans nicht automatisch sicher. Beziehe die vollständige passende Laufzeit und Dokumentation für die gewählte Version oder Revision. Ältere Release-Dateien behalten ihren ursprünglichen Inhalt; ein neues Handbuch in einer alten Installation ergänzt keine neuen Funktionen.
 
 <a id="checklist"></a>
 ## 16. Vor wichtiger Arbeit

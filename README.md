@@ -6,7 +6,7 @@
 
 ARQUILO executes a Markdown task list in a project workspace. Each production or correction step receives a separate review against the original assignment. The controller decides whether to accept the task, correct it, break remaining work into smaller tasks or stop. Files, reviews and execution logs remain available for inspection. A model PASS is not a guarantee of factual correctness.
 
-**Runtime version: 0.9.1 — public preview.** This **unreleased integration checkout** combines the current Codex/Claude runtime, consolidated handbooks and reviewed Git publication. The published v0.9.1 ZIP is an earlier baseline. See the [source commits and remaining limits](docs/integration-status.md); the version string alone does not identify these changes.
+**Runtime version: 0.10.0 — public preview.** This release adds Claude Code as an alternative execution backend, separates task acceptance from Git publication, and includes four consolidated handbooks. Codex remains the default. See the [release basis and remaining limits](docs/integration-status.md).
 
 ## Choose a handbook
 
@@ -37,6 +37,6 @@ Review is mandatory. Status changes, shared budgets and stop signals are control
 
 Automatic Git is off by default. With `--git`, selected outputs are frozen for review and publication; task acceptance and publication have separate outcomes. `--git-required` makes incomplete delivery stop the run while preserving accepted work. Read the [Git chapter](docs/guides/operator-guide.en.md#git) before enabling it.
 
-The Claude adapter supports no named MCP servers, no reviewer Bash and no mixed-backend run. Production on Windows uses WSL2/Linux. See [backend selection](docs/guides/operator-guide.en.md#backends) and [Claude qualification](docs/claude-code-backend.md). Teams, GUI, a general pipeline runner and an ARQUILO MCP service are not implemented in this checkout.
+The Claude adapter supports no named MCP servers, no reviewer Bash and no mixed-backend run. Production on Windows uses WSL2/Linux. See [backend selection](docs/guides/operator-guide.en.md#backends) and [Claude qualification](docs/claude-code-backend.md). Teams, GUI, a general pipeline runner and an ARQUILO MCP service are not implemented in version 0.10.0.
 
 For testing and contributing, see [CONTRIBUTING.md](CONTRIBUTING.md). For vulnerability reporting and trust boundaries, see [SECURITY.md](SECURITY.md). Source is licensed under [Apache-2.0](LICENSE), with [NOTICE](NOTICE), [authors](AUTHORS.md), [third-party notes](THIRD_PARTY.md) and [version history](CHANGELOG.md).

@@ -1,11 +1,11 @@
 # ARQUILO Advanced / Operator Guide
 
-**English · runtime 0.9.1 · integration checkout 2026-10-25**
+**English · runtime 0.10.0 · release edition 2026-10-25**
 [Guide index](../README.md) · [User Guide](user-guide.en.md) · [Technical Guide](technical-guide.en.md)
 
-> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The version string remains 0.9.1. This edition combines the consolidated manuals/Git work from PR #37 with the current main runtime, including Claude Code and state-I/O repairs, and separates task acceptance from optional publication. See [source commits and remaining limits](../integration-status.md). An existing release ZIP does not acquire these changes automatically.
+> **ARQUILO 0.10.0 — public preview.** This edition includes Claude Code support, state-I/O repairs, separate task acceptance and Git publication, and the consolidated handbooks. See the [release basis and remaining limits](../integration-status.md). Older release ZIPs retain their original contents.
 
-Use this handbook to configure, run, diagnose and integrate ARQUILO. Part I follows the operating workflow. Part II is the complete reference for public commands, environment settings, task directives, runtime-profile fields and prompt catalogs in this checkout. Follow the [User Guide](user-guide.en.md) for installation and the first run. Native Codex and Claude provider settings are separate configuration layers, not additional ARQUILO parameters.
+Use this handbook to configure, run, diagnose and integrate ARQUILO. Part I follows the operating workflow. Part II is the complete reference for public commands, environment settings, task directives, runtime-profile fields and prompt catalogs in this version. Follow the [User Guide](user-guide.en.md) for installation and the first run. Native Codex and Claude provider settings are separate configuration layers, not additional ARQUILO parameters.
 
 ## Part I — operating procedures
 
@@ -48,7 +48,7 @@ With no explicit resource selection, native Codex integrations can remain inheri
 
 Use `--backend codex` (default) or `--backend claude-code` after `tasklist run`, `doctor`, or with standalone AutoBuild. The selection covers production, fixes, reviews, parent reviews, Decide and parallel workers. There is no task-level backend switch, mixed-backend review or automatic fallback. A dry run needs neither CLI; actual execution needs the selected CLI and its approved authentication.
 
-| Capability | Codex | Claude Code in this checkout |
+| Capability | Codex | Claude Code in this version |
 | --- | --- | --- |
 | Provider/model configuration | Trusted Codex host configuration, optional native profile | Trusted Claude user/provider configuration; no Codex discovery |
 | Production/fix tools | Native Codex policy and declared sandbox | Read, Glob, Grep, Edit, Write and sandboxed Bash |
@@ -78,7 +78,7 @@ Keep an immutable clean template and a distinct working list. `--todo-template` 
 
 ### Workspace policy file
 
-`<workdir>/config/policy.md` is shared instruction text. At real-run setup, an absent workspace policy is initialized from the installation's `config/policy.md` (the supplied default is empty). An existing policy is read, not overwritten. A dry run does not create the default. Missing/unreadable policy data after setup is an error rather than silent absence. The file contributes instructions; it cannot override controller state, mandatory reviews, sandbox rules or resource ceilings. There is no public `--policy-file` flag in this checkout.
+`<workdir>/config/policy.md` is shared instruction text. At real-run setup, an absent workspace policy is initialized from the installation's `config/policy.md` (the supplied default is empty). An existing policy is read, not overwritten. A dry run does not create the default. Missing/unreadable policy data after setup is an error rather than silent absence. The file contributes instructions; it cannot override controller state, mandatory reviews, sandbox rules or resource ceilings. There is no public `--policy-file` flag in this version.
 
 <a id="resources"></a>
 ## 4. MCP, skills and network paths
@@ -301,7 +301,7 @@ documents rejected retired fields; no profile can re-enable them.
 <a id="prompts"></a>
 ## 9. Configure built-in prompt wording
 
-Introduced in 0.9.0; applicable to the documented 0.9.1 runtime.
+Introduced in 0.9.0; applicable to the documented 0.10.0 runtime.
 
 **Public preview.** This feature moves ARQUILO's
 built-in model-facing instruction texts into complete, editable TOML catalogs.
@@ -653,7 +653,7 @@ Running ARQUILO as a daemon, serving it over MCP, recursive suborders and team c
 
 | Area | Operator implication |
 | --- | --- |
-| State-I/O repairs #32/#34 | Included in this integration through PR #35, not in the existing v0.9.1 release asset. State keys, journals and spent budgets are preserved; unsupported atomic Windows filesystem operations fail closed. |
+| State-I/O repairs #32/#34 | Included in 0.10.0 through PR #35; absent from the older v0.9.1 release asset. State keys, journals and spent budgets are preserved; unsupported atomic Windows filesystem operations fail closed. |
 | Git scope and delivery | Selected outputs are bound to review; the reviewer retains ordinary context access. Publication is separate, optional by default and serial only; --git-required makes incomplete delivery stop the run. |
 | Process supervision | Detached descendants, full-run deadlines, output quotas and active preflight cancellation are not comprehensively solved. |
 | Legacy state | Old budget-only stores without recoverable identity still need original paths and manual inspection. Historical invalid DONE values are not automatically repaired. |
@@ -661,7 +661,7 @@ Running ARQUILO as a daemon, serving it over MCP, recursive suborders and team c
 | Evidence and quality | Archives are not tamper-proof or automatically redacted. A formal model PASS is not an independent truth oracle. |
 | Release process | The baseline regular tag workflow has a single-platform release job; the one-time 0.9.1 publisher's full gate is not a permanent general release mechanism. |
 
-These limitations are separate from the foundational control fixes already implemented. See [Security](../../SECURITY.md), [controller safety](technical-guide.en.md#controller-reference) and the source-linked boundaries in the Technical Guide. This integration does not repair the remaining process, resource, legacy-recovery or release-gate issues.
+These limitations are separate from the foundational control fixes already implemented. See [Security](../../SECURITY.md), [controller safety](technical-guide.en.md#controller-reference) and the source-linked boundaries in the Technical Guide. This release does not repair the remaining process, resource, legacy-recovery or release-gate issues.
 
 <a id="checklist"></a>
 ## 15. A repeatable operating checklist
@@ -968,7 +968,7 @@ The three timeout values must be finite and nonnegative. `0` is an allowed numer
 
 `CODEX_HOME`, `PATH`, the user's home, platform application-data location, provider authentication variables, proxies and certificate settings are **host inputs**, not extra ARQUILO feature switches. Default controller roots are `~/Library/Application Support/ARQUILO/controller` on macOS, `~/.local/state/arquilo/controller` on Linux/WSL and `%LOCALAPPDATA%\ARQUILO\controller` on Windows (with the registered local app-data folder as fallback). `--state-dir` is the supported override; there is no general ARQUILO state-root environment option. Native configuration is not rewritten and secrets must not be included in distributable profiles.
 
-The compatibility layer accepts the historical prefix for retained options with warnings; the [repository-only naming map](https://github.com/abernert/arquilo/blob/integration/hardening-guides-091-20261024/docs/compatibility.md) lists those aliases. In addition, `AUTOBUILD_DECISION_MODEL` / `METACODEX_DECISION_MODEL`, `AUTOBUILD_DECISION_SYSTEM_PROMPT` / `METACODEX_DECISION_SYSTEM_PROMPT` and the three corresponding `AUTOBUILD_CODEX_*_SECONDS` names remain compatibility inputs, in that order after canonical/historical-prefix names. New scripts should use only canonical names.
+The compatibility layer accepts the historical prefix for retained options with warnings; the [repository-only naming map](https://github.com/abernert/arquilo/blob/v0.10.0/docs/compatibility.md) lists those aliases. In addition, `AUTOBUILD_DECISION_MODEL` / `METACODEX_DECISION_MODEL`, `AUTOBUILD_DECISION_SYSTEM_PROMPT` / `METACODEX_DECISION_SYSTEM_PROMPT` and the three corresponding `AUTOBUILD_CODEX_*_SECONDS` names remain compatibility inputs, in that order after canonical/historical-prefix names. New scripts should use only canonical names.
 
 ### Values that are not configurable CLI options
 
@@ -2105,7 +2105,7 @@ schema identifiers use `arquilo.*`. The naming change does not grant additional
 sandbox, tool or network permissions and does not bypass review.
 
 Supported predecessor inputs remain readable with a deprecation warning. The
-[naming history and compatibility matrix](https://github.com/abernert/arquilo/blob/integration/hardening-guides-091-20261024/docs/compatibility.md) lists the old
+[naming history and compatibility matrix](https://github.com/abernert/arquilo/blob/v0.10.0/docs/compatibility.md) lists the old
 spellings and the migration requirements for consumers of JSON output. Old
 release archives and previous run logs are historical records and are not rewritten.
 
@@ -2115,7 +2115,7 @@ Verify capabilities, perform a dry run, then explicitly opt into the doctor
 functional test and a real task. See [quick start](user-guide.en.md#preview).
 
 Removed predecessor options remain rejected rather than silently ignored; see
-[historical migration notes](https://github.com/abernert/arquilo/blob/integration/hardening-guides-091-20261024/documents/HISTORICAL_MIGRATION.md). There are no optional
+[historical migration notes](https://github.com/abernert/arquilo/blob/v0.10.0/documents/HISTORICAL_MIGRATION.md). There are no optional
 add-on groups in the public runtime package.
 
 

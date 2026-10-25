@@ -1,9 +1,9 @@
 # ARQUILO User Guide
 
-**English · runtime 0.9.1 · integration checkout 2026-10-25**
+**English · runtime 0.10.0 · release edition 2026-10-25**
 [Deutsch](user-guide.de.md) · [All guides](../README.md) · [Advanced operation](operator-guide.en.md)
 
-> **Unreleased integration checkout, not the published v0.9.1 ZIP.** The version string remains 0.9.1. This edition combines the consolidated manuals/Git work from PR #37 with the current main runtime, including Claude Code and state-I/O repairs, and separates task acceptance from optional publication. See [source commits and remaining limits](../integration-status.md). An existing release ZIP does not acquire these changes automatically.
+> **ARQUILO 0.10.0 — public preview.** This edition includes Claude Code support, state-I/O repairs, separate task acceptance and Git publication, and the consolidated handbooks. See the [release basis and remaining limits](../integration-status.md). Older release ZIPs retain their original contents.
 
 This guide is for people who want to use ARQUILO, not modify its Python code. You should be comfortable opening a terminal, copying files and checking a result. You do not need to understand the internal controller. ARQUILO is a public preview: use supervised, disposable examples before important work.
 
@@ -18,7 +18,7 @@ ARQUILO turns a Markdown task list into model-assisted work, separate reviews an
 
 Suitable starting points are producing a source-bound summary, preparing a small code change, or working through a well-defined analysis. Give every task an observable result and acceptance criteria. “Improve this project” is too open-ended for a first run.
 
-A review is mandatory, but it is still a model assessment. `DONE` is not a guarantee of factual truth, legal suitability or production readiness. Independently check consequential results. In 0.9.1 the public workflow is task-list execution; a graphical workbench, a general pipeline command, agent-team configuration and an ARQUILO MCP service are not part of this documented runtime.
+A review is mandatory, but it is still a model assessment. `DONE` is not a guarantee of factual truth, legal suitability or production readiness. Independently check consequential results. In 0.10.0 the public workflow is task-list execution; a graphical workbench, a general pipeline command, agent-team configuration and an ARQUILO MCP service are not part of this documented runtime.
 
 <a id="concepts"></a>
 ## 2. The working model
@@ -334,7 +334,7 @@ Stop any old controller first. Read the failure and the latest capture; inspect 
 
 Run with the **same workspace, task-file path and state root**, plus the intended finite call limit and the required resource/profile settings. Previously accepted tasks are normally skipped. An open task may execute production again; ordinary restart is not “continue from the next line” and is not guaranteed exactly-once execution. This matters especially for tasks that send messages or alter external systems.
 
-Do not delete state, rename the plan to obtain a new budget, or manually set `DONE` to resolve an error. Historical DONE values supplied as an initial owner baseline are not retrospective proof of a review. Version 0.9.1 does not automatically repair incorrectly accepted historical runs.
+Do not delete state, rename the plan to obtain a new budget, or manually set `DONE` to resolve an error. Historical DONE values supplied as an initial owner baseline are not retrospective proof of a review. Version 0.10.0 does not automatically repair incorrectly accepted historical runs.
 
 There is a narrow Codex-only [review-only recovery procedure](operator-guide.en.md#recovery-reference) for a completed production turn formerly rejected solely because a recovered reconnect was misclassified. It requires complete matching evidence and a fresh review. It is not a general force-resume switch; use the dedicated procedure only when its conditions hold.
 
@@ -357,7 +357,7 @@ In the default strict mode, requirements and accepted state cannot silently chan
 | Budget exhausted before review | Inspect partial results, then consciously increase the finite limit while preserving usage and resolve the stop marker. |
 | Reconnect messages | Distinguish recovered diagnostics from the final outcome. A reconnect notice alone is neither success nor terminal failure. |
 | Good artifact but open task | Review or final controller acceptance may have failed. Read the recorded phase; do not set DONE manually. |
-| Windows access denied during parallel project registration | Preserve the error and pending recovery file; stop competing runs. This integration includes the PR #35 repair for Issue #32; the published v0.9.1 ZIP does not. A recurring failure still requires investigation, not state deletion. |
+| Windows access denied during parallel project registration | Preserve the error and pending recovery file; stop competing runs. Version 0.10.0 includes the PR #35 repair for Issue #32; the older v0.9.1 ZIP does not. A recurring failure still requires investigation, not state deletion. |
 
 See [Troubleshooting](operator-guide.en.md#troubleshooting-reference) and [known limitations](operator-guide.en.md#limitations). Do not solve an installation error by routinely running as Administrator/root or disabling platform protection.
 
@@ -372,7 +372,7 @@ Without an accepted candidate, first inspect and preserve the existing outputs a
 
 Stop active runs and retain a backup of relevant project inputs and controller evidence. Update the **whole installation**, including Python workers; do not mix old and new individual modules. For a Git checkout, check local changes before a normal fast-forward update. For a ZIP installation, extract to a separate installation directory and verify its version before switching your launcher.
 
-Keep ongoing project paths and their state root unchanged. Read the changelog and compatibility notes and perform a new disposable smoke test. Do not assume that updating files automatically makes an old incomplete plan safe to resume. The existing versioned release asset remains an earlier baseline. Obtain the complete matching runtime and documentation for the selected revision; copying a new handbook into an old installation does not add its features.
+Keep ongoing project paths and their state root unchanged. Read the changelog and compatibility notes and perform a new disposable smoke test. Do not assume that updating files automatically makes an old incomplete plan safe to resume. Obtain the complete matching runtime and documentation for the selected release or revision. Older release assets retain their original contents; copying a new handbook into an old installation does not add its features.
 
 <a id="checklist"></a>
 ## 16. Before important work

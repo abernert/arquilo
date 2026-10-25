@@ -1,49 +1,66 @@
 # Changelog
 
-## Unreleased — experimental Claude Code backend
+## 0.10.0 — 2026-10-25 (public preview; Claude Code and reviewed Git delivery)
 
-- Integrate the full 0.9.1 controller safety basis and the state metadata/lock
-  repairs from PR #35, preserving their ancestry, existing state keys and budgets.
-- Apply shared external-host launcher rules to Claude/Node, Decide and private
-  workers. Propagate original workspace/peer STOP context and cancel on opaque
-  sentinels. Pin one resolved CLI for metadata and each model invocation.
-- Latch rejected Claude event streams so later terminal events cannot revive
-  completion. Preserve strict FAIL/blocker vetoes and explicit legacy no-issue
-  semantics; add backend-paired controller and native-process regressions.
-- Keep Codex as default; no new tag/release, named MCP support or Git-package
-  integration. Native host sandbox and model-quality qualification remain
-  separate from synthetic/offline checks.
+### Claude Code execution backend
 
-- Recognize the `thinking_tokens` system progress event from owner-observed
-  Claude Code 2.1.310 runs. Validate only the documented numeric token estimates,
-  frame identity and exact allowed fields; never count this as tool permission,
-  model output, review success or a terminal result. Unknown hooks still fail closed.
+- Add run-wide `--backend {codex,claude-code}`. Codex remains the default;
+  Claude Code handles production, fixes, reviews, parent reviews, semantic
+  Decide, doctor/preflight and parallel Python workers without a Codex
+  executable, login, configuration-home lookup or fallback.
+- Preserve the shared original-task, accepted-plan, STOP, budget and mandatory
+  review controls across both backends. Apply external-host launcher rules to
+  Claude/Node and private workers, and pin the resolved CLI per invocation.
+- Validate native Claude session/result streams and role-specific tools. A
+  rejected event stream remains rejected; later terminal events cannot revive
+  completion. FAIL or blocking findings still veto DONE.
+- Support the qualified Claude Code 2.1.310 `thinking_tokens` progress event and
+  exact built-in `cc-plugin-telemetry@builtin` identity. Progress is not model
+  output, review success or tool permission; unknown hooks, plugins, services
+  and malformed metadata remain rejected.
+- Preserve prompt catalogs and bound skill instructions across execution,
+  correction, review and worker boundaries. Claude uses its own skill roots;
+  explicit empty MCP selections are supported and named selections are refused.
 
-- Accept the exact built-in `cc-plugin-telemetry@builtin` identity reported by
-  Claude Code 2.1.310 in addition to the previously qualified built-ins.
-  Continue to reject unexpected plugins, tool expansions, malformed metadata,
-  and additional MCP services; this does not change Claude telemetry settings.
-- Add native 2.1.310 qualification and synthetic protocol/subprocess regressions
-  for known versus unqualified built-in components.
+### Separate task acceptance from Git publication
 
-- Add run-wide `--backend {codex,claude-code}`; Codex remains the default.
-- Route production, fixes, review, parent review, Decide, doctor/preflight and
-  parallel worker payloads without a Codex executable/authentication dependency
-  when Claude is selected. No runtime/provider fallback; OpenCode not yet enabled.
-- Add strict native session/result validation, tool-role boundaries, owned process
-  cancellation and raw evidence. Preserve shared status, review and budget gates.
-- Include backend modules in the runtime ZIP and document native sandbox limits.
-- Keep the released version/tag unchanged; this branch needs explicit host/model
-  qualification before client use.
+- Freeze only explicitly selected publication outputs before review while
+  retaining the reviewer's ordinary workspace for context. Snapshot, token and
+  selected live-output integrity remain mandatory before acceptance.
+- Keep accepted work DONE when optional commit or push fails. Add
+  `--git-required` to stop further work with exit 9 until the requested delivery
+  succeeds, while preserving the accepted task result.
+- Add `arquilo git status` and `arquilo git retry --publication ID` for recovery
+  from accepted private evidence without repeating production or model review.
+  Reconcile the actual local and remote Git state and reuse the recorded commit.
+- Retain blocked delivery obligations across restarts even when no accepted
+  publication receipt could be saved. Missing durable controller evidence
+  prevents an unjournaled DONE; an obligation alone cannot authorize a retry.
+- Distinguish a run-wide output allowlist from the current task's deliverables.
+  A later task's selected file that is absent before and after the current task
+  is not a deletion. Reviewer-visible presence states preserve genuine deletion
+  and missing-required-output checks. Refresh baseline modes after deletion.
 
-- Earlier integration introduced the 0.9.0 prompt/resource contracts; this update
-  retains them on the newer safety basis without modifying `main` or release tags.
-- Preserve prompt catalogs/snapshots through Claude execution, correction,
-  reviews, worker payloads and doctor/Decide; preserve Codex defaults.
-- Bind explicit skill instructions with backend-specific roots, never looking
-  up Codex home for Claude. Accept explicit empty MCP selections; reject named
-  MCP selections before execution rather than silently ignoring them.
-- Add 0.9.0 integration regressions and an isolated owner smoke-test recipe.
+### Shared state repairs and documentation
+
+- Include PR #35's Windows immutable-metadata sharing and atomic replacement
+  repairs, plus POSIX shared-lock creation race handling. Preserve state keys,
+  journals and consumed budgets; do not reset or recertify historical work.
+- Consolidate everyday instructions into German and English User Guides, with
+  an English Operator Guide and Technical/Architecture Guide. Include a checked
+  CLI reference, backend limits, publication recovery and synthetic examples.
+- Package both backend adapters and the consolidated documentation. Keep
+  deterministic offline tests, native CLI fixtures and real-model acceptance
+  as separate evidence layers.
+
+### Current scope
+
+- Claude does not support named MCP servers, reviewer Bash, mixed-backend runs
+  or historical Codex-only review-session recovery. Native Windows Claude
+  production uses WSL2/Linux. Automatic Git publication remains serial only.
+- A common service API, MCP service, GUI/flow execution and agent-team
+  configuration remain future work. Broader process/resource supervision and
+  permanent release-gate hardening remain separate work packages.
 
 ## 0.9.1 — 2026-10-23 (public preview; foundational control repairs)
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "arquilo.documentation.v1",
-  "runtime_version": "0.9.1",
-  "source_commit": "cded22f337a0033a3b0934709a82e1ce3db7cdb3",
+  "runtime_version": "0.10.0",
+  "source_commit": "0d5dc9a1d580ddb4b5dd571daaa46455c4e78076",
   "reviewed_date": "2026-10-25",
   "guides": [
     {
@@ -85,17 +85,20 @@
     "--backend",
     "--git-required"
   ],
-  "status": "unreleased-integration",
+  "status": "release",
   "release_baseline": "0c4de8a76d40821578a9aa6f544dcf5fb45d26d5",
   "documentation_base_commit": "0e57df59ea067596b0ab0db987347aa31e7870de",
   "integrated_pull_requests": {
     "33": "0e57df59ea067596b0ab0db987347aa31e7870de",
     "35": "557f4f1b9b1959002a0677315f809426de1aab9b",
-    "36": "48331c7210d63787c578bf925ade41da9eb806a8"
+    "36": "48331c7210d63787c578bf925ade41da9eb806a8",
+    "30": "cded22f337a0033a3b0934709a82e1ce3db7cdb3",
+    "37": "0d5dc9a1d580ddb4b5dd571daaa46455c4e78076"
   },
   "reference_inventory": "docs/guides/cli-reference.json",
-  "documentation_edition": "backend-publication-integration-2026-10-25",
+  "documentation_edition": "0.10.0-2026-10-25",
   "navigation": "docs/README.md",
   "integration_base_commit": "209d5a709da9d53bad987720b3f5dcc6cbc3a837",
-  "source_commit_scope": "Current main input; local integration changes are described in docs/integration-status.md. Not a final integration commit or release claim."
+  "source_commit_scope": "Reviewed PR #37 runtime input, including PR #30 and PR #35. The complete release revision is identified by the v0.10.0 tag; this source input is not the release commit.",
+  "release_tag": "v0.10.0"
 }
