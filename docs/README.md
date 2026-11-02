@@ -2,7 +2,7 @@
 
 **ARQUILO 0.10.0 — public preview.**
 
-Start with one handbook. Each contains its own contents and links to the relevant chapters; there is no separate setup/cookbook/configuration reading chain.
+Start with the handbook for your role. Each contains its own contents and links to relevant chapters. If you are setting up a Mac from scratch, use the focused macOS prerequisite checklist below before entering the handbook; it does not replace the user, operator or architecture guidance.
 
 | Audience | Handbook | What you will find |
 | --- | --- | --- |
