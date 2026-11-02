@@ -8,6 +8,10 @@ ARQUILO bearbeitet Aufgaben aus einer Markdown-Liste in einem Projekt-Workspace.
 
 **Laufzeitversion: 0.10.0 — öffentliche Vorschau.** Diese Version ergänzt Claude Code als alternativen Unterbau, trennt fachliche Abnahme von Git-Veröffentlichung und enthält vier konsolidierte Handbücher. Codex bleibt der Standard. Siehe [Releasebasis und verbleibende Grenzen](docs/integration-status.md).
 
+## Einstieg auf dem Mac
+
+Du beginnst mit einem neuen Mac oder weißt nicht, ob alle Programme vorhanden sind? Lies die [Mac-Ersteinrichtung ab null (Deutsch)](docs/setup/macos-from-scratch.de.md) oder [macOS setup from scratch (English)](docs/setup/macos-from-scratch.en.md). Die Anleitung führt durch Homebrew, Git, optional die GitHub CLI, geeignetes Python, Codex **oder** Claude Code und einen Test ohne Modellaufruf. Für VS Code, Office, PDF/OCR, Medien und weitere Dateiformate gibt es [optionale Werkzeuge (Deutsch)](docs/setup/optional-tools.de.md) und [optional tools (English)](docs/setup/optional-tools.en.md). Solche Zusatzprogramme nur **bei konkretem Bedarf** installieren.
+
 ## Das passende Handbuch
 
 | Anliegen | Anleitung |

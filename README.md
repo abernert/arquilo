@@ -8,6 +8,10 @@ ARQUILO executes a Markdown task list in a project workspace. Each production or
 
 **Runtime version: 0.10.0 — public preview.** This release adds Claude Code as an alternative execution backend, separates task acceptance from Git publication, and includes four consolidated handbooks. Codex remains the default. See the [release basis and remaining limits](docs/integration-status.md).
 
+## Getting started on a Mac
+
+Starting with a fresh Mac, or not sure which tools are installed? Follow [macOS setup from scratch (English)](docs/setup/macos-from-scratch.en.md) or [Mac-Ersteinrichtung (Deutsch)](docs/setup/macos-from-scratch.de.md). It covers Homebrew, Git, optional GitHub CLI, compatible Python, Codex **or** Claude Code, and a no-model smoke test. For VS Code, Office, PDF/OCR, media and structured-file helpers, see [optional tools (English)](docs/setup/optional-tools.en.md) or [optionale Werkzeuge (Deutsch)](docs/setup/optional-tools.de.md). Install these extras **only when a task needs them**.
+
 ## Choose a handbook
 
 | Need | Read |

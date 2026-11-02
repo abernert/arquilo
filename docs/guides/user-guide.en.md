@@ -42,6 +42,8 @@ Do not put passwords, access tokens or unrelated personal files into task lists.
 
 Use an ordinary user account. The core needs Python 3.11 or newer and no third-party Python runtime packages. The maintained test matrix covers Python 3.11, 3.12 and 3.13. Git is useful for cloning/updating the repository and is required for explicitly enabled automatic Git functions; a release ZIP is another installation option.
 
+**Starting with a new Mac?** First follow the [macOS setup from scratch](../setup/macos-from-scratch.en.md) (also [Deutsch](../setup/macos-from-scratch.de.md)) for Homebrew, Git, optional `gh`, Python and Codex/Claude Code. The [optional helper-tool guide](../setup/optional-tools.en.md) explains VS Code, PDF/OCR and Office/file-format readers; these are not core requirements. The checks below assume prerequisites are already installed.
+
 Obtain ARQUILO from the [repository](https://github.com/abernert/arquilo) or its [releases](https://github.com/abernert/arquilo/releases). For a release ZIP, extract the versioned runtime ZIP, not just an individual Python file. For a checkout, clone the repository and change into its root. The commands below assume your terminal is in the directory containing `arquilo.py`.
 
 For the default Codex backend, install and authenticate Codex separately using the [official CLI instructions](https://developers.openai.com/codex/cli). Organization-managed providers, proxies and certificates belong to your approved Codex/host setup, not to a copied secret in an ARQUILO file. For native Windows, also consult the [official Windows guidance](https://developers.openai.com/codex/windows).

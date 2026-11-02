@@ -11,6 +11,15 @@ Start with one handbook. Each contains its own contents and links to the relevan
 | Workflow authors and operators | [Operator Guide](guides/operator-guide.en.md) | Operating procedures and the complete CLI, environment, CFG/WAIT, runtime-profile and prompt reference. |
 | Developers | [Technical / Architecture Guide](guides/technical-guide.en.md) | Internal lifecycle, authority, files/processes, Git transactions, tests and distribution. |
 
+## macOS setup: from a new Mac to optional format readers
+
+| Task | English | Deutsch |
+| --- | --- | --- |
+| Bootstrap a Mac (Homebrew, Git, optional gh, compatible Python, Codex or Claude, first no-model test) | [Fresh-Mac setup](setup/macos-from-scratch.en.md) | [Mac-Ersteinrichtung](setup/macos-from-scratch.de.md) |
+| Install tools for VS Code, PDF/OCR, Office, JSON/YAML/CSV, images and media as needed | [Optional helper tools](setup/optional-tools.en.md) | [Optionale Werkzeuge](setup/optional-tools.de.md) |
+
+These are optional platform/tool setup checklists, not replacements for the four primary handbooks. There is no requirement to install every listed helper.
+
 ## Focused companion material
 
 [Backend selection](guides/operator-guide.en.md#backends) · [Claude qualification](claude-code-backend.md) · [Runnable synthetic examples](../examples/README.md) · [Review JSON protocol](../documents/REVIEW_CORE.md) · [Security and reporting](../SECURITY.md) · [Version history](../CHANGELOG.md) · [Release basis and limits](integration-status.md)
