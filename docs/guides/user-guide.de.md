@@ -42,6 +42,8 @@ Schreibe keine Passwörter, Zugangstokens oder unbeteiligten persönlichen Daten
 
 Verwende ein normales Benutzerkonto. Der Kern benötigt Python ab 3.11 und keine Python-Drittpakete. Die gepflegte Testmatrix umfasst Python 3.11, 3.12 und 3.13. Git ist zum Klonen und Aktualisieren des Repositorys hilfreich und für ausdrücklich aktivierte automatische Git-Funktionen erforderlich; alternativ lässt sich ein Release-ZIP verwenden.
 
+**Mac frisch eingerichtet?** Beginne mit der [Mac-Ersteinrichtung ab null](../setup/macos-from-scratch.de.md) (auch [English](../setup/macos-from-scratch.en.md)): Homebrew, Git, optional `gh`, Python und Codex/Claude Code. Die [optionalen Werkzeuge](../setup/optional-tools.de.md) erklären VS Code, PDF/OCR sowie Office-/Dateiformat-Reader; sie sind keine Voraussetzung für den Kern. Die folgenden Checks setzen installierte Grundwerkzeuge voraus.
+
 Beziehe ARQUILO aus dem [Repository](https://github.com/abernert/arquilo) oder den [Releases](https://github.com/abernert/arquilo/releases). Entpacke bei einer ZIP-Installation das vollständige versionierte Runtime-ZIP, nicht nur eine einzelne Python-Datei. Bei einem Checkout klonst du das Repository und wechselst in dessen Hauptverzeichnis. Die folgenden Befehle setzen voraus, dass dein Terminal im Verzeichnis mit `arquilo.py` steht.
 
 Für das standardmäßige Codex-Backend installiere und authentifiziere Codex separat nach der [offiziellen CLI-Anleitung](https://developers.openai.com/codex/cli). Unternehmensanbieter, Proxys und Zertifikate gehören in deine freigegebene Codex-/Hostkonfiguration und nicht als kopierte Geheimnisse in ARQUILO-Dateien. Für natives Windows beachte auch die [offiziellen Windows-Hinweise](https://developers.openai.com/codex/windows).
