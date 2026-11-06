@@ -134,7 +134,7 @@ def _verify_capture_location(capture: Path, workspace: Path, task_id: str, *,
         state = state_directory_path(workspace, todo, state_root)
     except (OSError, ValueError, PlanIntegrityError) as exc:
         raise RecoveryRefused("Selected controller-state binding is unavailable or inconsistent.") from exc
-    _checked_path(state)
+    state = _checked_path(state)
     info = state.parent.stat()
     if os.name != "nt" and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077):
         raise RecoveryRefused("Controller state root must be owned by this user with mode 0700.")
