@@ -1,0 +1,36 @@
+name: Recovery hotfix verification
+on:
+  push:
+    branches: ['hotfix/0.10.0-network-review-resume']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'review_resume.py'
+      - 'codex_transport.py'
+      - 'tests/test*reconnect*'
+      - 'tests/test*review_resume*'
+      - '.github/workflows/recovery-hotfix.yml'
+permissions:
+  contents: read
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Archive exact source for reproducible offline verification
+        run: git archive --format=zip HEAD -o "${RUNNER_TEMP}/recovery-source.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: recovery-source
+          path: ${{ runner.temp }}/recovery-source.zip
+          retention-days: 7
+      - name: Reconnect and review recovery regressions (no provider calls)
+        run: |
+          python -B -m unittest discover -s tests -p 'test_reconnect*.py' -v
+          python -B -m unittest discover -s tests -p 'test_review_resume*.py' -v
