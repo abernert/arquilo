@@ -1,0 +1,104 @@
+name: Apply and qualify native review-first hotfix
+on:
+  push:
+    branches: ['hotfix/0.10.0-network-review-resume']
+    paths: ['.github/workflows/apply-review-first.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/hotfix/0.10.0-network-review-resume'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+      BRANCH: hotfix/0.10.0-network-review-resume
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Verify base and apply exact locally qualified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, lzma, os, subprocess
+          from pathlib import Path
+          expected = {'.github/workflows/apply-review-first.yml',
+                      'maintenance/review-first.patch.xz.01',
+                      'maintenance/review-first.patch.xz.02',
+                      'maintenance/review-first.patch.xz.03'}
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only',
+              '5c4c15397359484aef51c188e880be4becb10c98', 'HEAD'], text=True).splitlines())
+          assert changed == expected, changed
+          packed = b''.join(Path('maintenance/review-first.patch.xz.' + part).read_bytes()
+                            for part in ('01', '02', '03'))
+          patch = lzma.decompress(packed)
+          assert hashlib.sha256(patch).hexdigest() == '20509fc05a51390a0073ab4edbfb5366e48637931b68a68eece1d0e354383ca1'
+          dest = Path(os.environ['RUNNER_TEMP']) / 'review-first.patch'
+          dest.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', '--unidiff-zero', str(dest)], check=True)
+          subprocess.run(['git', 'apply', '--unidiff-zero', str(dest)], check=True)
+          PY
+      - name: Verify all changed product and test bytes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          expected = {
+            '.github/workflows/recovery-hotfix.yml': 'd12c138a20d0ddcfa8a01f7e493438895f1e3a9278e108401ffb6349146e9553',
+            'CHANGELOG.md': 'bae03b3afe381748bd550a9ecc859127a5da42eaf8e572b888829866f3a5925b',
+            'README.de.md': '78df4d5f5a2f5bd423c9667443d38331b65535dd4ec2e56342922105efcffac1',
+            'README.md': 'fe567cf9293c3f293437dd8a1e2ad036fd78dec09ae5ec92bc2d3e798c5f8b9b',
+            'autobuild.py': '577c4564480436028dc785bb0a582c5fec84c2bd391f225814ad8ee96186e343',
+            'docs/guides/cli-reference.json': '46d14ae7f230d2a9e41e603ab18549f4ba331ccd73d7452f020698f86cec7d3f',
+            'docs/guides/operator-guide.en.md': '05934acac32159fe87f91ef164eb6ac015b519713f52af279c273610d7e8d687',
+            'docs/review-resume-network-hotfix.md': 'd44e1d96adea2e6eab04c16a3e8042e1d22d9f334035625470167648f5e9b652',
+            'documents/lean_package.json': 'cbc845b34e691b399bd4ca18b6f914efc81e0a91a65b53823aeca5d9ce4ececd',
+            'review_entry.py': '6f9b7d67dc21d5a2adfaf7598b1a72f90e65e6486512c3f6d9afc8822fa73f4a',
+            'review_resume.py': '1c46c19d3ad14869d3e26cf9857fceda206a475fe2903e458dacd68fd5e203ab',
+            'run_todos.py': '3b71b285ba2bfeed647da3a579e0810698db151cfeff1e3e21cfa1c2acd370ba',
+            'scripts/documentation_reference.py': 'f112fa2e5a725cfb7efba115febaf8ee0074f4184d17b0ac33f9cf7461ea4c4c',
+            'tests/test_review_entry.py': '74128822dca07b1ca56f36ee3b898ff8bc28b073f5365bbd3c15680bdba6c61a',
+            'tests/test_review_resume_network.py': '5b8ee85b8d90da9df838d872928812996227bcd8941422738009c685751f0ef6',
+          }
+          for name, expected_hash in expected.items():
+              actual = hashlib.sha256(Path(name).read_bytes()).hexdigest()
+              assert actual == expected_hash, (name, actual, expected_hash)
+              print('Verified', name, actual)
+          PY
+          git diff --check
+      - name: Full offline suite and distribution checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B -m unittest discover -s tests -v
+          python -B scripts/documentation_reference.py --check
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Commit qualified changes and remove one-shot writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add .github/workflows/recovery-hotfix.yml CHANGELOG.md README.de.md README.md autobuild.py docs/guides/cli-reference.json docs/guides/operator-guide.en.md docs/review-resume-network-hotfix.md documents/lean_package.json review_entry.py review_resume.py run_todos.py scripts/documentation_reference.py tests/test_review_entry.py tests/test_review_resume_network.py
+          git rm maintenance/review-first.patch.xz.01 maintenance/review-first.patch.xz.02 maintenance/review-first.patch.xz.03 .github/workflows/apply-review-first.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: enter native review from archived task contract without production replay'
+          git fetch origin "$BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$BRANCH"
+          git rev-parse HEAD
+          git archive --format=zip HEAD -o "${RUNNER_TEMP}/native-review-first-source.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qualified-native-review-first
+          path: |
+            ${{ runner.temp }}/native-review-first-source.zip
+            dist/arquilo-*
+          retention-days: 7
