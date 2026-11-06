@@ -1,0 +1,100 @@
+name: Apply verified recovery maintenance patch
+on:
+  push:
+    branches: ['hotfix/0.10.0-network-review-resume']
+    paths: ['.github/workflows/finish-recovery-hotfix.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/hotfix/0.10.0-network-review-resume'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11'
+      - name: Apply bounded patch and regenerate documented CLI inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check maintenance/network-review-resume-bootstrap.patch
+          git apply maintenance/network-review-resume-bootstrap.patch
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p = Path('scripts/documentation_reference.py')
+          s = p.read_text(encoding='utf-8')
+          old = " '--capture-dir': 'Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient.',"
+          assert s.count(old) == 1
+          s = s.replace(old, old + "\n '--check-only': 'Validate the original recovery archive and controller binding without writes or model calls; current plan/prompt/budget gates still apply at review start. Does not mark a task DONE.',")
+          p.write_text(s, encoding='utf-8')
+          p = Path('documents/lean_package.json')
+          d = json.loads(p.read_text(encoding='utf-8'))
+          assert 'docs/review-resume-network-hotfix.md' not in d['runtime_files']
+          d['runtime_files'].append('docs/review-resume-network-hotfix.md')
+          d['runtime_files'].sort()
+          d['runtime_file_count'] = len(d['runtime_files'])
+          p.write_text(json.dumps(d, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          python -B scripts/documentation_reference.py --write
+      - name: Verify every changed product byte against the locally tested source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess
+          expected = {
+            'README.de.md': '4ceb02537c626a1048f945af93f03fd491db041b',
+            'README.md': '19bd5eb931766e7ee6e40e713adf46140a75f0c9',
+            'codex_transport.py': 'b7832d495ebb989c7b5db7f67306a60269c4c115',
+            'docs/guides/cli-reference.json': '0c0cfae1d37505e62904e0f3029e99e18c90c9cc',
+            'docs/guides/operator-guide.en.md': '4a125963e864412ca6b7adfb074e906060a513b2',
+            'docs/review-resume-network-hotfix.md': '970c5cacfe177aa4a18d87f2ba9022ad7ca9c26a',
+            'documents/lean_package.json': '4863b4b78bc3f19a9b8c2e44dc58356b9bd53854',
+            'review_resume.py': '7d0cbcea69d82704342ac35942e4f785c44d9aea',
+            'scripts/documentation_reference.py': 'bd5377e54cc4a3fe24725858ec70dca8142c93a3',
+            'tests/test_review_resume.py': 'ad815807069df462094fbeeb9b1333bebfc1002c',
+            'tests/test_review_resume_network.py': 'e24c3da0d72e4521da7a9e893af1e9f37a90362c',
+          }
+          for name, sha in expected.items():
+              actual = subprocess.check_output(['git', 'hash-object', name], text=True).strip()
+              assert actual == sha, (name, actual, sha)
+              print('Verified', name, sha)
+          PY
+          git diff --check
+      - name: Offline recovery, documentation and packaging tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B -m unittest discover -s tests -p 'test_review_resume*.py' -v
+          python -B -m unittest discover -s tests -p 'test_reconnect*.py' -v
+          python -B -m unittest discover -s tests -p 'test_documentation_manuals.py' -v
+          python -B -m unittest discover -s tests -p 'test_public_runtime.py' -v
+          python -B scripts/check_release.py
+          python -B scripts/build_runtime_zip.py
+      - name: Remove this one-shot writer and fast-forward only the hotfix branch
+        shell: bash
+        env:
+          BRANCH: hotfix/0.10.0-network-review-resume
+        run: |
+          set -euo pipefail
+          git add README.de.md README.md codex_transport.py docs/guides/cli-reference.json docs/guides/operator-guide.en.md documents/lean_package.json scripts/documentation_reference.py tests/test_review_resume.py
+          git rm maintenance/network-review-resume-bootstrap.patch .github/workflows/finish-recovery-hotfix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: complete verified 0.10.0 network reconnect and review-resume hotfix'
+          git fetch origin "$BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$BRANCH"
+          git rev-parse HEAD
+          git archive --format=zip HEAD -o "${RUNNER_TEMP}/verified-recovery-source.zip"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: verified-recovery-hotfix
+          path: |
+            ${{ runner.temp }}/verified-recovery-source.zip
+            dist/arquilo-*
+          retention-days: 7
