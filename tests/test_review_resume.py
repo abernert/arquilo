@@ -66,6 +66,8 @@ class Fixture(unittest.TestCase):
         self.capture_info["stdin"].update(
             expected_bytes=len(prompt_bytes),archived_bytes=len(prompt_bytes),
             written_bytes=len(prompt_bytes))
+        self.capture_info["stderr"].update(archived_bytes=0, received_bytes=0)
+        (self.capture/"stderr.bin").write_bytes(b"")
         (self.capture/"capture.json").write_text(json.dumps(self.capture_info),encoding="utf-8")
         (self.capture/"stdout.bin").write_bytes(stdout)
         (self.capture/"prompt.utf8").write_bytes(prompt_bytes)

@@ -873,6 +873,19 @@
       },
       {
         "names": [
+          "--check-only"
+        ],
+        "destination": "check_only",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Validate the original recovery archive and controller binding without writes or model calls; current plan/prompt/budget gates still apply at review start. Does not mark a task DONE."
+      },
+      {
+        "names": [
           "--todo"
         ],
         "destination": "todo",

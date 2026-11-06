@@ -75,6 +75,7 @@ DESCRIPTIONS = {
  '--decide-timeout': 'Positive finite timeout for the live Doctor probe. Effective default is 120 seconds, plus metadata/cleanup. Requires --check-decide.',
  '--todo': 'Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator.',
  '--capture-dir': 'Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient.',
+ '--check-only': 'Validate the original recovery archive and controller binding without writes or model calls; current plan/prompt/budget gates still apply at review start. Does not mark a task DONE.',
  'destination': 'Optional NEW ZIP filename. Default: dist/arquilo-VERSION.zip. Both archive and checksum must be absent. Building does not tag or publish a release.',
  'summary': 'Existing AutoBuild summary JSON or structured review JSON. Print advisory confidence; do not modify the file or infer a new PASS.',
  '--task': 'Standalone assignment text. Supply exactly one of --task or --task-file.',

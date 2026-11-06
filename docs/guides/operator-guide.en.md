@@ -783,6 +783,7 @@ Use `python3 -B arquilo.py tasklist resume-review --todo ID --capture-dir DIR --
 | Parameter / argument | Value / default | Meaning |
 | --- | --- | --- |
 | `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
+| `--check-only` | Off | Validate the original recovery archive and controller binding without writes or model calls; current plan/prompt/budget gates still apply at review start. Does not mark a task DONE. |
 | `--todo` | Required | Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator. |
 | `--capture-dir` | Required | Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient. |
 
