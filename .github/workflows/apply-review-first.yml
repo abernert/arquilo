@@ -14,18 +14,21 @@ jobs:
       PYTHONUTF8: '1'
       BRANCH: hotfix/0.10.0-network-review-resume
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: '3.11'
+      - name: Fetch exact public source with runner Git and Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin https://github.com/abernert/arquilo.git
+          git fetch --no-tags origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -c 'import sys; print(sys.version); assert sys.version_info >= (3, 11)'
       - name: Verify base and apply exact locally qualified patch
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          python3 - <<'PY'
           import hashlib, lzma, os, subprocess
           from pathlib import Path
           expected = {'.github/workflows/apply-review-first.yml',
@@ -47,7 +50,8 @@ jobs:
       - name: Verify all changed product and test bytes
         shell: bash
         run: |
-          python - <<'PY'
+          set -euo pipefail
+          python3 - <<'PY'
           import hashlib
           from pathlib import Path
           expected = {
@@ -77,12 +81,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -B -m unittest discover -s tests -v
-          python -B scripts/documentation_reference.py --check
-          python -B scripts/check_release.py
-          python -B scripts/build_runtime_zip.py
+          python3 -B -m unittest discover -s tests -v
+          python3 -B scripts/documentation_reference.py --check
+          python3 -B scripts/check_release.py
+          python3 -B scripts/build_runtime_zip.py
       - name: Commit qualified changes and remove one-shot writer
         shell: bash
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git add .github/workflows/recovery-hotfix.yml CHANGELOG.md README.de.md README.md autobuild.py docs/guides/cli-reference.json docs/guides/operator-guide.en.md docs/review-resume-network-hotfix.md documents/lean_package.json review_entry.py review_resume.py run_todos.py scripts/documentation_reference.py tests/test_review_entry.py tests/test_review_resume_network.py
@@ -92,13 +98,7 @@ jobs:
           git commit -m 'fix: enter native review from archived task contract without production replay'
           git fetch origin "$BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          git push origin "HEAD:refs/heads/$BRANCH"
+          HEADER="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          printf '::add-mask::%s\n' "$HEADER"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $HEADER" push origin "HEAD:refs/heads/$BRANCH"
           git rev-parse HEAD
-          git archive --format=zip HEAD -o "${RUNNER_TEMP}/native-review-first-source.zip"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: qualified-native-review-first
-          path: |
-            ${{ runner.temp }}/native-review-first-source.zip
-            dist/arquilo-*
-          retention-days: 7
