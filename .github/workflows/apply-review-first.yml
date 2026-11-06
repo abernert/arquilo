@@ -1,4 +1,4 @@
-name: Apply and qualify native review-first hotfix
+name: Qualify exact native review patch
 on:
   push:
     branches: ['hotfix/0.10.0-network-review-resume']
@@ -6,15 +6,14 @@ on:
 permissions:
   contents: write
 jobs:
-  apply:
+  qualify:
     if: github.repository == 'abernert/arquilo' && github.ref == 'refs/heads/hotfix/0.10.0-network-review-resume'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       PYTHONUTF8: '1'
-      BRANCH: hotfix/0.10.0-network-review-resume
     steps:
-      - name: Fetch exact public source with runner Git and Python
+      - name: Fetch exact source
         shell: bash
         run: |
           set -euo pipefail
@@ -23,60 +22,48 @@ jobs:
           git fetch --no-tags origin "$GITHUB_SHA"
           git checkout --detach FETCH_HEAD
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          python3 -c 'import sys; print(sys.version); assert sys.version_info >= (3, 11)'
-      - name: Verify base and apply exact locally qualified patch
+          python3 -c 'import sys; assert sys.version_info >= (3,11); print(sys.version)'
+      - name: Apply and verify prepared patch bytes
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, lzma, os, subprocess
+          import hashlib, lzma, os, subprocess, json
           from pathlib import Path
-          expected = {'.github/workflows/apply-review-first.yml',
-                      'maintenance/review-first.patch.xz.01',
-                      'maintenance/review-first.patch.xz.02',
-                      'maintenance/review-first.patch.xz.03'}
-          changed = set(subprocess.check_output(['git', 'diff', '--name-only',
-              '5c4c15397359484aef51c188e880be4becb10c98', 'HEAD'], text=True).splitlines())
-          assert changed == expected, changed
-          packed = b''.join(Path('maintenance/review-first.patch.xz.' + part).read_bytes()
-                            for part in ('01', '02', '03'))
+          staged = ['.github/workflows/apply-review-first.yml'] + ['maintenance/review-first.patch.xz.'+p for p in ('01','02','03')]
+          changed = set(subprocess.check_output(['git','diff','--name-only','5c4c15397359484aef51c188e880be4becb10c98','HEAD'],text=True).splitlines())
+          assert changed == set(staged), changed
+          packed = b''.join(Path(p).read_bytes() for p in staged[1:])
           patch = lzma.decompress(packed)
-          assert hashlib.sha256(patch).hexdigest() == '20509fc05a51390a0073ab4edbfb5366e48637931b68a68eece1d0e354383ca1'
-          dest = Path(os.environ['RUNNER_TEMP']) / 'review-first.patch'
+          assert hashlib.sha256(patch).hexdigest() == 'bc487b7d3f26519d484ea9f9e21b1048c08464148733e2d444d53c619cac1288'
+          dest = Path(os.environ['RUNNER_TEMP'])/'native-review.patch'
           dest.write_bytes(patch)
-          subprocess.run(['git', 'apply', '--check', '--unidiff-zero', str(dest)], check=True)
-          subprocess.run(['git', 'apply', '--unidiff-zero', str(dest)], check=True)
-          PY
-      - name: Verify all changed product and test bytes
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          from pathlib import Path
+          subprocess.run(['git','apply','--check',str(dest)],check=True)
+          subprocess.run(['git','apply','--index',str(dest)],check=True)
           expected = {
-            '.github/workflows/recovery-hotfix.yml': 'd12c138a20d0ddcfa8a01f7e493438895f1e3a9278e108401ffb6349146e9553',
-            'CHANGELOG.md': 'bae03b3afe381748bd550a9ecc859127a5da42eaf8e572b888829866f3a5925b',
-            'README.de.md': '78df4d5f5a2f5bd423c9667443d38331b65535dd4ec2e56342922105efcffac1',
-            'README.md': 'fe567cf9293c3f293437dd8a1e2ad036fd78dec09ae5ec92bc2d3e798c5f8b9b',
-            'autobuild.py': '577c4564480436028dc785bb0a582c5fec84c2bd391f225814ad8ee96186e343',
-            'docs/guides/cli-reference.json': '46d14ae7f230d2a9e41e603ab18549f4ba331ccd73d7452f020698f86cec7d3f',
-            'docs/guides/operator-guide.en.md': '05934acac32159fe87f91ef164eb6ac015b519713f52af279c273610d7e8d687',
-            'docs/review-resume-network-hotfix.md': 'd44e1d96adea2e6eab04c16a3e8042e1d22d9f334035625470167648f5e9b652',
-            'documents/lean_package.json': 'cbc845b34e691b399bd4ca18b6f914efc81e0a91a65b53823aeca5d9ce4ececd',
-            'review_entry.py': '6f9b7d67dc21d5a2adfaf7598b1a72f90e65e6486512c3f6d9afc8822fa73f4a',
-            'review_resume.py': '1c46c19d3ad14869d3e26cf9857fceda206a475fe2903e458dacd68fd5e203ab',
-            'run_todos.py': '3b71b285ba2bfeed647da3a579e0810698db151cfeff1e3e21cfa1c2acd370ba',
-            'scripts/documentation_reference.py': 'f112fa2e5a725cfb7efba115febaf8ee0074f4184d17b0ac33f9cf7461ea4c4c',
-            'tests/test_review_entry.py': '74128822dca07b1ca56f36ee3b898ff8bc28b073f5365bbd3c15680bdba6c61a',
-            'tests/test_review_resume_network.py': '5b8ee85b8d90da9df838d872928812996227bcd8941422738009c685751f0ef6',
-          }
-          for name, expected_hash in expected.items():
-              actual = hashlib.sha256(Path(name).read_bytes()).hexdigest()
-              assert actual == expected_hash, (name, actual, expected_hash)
-              print('Verified', name, actual)
+            '.github/workflows/recovery-hotfix.yml':'1fca733aa6d899d33297272a90858cf8890d6d85',
+            'CHANGELOG.md':'81fcf300825de691adcbdf6781acc1c165941d4c',
+            'autobuild.py':'ba996ae6fbaa8840a04cae33060fee3f5aca37db',
+            'docs/guides/cli-reference.json':'5d506b32b9e6479c01451f8b9471fa3df945ef28',
+            'docs/guides/operator-guide.en.md':'9b7b89603128ea319f6eb1890ebda9898ee75c20',
+            'docs/review-resume-network-hotfix.md':'add3303c495f1abe467e84482298b195aa89cd81',
+            'documents/lean_package.json':'e9217ca62aa776c562276e1d25e6c3fcc85bacca',
+            'review_candidate.py':'df2612d02455548ddfbf052ee4209befc793c0d2',
+            'review_entry.py':'67f88616ddcaa73086083ef413f63097f025d2f1',
+            'review_resume.py':'63e9c1e4ba2e83766b854a818cdda72f7d85db57',
+            'run_todos.py':'f71fab524bd3d59322349a7899f9638ee220b54b',
+            'scripts/documentation_reference.py':'1406a4a896b84994e5bfa55fbe7095d331961908',
+            'tests/test_review_entry.py':'7ad88a5a3e542c85273138eb64261c5b7baa40cf',
+            'tests/test_review_resume_network.py':'3af51c8e5b337bfad15539c95fec5255e25967ed'}
+          actual_paths = set(subprocess.check_output(['git','diff','--cached','--name-only'],text=True).splitlines())
+          assert actual_paths == set(expected), actual_paths
+          for path, expected_sha in expected.items():
+              actual_sha = subprocess.check_output(['git','hash-object',path],text=True).strip()
+              assert actual_sha == expected_sha, (path,actual_sha)
+              print('Verified',path,actual_sha)
+          (Path(os.environ['RUNNER_TEMP'])/'native-review-files.json').write_text(json.dumps({'files':expected,'remove':staged}))
           PY
-          git diff --check
+          git diff --cached --check
       - name: Full offline suite and distribution checks
         shell: bash
         run: |
@@ -85,20 +72,36 @@ jobs:
           python3 -B scripts/documentation_reference.py --check
           python3 -B scripts/check_release.py
           python3 -B scripts/build_runtime_zip.py
-      - name: Commit qualified changes and remove one-shot writer
+      - name: Store verified candidate commit without moving any branch
         shell: bash
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git add .github/workflows/recovery-hotfix.yml CHANGELOG.md README.de.md README.md autobuild.py docs/guides/cli-reference.json docs/guides/operator-guide.en.md docs/review-resume-network-hotfix.md documents/lean_package.json review_entry.py review_resume.py run_todos.py scripts/documentation_reference.py tests/test_review_entry.py tests/test_review_resume_network.py
-          git rm maintenance/review-first.patch.xz.01 maintenance/review-first.patch.xz.02 maintenance/review-first.patch.xz.03 .github/workflows/apply-review-first.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix: enter native review from archived task contract without production replay'
-          git fetch origin "$BRANCH"
-          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
-          HEADER="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
-          printf '::add-mask::%s\n' "$HEADER"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $HEADER" push origin "HEAD:refs/heads/$BRANCH"
-          git rev-parse HEAD
+          python3 - <<'PY'
+          import json, os, urllib.request, subprocess
+          from pathlib import Path
+          root='https://api.github.com/repos/abernert/arquilo/'
+          def api(path,data=None):
+              headers={'Authorization':'Bearer '+os.environ['TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}
+              raw=None if data is None else json.dumps(data).encode()
+              request=urllib.request.Request(root+path,data=raw,headers=headers)
+              with urllib.request.urlopen(request,timeout=60) as response:
+                  return json.load(response)
+          parent=os.environ['GITHUB_SHA']
+          assert api('git/ref/heads/hotfix/0.10.0-network-review-resume')['object']['sha']==parent, 'Branch changed; refusing publication'
+          manifest=json.loads((Path(os.environ['RUNNER_TEMP'])/'native-review-files.json').read_text())
+          entries=[]
+          for path,expected in manifest['files'].items():
+              assert subprocess.check_output(['git','hash-object',path],text=True).strip()==expected
+              result=api('git/blobs',{'content':Path(path).read_text(encoding='utf-8'),'encoding':'utf-8'})
+              assert result['sha']==expected
+              entries.append({'path':path,'mode':'100644','type':'blob','sha':expected})
+          entries += [{'path':p,'mode':'100644','type':'blob','sha':None} for p in manifest['remove']]
+          base=api('git/commits/'+parent)['tree']['sha']
+          tree=api('git/trees',{'base_tree':base,'tree':entries})['sha']
+          commit=api('git/commits',{'message':'fix: enter native review from archived task contract without production replay','tree':tree,'parents':[parent]})
+          print('PUBLISH_COMMIT='+commit['sha'])
+          print('PUBLISH_TREE='+tree)
+          print('No branch moved: explicit lease-checked promotion remains required.')
+          PY
