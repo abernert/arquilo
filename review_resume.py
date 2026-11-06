@@ -54,7 +54,12 @@ class RecoveryEvidence:
 
 def _checked_path(path: Path) -> Path:
     try:
-        return safe_io.check_path(path, missing_ok=False)
+        # Check the spelling before resolving it: resolving first would hide
+        # user-controlled links. Native aliases (notably Windows 8.3 names)
+        # must then use the same canonical spelling as the workspace/state.
+        checked = safe_io.check_path(path, missing_ok=False)
+        canonical = checked.resolve(strict=True)
+        return safe_io.check_path(canonical, missing_ok=False)
     except (OSError, ValueError) as exc:
         raise RecoveryRefused("Required archive/binding path is missing, linked or unsafe.") from exc
 
@@ -172,7 +177,8 @@ def _verify_capture_location(capture: Path, workspace: Path, task_id: str, *,
             or run.get("status") != "failed" or not isinstance(run.get("finished_at"), str)
             or not run["finished_at"]
             or not isinstance(run.get("tasks"), list)
-            or str(capture.parent / "task_log.json") not in run["tasks"]
+            or not any(_record_path({"path": path}, "path") == capture.parent / "task_log.json"
+                       for path in run["tasks"])
             or run.get("process_stop_triggered", False) is not False):
         raise RecoveryRefused("Original external run is not closed and bound to the selected plan.")
 
