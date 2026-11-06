@@ -12,10 +12,19 @@ on:
       - '.github/workflows/recovery-hotfix.yml'
 permissions:
   contents: read
+concurrency:
+  group: recovery-hotfix-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   recovery:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -24,13 +33,17 @@ jobs:
         with:
           python-version: '3.11'
       - name: Archive exact source for reproducible offline verification
+        if: matrix.os == 'ubuntu-latest'
         run: git archive --format=zip HEAD -o "${RUNNER_TEMP}/recovery-source.zip"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: matrix.os == 'ubuntu-latest'
         with:
           name: recovery-source
           path: ${{ runner.temp }}/recovery-source.zip
           retention-days: 7
       - name: Reconnect and review recovery regressions (no provider calls)
+        shell: bash
         run: |
+          set -euo pipefail
           python -B -m unittest discover -s tests -p 'test_reconnect*.py' -v
           python -B -m unittest discover -s tests -p 'test_review_resume*.py' -v
