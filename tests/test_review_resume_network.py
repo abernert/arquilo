@@ -202,7 +202,7 @@ class ExternalArchiveTests(MixedArchiveTests):
         with patch.object(transport, 'execute', side_effect=AssertionError('model call')), \
                 patch.object(arquilo, 'main', side_effect=AssertionError('runner started')), \
                 redirect_stdout(io.StringIO()):
-            self.assertEqual(recovery.main(args), 0)
+            self.assertEqual(recovery._legacy_main(args), 0)
         self.assertEqual(before, snapshot(self.home))
 
     def test_external_metadata_mismatches_are_rejected(self):
@@ -286,13 +286,14 @@ class NativeRecoveryTests(ProcessFixture):
         self.assertEqual(calls.call_count, 1)
         self.assertNotIn('***DONE***', self.todo.read_text())
 
-    def test_real_cli_prompt_change_refuses_before_any_model_call(self):
+    def test_real_cli_operational_prompt_change_does_not_require_production_replay(self):
         self.make_failed_archive()
         args = [*self.args, '--process-stop-policy', 'controller-only']
-        with self.launch([]) as calls, redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            self.assertNotEqual(arquilo.main(args), 0)
-        self.assertEqual(calls.call_count, 0)
-        self.assertNotIn('***DONE***', self.todo.read_text())
+        with self.launch([{'events': [answer(json.dumps(PASS)), COMPLETE]}]) as calls, \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(arquilo.main(args), 0)
+        self.assertEqual(calls.call_count, 1)
+        self.assertIn('***DONE***', self.todo.read_text())
 
     def test_real_cli_active_stop_is_not_bypassed(self):
         self.make_failed_archive()

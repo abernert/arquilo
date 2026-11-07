@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 maintenance — native review-first continuation
+
+- `tasklist resume-review` now enters the real review phase without replaying or
+  simulating production and without a regenerated producer-prompt equality gate.
+- Supports review of incomplete work and interrupted reviews while preserving the
+  original task/policy, controller state, STOPs and spent call budgets.
+- Adds short-form archive-bound startup, `--check-only` and explicit bounded
+  `--continue-on-fail`; counts only actual producer/fix/review calls.
+- Binds each current candidate with file hashes and raw-object Git diffs, checks
+  drift before acceptance, and preserves historical source archives unchanged.
+- See [operation and limits](docs/review-resume-network-hotfix.md).
+
 ## 0.10.0 — 2026-10-25 (public preview; Claude Code and reviewed Git delivery)
 
 ### Claude Code execution backend

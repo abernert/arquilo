@@ -2018,6 +2018,9 @@ class TodoRunner:
 
     def _verify_git_acceptance(self, outcome: TaskOutcome, *, todo: TodoItem) -> None:
         """The last review binding is a hard gate, independent of publication."""
+        entry = getattr(self, "review_entry", None)
+        if entry is not None:
+            entry.verify_candidate()
         if outcome.git_candidate is not None:
             candidate = outcome.git_candidate
             git_snapshot.verify_live(candidate.request, candidate.token, candidate.token["review_index"])
@@ -2633,10 +2636,13 @@ class TodoRunner:
         return replace(outcome, completed=False, abort=True)
 
     def _handle_todo(self, todo: TodoItem) -> TaskOutcome:
+        entry = getattr(self, "review_entry", None)
+        if entry is not None:
+            entry.validate_task(todo)
         # A validated plan survives a deliberate restart. Resume its children
         # and final acceptance without replaying the parent's production task.
         plan_path = self.state_dir / "breakdowns" / todo.identifier.replace(".", "_") / "breakdown_plan.json"
-        if plan_path.is_file() and not todo.config.get("workspace"):
+        if entry is None and plan_path.is_file() and not todo.config.get("workspace"):
             try:
                 plan = json.loads(read_utf8(plan_path))
                 if not isinstance(plan, dict) or not isinstance(plan.get("children"), list):
@@ -2714,6 +2720,10 @@ class TodoRunner:
             if isinstance(outcome.review_classification, dict)
             else review_text
         )
+        if entry is not None:
+            # The explicit review entry owns its bounded fix loop; no further
+            # producer, parent review, breakdown or child task is scheduled.
+            return replace(outcome, completed=False, abort=False)
 
         # A successful review cannot override a failed execution or another gate.
         if review_classification_passes(classification):
@@ -3441,9 +3451,17 @@ class TodoRunner:
         todo_id, log_record, log_dir = self._prepare_task_log(
             identifier, session_stamp, active_workdir, active_todo_file,
             result_file=result_file_override or self._result_file_for_todo(todo_id=self._derive_todo_id_from_identifier(identifier)))
+        entry = getattr(self, "review_entry", None)
+        if entry is not None:
+            if use_cli_subprocess:
+                raise ValueError("Review entry requires the serial native controller; no worker started")
+            entry.claim(identifier, active_workdir, active_todo_file, self.plan_authority.snapshot())
+            task_text = entry.prompt
         if not self.dry_run:
             write_log_text(log_dir / "prompt.md", task_text)
             self._capture_original_contract(todo_id, task_text, active_todo_file, log_dir)
+            if entry is not None:
+                entry.archive_entry(log_dir)
         preview_log, preview_raw, preview_summary = self._attempt_log_paths(
             log_dir, attempt=1, ensure_directories=False)
         command_preview = (
@@ -3552,7 +3570,8 @@ class TodoRunner:
                     summary = self._autobuild_python_attempt(task_text, active_workdir, options, context)
                 else:
                     summary = autobuild_start(task=task_text, workdir=active_workdir,
-                                              options=options, context=context)
+                                              options=options, context=context,
+                                              **({"review_entry": entry} if entry is not None else {}))
                 validated_summary = validate_result(
                     autobuild_summary_document(summary) if not use_cli_subprocess else vars(summary))
                 if git_request is not None and validated_summary.get("completed"):
@@ -4845,7 +4864,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Optional[Sequence[str]] = None, *, review_entry=None) -> int:
     should_beep = True
     try:
         try:
@@ -4854,6 +4873,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         args = parse_args(argv)
+        if review_entry is not None:
+            review_entry.validate_options(args)
         if args.print_capabilities:
             should_beep = False
             print(json.dumps(arquilo_capabilities_payload(), ensure_ascii=False, sort_keys=True))
@@ -4972,18 +4993,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except (GitIntegrationError, ReviewedGitError, PlanIntegrityError, OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
+        if review_entry is not None:
+            runner.review_entry = review_entry
+            review_entry.correction_preflight = lambda: run_runtime_profile_preflight(
+                runtime_profile, workdir=workdir, todo_file=todo_path)
         try:
             if os.path.lexists(workdir / "process_stop"):
                 runner.run()
                 return RUN_TODOS_EXIT_PROCESS_STOP
-            if not args.dry_run:
+            if not args.dry_run and review_entry is None:
                 run_runtime_profile_preflight(runtime_profile, workdir=workdir, todo_file=todo_path)
             if os.path.lexists(workdir / "process_stop"):
                 runner.run()
                 return RUN_TODOS_EXIT_PROCESS_STOP
             if args.skip_codex_preflight and args.backend != "codex":
                 raise ValueError("--skip-codex-preflight is Codex-only; use --skip-backend-preflight.")
-            if not args.skip_backend_preflight:
+            if not args.skip_backend_preflight and review_entry is None:
                 if args.backend == "codex" and not args.skip_codex_preflight:
                     run_codex_workspace_write_preflight(dry_run=args.dry_run, recorder=recorder,
                         model=args.model, reasoning_effort=args.reasoning_effort, prompt_config=prompts, workdir=workdir,

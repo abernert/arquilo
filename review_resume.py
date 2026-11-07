@@ -1,20 +1,10 @@
 # Copyright 2026 Alexander Bernert
 # SPDX-License-Identifier: Apache-2.0
 #!/usr/bin/env python3
-"""Opt-in, evidence-checked review continuation without production replay.
+"""Recovery compatibility helpers and public native review-entry dispatch.
 
-CLI: arquilo tasklist resume-review [--check-only] --todo ID --capture-dir PATH --
-     tasklist run --workdir WORK --todo-file TASKS --start ID --stop ID
-     --max-steps 1 --max-retries 1 --breakdown-policy off
-
-Only one thoroughly validated, fully captured Codex production success can
-be substituted once for the otherwise repeatable production call. The normal
-mandatory read-only review and controller acceptance gates are never bypassed.
-Use the same --state-dir, workspace, working task file, prompt catalog and
-resource settings as the original run. --check-only verifies the archive and
-its binding without model calls or writes; it does not mark the task DONE.
-The normal runner still checks the current plan and exact regenerated prompt.
-Archived workspace files are untrusted; operator confirmation is required.
+The public CLI delegates to review_entry. The legacy evidence-checked production
+substitution helpers remain for compatibility tests, not as the public default.
 """
 from __future__ import annotations
 
@@ -114,9 +104,9 @@ def _record_path(record: dict, name: str) -> Path:
 
 
 def _verify_capture_location(capture: Path, workspace: Path, task_id: str, *,
-                             todo_file: Path | None, state_root: Path | None) -> None:
+                             todo_file: Path | None, state_root: Path | None, fresh_review: bool = False) -> None:
     if (capture.parent.name != "task-" + task_id
-            or not re.fullmatch(r"[0-9]{3}-production", capture.name)
+            or not re.fullmatch(r"[0-9]{3}-(?:production|review|fix)" if fresh_review else r"[0-9]{3}-production", capture.name)
             or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z(?:-\d{4})?",
                                 capture.parent.parent.name)):
         raise RecoveryRefused("Capture is not the selected task's production attempt.")
@@ -174,11 +164,12 @@ def _verify_capture_location(capture: Path, workspace: Path, task_id: str, *,
             or _record_path(run, "workspace") != workspace
             or _record_path(run, "todo_file") != todo
             or _record_path(run, "controller_state") != state
-            or run.get("status") != "failed" or not isinstance(run.get("finished_at"), str)
-            or not run["finished_at"]
+            or (run.get("status") not in {"failed", "incomplete", "completed", "running", "preparing"}
+                if fresh_review else run.get("status") != "failed")
+            or (not fresh_review and (not isinstance(run.get("finished_at"), str) or not run["finished_at"]))
             or not isinstance(run.get("tasks"), list)
-            or not any(_record_path({"path": path}, "path") == capture.parent / "task_log.json"
-                       for path in run["tasks"])
+            or (not fresh_review and not any(_record_path({"path": path}, "path") == capture.parent / "task_log.json"
+                       for path in run["tasks"]))
             or run.get("process_stop_triggered", False) is not False):
         raise RecoveryRefused("Original external run is not closed and bound to the selected plan.")
 
@@ -406,7 +397,7 @@ def _review_only_guards(evidence: RecoveryEvidence, state: dict):
         run_todos.TodoRunner._autobuild_python_attempt = previous_worker
 
 
-def main(argv: list[str] | None = None) -> int:
+def _legacy_main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     evidence = None
     if args[:1] != ["resume-review"]:
@@ -461,6 +452,11 @@ def main(argv: list[str] | None = None) -> int:
         print("[recovery] Review did not start. Inspect fresh run logs; no DONE should be inferred.", file=sys.stderr)
         return result if result != 0 else 125
     return result
+
+
+def main(argv: list[str] | None = None) -> int:
+    from review_entry import main as native_review_main
+    return native_review_main(argv)
 
 
 if __name__ == "__main__":

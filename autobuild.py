@@ -934,6 +934,7 @@ def start(
     options: Optional[AutoBuildOptions] = None,
     context: Optional[AutoBuildContext] = None,
     decision_settings: Optional[DecisionExecSettings] = None,
+    review_entry=None,
     **removed_options: Any,
 ) -> AutoBuildSummary:
     """Run one task with mandatory review and bounded, review-directed continuation.
@@ -954,6 +955,11 @@ def start(
     # construction; reject before reading task files or setting up a workspace.
     options.__post_init__()
     context.__post_init__()
+    if review_entry is not None:
+        from review_entry import ReviewEntry
+        if not isinstance(review_entry, ReviewEntry):
+            raise ValueError("review_entry must be an explicitly validated ReviewEntry")
+        review_entry.validate_call(task, workdir, context)
     backend = options.backend
     if decision_settings is not None and decision_settings.backend != backend:
         raise ValueError("Decision backend must match the run-wide backend; no implicit fallback.")
@@ -1140,12 +1146,13 @@ def start(
     if readonly_mode:
         readonly_result_path = pretty_log.parent / f"readonly_result_{stamp}.txt"
 
-    original_task = task_text
+    original_task = review_entry.prompt if review_entry is not None else task_text
     active_decision_run_id = decision_run_id if decision_run_id is not None else f"autobuild-{uuid4().hex}"
     current_prompt = original_task
     auftrag_runs = 0
     review_runs = 0
-    max_iterations = max(1, max_steps)
+    max_iterations = (1 + (max_steps if review_entry.continue_on_fail else 0)
+                      if review_entry is not None else max(1, max_steps))
     completed = False
     last_answer = ""
     auftrag_history: List[RunResult] = []
@@ -1247,33 +1254,41 @@ def start(
             runtime_error["input_error"] = exc.to_dict()
             break
 
-        try:
-            result = one_run(current_prompt, stage=stage_name)
-        except BudgetExhausted as exc:
-            budget_exhausted = exc.details
-            break
-        auftrag_runs += 1
-        auftrag_history.append(result)
-        record_run(result, "task", len(auftrag_history))
-        runtime_error = run_result_error(result, stage_name)
-        if runtime_error:
-            last_answer = runtime_error["message"]
-            completed = False
-            break
-        last_answer = result.end_answer
+        if review_entry is not None and attempt_runs == 1:
+            # A new review of an existing candidate, NOT a fabricated production
+            # success. No production process, call-budget reservation or history.
+            last_answer = review_entry.evidence_note
+            append(pretty_log, f"[{ts()}] [review-entry] Fresh review; no production replay.\n")
+        else:
+            if review_entry is not None:
+                review_entry.before_fix()
+            try:
+                result = one_run(current_prompt, stage=stage_name)
+            except BudgetExhausted as exc:
+                budget_exhausted = exc.details
+                break
+            auftrag_runs += 1
+            auftrag_history.append(result)
+            record_run(result, "task", len(auftrag_history))
+            runtime_error = run_result_error(result, stage_name)
+            if runtime_error:
+                last_answer = runtime_error["message"]
+                completed = False
+                break
+            last_answer = result.end_answer
 
-        if result.process_stop_triggered:
-            note = (
-                result.process_stop_details
-                or "process_stop-Datei signalisiert manuellen Eingriff."
-            )
-            append(
-                pretty_log,
-                f"[{ts()}] [process_stop] Lauf wird beendet: {note}\n",
-            )
-            completed = False
-            last_answer = note
-            break
+            if result.process_stop_triggered:
+                note = (
+                    result.process_stop_details
+                    or "process_stop-Datei signalisiert manuellen Eingriff."
+                )
+                append(
+                    pretty_log,
+                    f"[{ts()}] [process_stop] Lauf wird beendet: {note}\n",
+                )
+                completed = False
+                last_answer = note
+                break
 
         if readonly_mode and readonly_result_path:
             write_text(readonly_result_path, last_answer)
@@ -1325,6 +1340,8 @@ def start(
                 runtime_error = execution_error(str(exc), code="git_review_snapshot_failed", phase="review")
                 completed = False
                 break
+        if review_entry is not None:
+            review_prompt += review_entry.bind_candidate(pretty_log.parent, review_runs + 1)
         print("Last answer:", last_answer)
         try:
             review_result = one_run(
@@ -1360,6 +1377,13 @@ def start(
                 git_snapshot.verify_live(context.git_review, git_review_token, review_runs)
             except (OSError, ValueError) as exc:
                 runtime_error = execution_error(str(exc), code="git_review_snapshot_changed", phase="review")
+                completed = False
+                break
+        if review_entry is not None:
+            try:
+                review_entry.verify_candidate()
+            except (OSError, ValueError, RuntimeError) as exc:
+                runtime_error = execution_error(str(exc), code="review_candidate_changed", phase="review")
                 completed = False
                 break
         review_findings = review_result.end_answer
