@@ -13,7 +13,7 @@ on:
       - 'codex_transport.py'
       - 'tests/test*reconnect*'
       - 'tests/test*review_resume*'
-      - 'tests/test_review_entry.py'
+      - 'tests/test_review_entry*.py'
       - '.github/workflows/recovery-hotfix.yml'
 permissions:
   contents: read
@@ -52,4 +52,4 @@ jobs:
           set -euo pipefail
           python -B -m unittest discover -s tests -p 'test_reconnect*.py' -v
           python -B -m unittest discover -s tests -p 'test_review_resume*.py' -v
-          python -B -m unittest discover -s tests -p 'test_review_entry.py' -v
+          python -B -m unittest discover -s tests -p 'test_review_entry*.py' -v

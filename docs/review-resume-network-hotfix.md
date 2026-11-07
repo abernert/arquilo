@@ -93,6 +93,28 @@ normal separate decision call. Corrections consume their normal budgets. Spent
 counts are never reset or refunded; an explicit new operator budget choice is
 still a separate operator action, not inferred recovery authority.
 
+## STOP ownership during candidate capture
+
+The candidate scan does not turn every descendant file named `process_stop`
+into a global runner STOP. The marker at `<workdir>/process_stop` remains an
+active stop, including an empty file, directory or dangling link. It is checked
+before and after candidate capture; the normal runner/transport checks remain
+in force before dispatch and acceptance. A source attempt with an observed STOP
+and explicitly registered active peer STOP paths remain blocking as before.
+
+A marker in a subordinate diagnostic/test workspace is ordinary candidate
+evidence unless the controller explicitly owns it as an active stop path. Such
+regular files are still hashed, retained and checked for drift. Do not delete,
+rename, rewrite or exclude archived markers to force recovery. Linked candidate
+paths are still refused; this is not a symlink or historical-error exception.
+This review entry still supports serial primary-workspace tasks only.
+
+The entry-count ceiling remains 100,000 by default. Exceeding it now reports the
+observed count, configured limit and current relative path. This STOP-scope fix
+does not increase that ceiling or the separate byte/diff limits. An explicit
+process-local `review_candidate.MAX_ENTRIES = 1_000_000` operator override remains
+finite and does not exclude files, reset budgets or disable any other check.
+
 ## Candidate identity and drift checks
 
 Every review round writes `review-candidate-NNN/manifest.json` in its new private

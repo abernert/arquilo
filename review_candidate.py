@@ -61,6 +61,13 @@ def _git(root: Path, workspace: Path, args: list[str], *, absent_head: bool = Fa
 
 
 def capture(workspace: Path) -> tuple[dict, dict[str, bytes]]:
+    # Candidate traversal is not a recursive STOP-discovery mechanism. This
+    # capture root is the current review workspace; nested workspaces may contain
+    # historical or synthetic stop evidence. The runner separately owns its
+    # active workspace/peer STOP paths and checks them before dispatch/acceptance.
+    root_stop = workspace / 'process_stop'
+    if os.path.lexists(root_stop):
+        raise ValueError('process_stop blocks review candidate capture: process_stop')
     files, repos, excluded, total, count = {}, [], [], 0, 0
     def walk(folder: Path, depth: int):
         nonlocal total, count
@@ -72,7 +79,8 @@ def capture(workspace: Path) -> tuple[dict, dict[str, bytes]]:
                 rel = path.relative_to(workspace).as_posix()
                 count += 1
                 if count > MAX_ENTRIES:
-                    raise ValueError('Review candidate exceeds entry limit')
+                    raise ValueError(f'Review candidate exceeds entry limit: count={count}, '
+                                     f'limit={MAX_ENTRIES}, path={rel!r}')
                 info = os.stat(path if fd is None else name, dir_fd=fd, follow_symlinks=False)
                 if name == '.git':
                     # Git metadata are identified by HEAD and a full diff below.
@@ -82,7 +90,7 @@ def capture(workspace: Path) -> tuple[dict, dict[str, bytes]]:
                     repos.append(base)
                     excluded.append(rel)
                     continue
-                if name == 'process_stop':
+                if rel == 'process_stop':
                     raise ValueError('process_stop blocks review candidate capture: ' + rel)
                 if name in EXCLUDED_DIRS and stat.S_ISDIR(info.st_mode):
                     excluded.append(rel)
@@ -172,9 +180,13 @@ def capture(workspace: Path) -> tuple[dict, dict[str, bytes]]:
         diffs[name] = diff
         git_records.append({'root': root.relative_to(workspace).as_posix(), 'head': head or 'UNBORN',
                             'diff': name, 'diff_sha256': sha(diff)})
+    if os.path.lexists(root_stop):
+        raise ValueError('process_stop blocks review candidate capture: process_stop')
     manifest = {'schema_version': 'arquilo.review_candidate.v1', 'workspace': str(workspace),
                 'files': files, 'repositories': git_records, 'excluded': sorted(excluded),
                 'scope': 'All regular workspace files except listed dependency/cache/controller directories. '
+                         'Only workspace-root process_stop is a capture STOP; nested markers are '
+                         'ordinary evidence and remain hashed. The runner retains its active STOP checks. '
                          'Excluded contents and external references are not byte-bound; reviewer must '
                          'report any reliance on them. Historical tests are not fresh acceptance.'}
     return manifest, diffs
