@@ -373,7 +373,7 @@ def append(path: Path, text: str) -> None:
 
 _RECONNECT = re.compile(
     r"Reconnecting\.\.\. ([1-9][0-9]{0,3})/([1-9][0-9]{0,3}) "
-    r"\(stream disconnected before completion: ([^\r\n()]{1,240})\)"
+    r"\((?:stream disconnected before completion: ([^\r\n()]{1,240})|(request timed out))\)"
 )
 
 
@@ -388,11 +388,17 @@ def is_transient_reconnect(event: Any, *, terminal_seen: bool) -> bool:
         return False
     if event["type"] != "error" or not isinstance(event["message"], str):
         return False
-    match = _RECONNECT.fullmatch(event["message"].strip())
+    message = event["message"].strip()
+    # Codex may keep the same turn alive while waiting for connectivity after
+    # exhausting the numbered retries. Match only the observed wire format;
+    # arbitrary "waiting"/authentication/provider failures remain fatal.
+    if message == "Reconnecting... waiting for network (Connection failed: error sending request)":
+        return True
+    match = _RECONNECT.fullmatch(message)
     if match is None:
         return False
     attempt, limit = int(match.group(1)), int(match.group(2))
-    return 1 <= attempt <= limit <= 1000 and bool(match.group(3).strip())
+    return 1 <= attempt <= limit <= 1000 and bool((match.group(3) or match.group(4) or "").strip())
 
 
 def observe_stop(trace: RunResult, details: object) -> None:

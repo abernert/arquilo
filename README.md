@@ -8,6 +8,8 @@ ARQUILO executes a Markdown task list in a project workspace. Each production or
 
 **Runtime version: 0.10.0 — public preview.** This release adds Claude Code as an alternative execution backend, separates task acceptance from Git publication, and includes four consolidated handbooks. Codex remains the default. See the [release basis and remaining limits](docs/integration-status.md).
 
+**0.10.0 maintenance:** [Network retry and review-only recovery hotfix](docs/review-resume-network-hotfix.md), including a no-model `--check-only` preflight.
+
 ## Choose a handbook
 
 | Need | Read |

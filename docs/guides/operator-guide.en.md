@@ -778,13 +778,15 @@ Use `python3 -B arquilo.py doctor OPTIONS`. Model/provider/profile/effort/timeou
 <a id="cli-resume"></a>
 ### `tasklist resume-review`
 
-Use `python3 -B arquilo.py tasklist resume-review --todo ID --capture-dir DIR -- tasklist run ORIGINAL_OPTIONS`. Recovery requires `--start ID --stop ID` after the separator; the original workspace/task contract must match. All following runner options are listed above.
+Use `python3 -B arquilo.py tasklist resume-review --todo ID --capture-dir DIR`. Optional runner choices follow `-- tasklist run ...`; original paths and budget are derived from the archive when omitted. Dispatch is bounded to ID, independently of original start/stop. The archived task/policy must match; no regenerated production-prompt comparison is performed. Add `--check-only` or explicit `--continue-on-fail`.
 
 | Parameter / argument | Value / default | Meaning |
 | --- | --- | --- |
 | `-h` / `--help` | Action | Show the help for this command and exit; no model call. |
-| `--todo` | Required | Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator. |
-| `--capture-dir` | Required | Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient. |
+| `--todo` | Required | Required exact task ID for native review-first continuation; the wrapper bounds dispatch to this task. |
+| `--capture-dir` | Required | Required registered production/fix/review capture directory. Original task and policy inputs are verified; a folder of outputs alone is insufficient. |
+| `--check-only` | Off | Validate the archived task/policy and current binding without writes or model calls; candidate, lock and budget gates still apply at review start. Does not mark a task DONE. |
+| `--continue-on-fail` | Off | Start with a fresh read-only review and allow bounded review-directed corrections only after a valid failing review. No original production replay or automatic recovery from technical errors. |
 
 <a id="cli-git"></a>
 ### `git`

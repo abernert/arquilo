@@ -8,6 +8,8 @@ ARQUILO bearbeitet Aufgaben aus einer Markdown-Liste in einem Projekt-Workspace.
 
 **Laufzeitversion: 0.10.0 — öffentliche Vorschau.** Diese Version ergänzt Claude Code als alternativen Unterbau, trennt fachliche Abnahme von Git-Veröffentlichung und enthält vier konsolidierte Handbücher. Codex bleibt der Standard. Siehe [Releasebasis und verbleibende Grenzen](docs/integration-status.md).
 
+**0.10.0-Hotfix:** [Netzwerk-Reconnect und reine Review-Wiederaufnahme](docs/review-resume-network-hotfix.md), einschließlich `--check-only` ohne Modellaufruf.
+
 ## Das passende Handbuch
 
 | Anliegen | Anleitung |

@@ -882,7 +882,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Required exact task ID for narrow review-only recovery; must match the single task selected after the -- separator."
+        "description": "Required exact task ID for native review-first continuation; the wrapper bounds dispatch to this task."
       },
       {
         "names": [
@@ -895,7 +895,33 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Required original archived production-capture directory. Evidence is verified before any model call; an arbitrary folder of outputs is insufficient."
+        "description": "Required registered production/fix/review capture directory. Original task and policy inputs are verified; a folder of outputs alone is insufficient."
+      },
+      {
+        "names": [
+          "--check-only"
+        ],
+        "destination": "check_only",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Validate the archived task/policy and current binding without writes or model calls; candidate, lock and budget gates still apply at review start. Does not mark a task DONE."
+      },
+      {
+        "names": [
+          "--continue-on-fail"
+        ],
+        "destination": "continue_on_fail",
+        "default": false,
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Start with a fresh read-only review and allow bounded review-directed corrections only after a valid failing review. No original production replay or automatic recovery from technical errors."
       }
     ],
     "git": [
