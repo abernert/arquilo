@@ -18,6 +18,8 @@ ARQUILO executes a Markdown task list in a project workspace. Each production or
 
 The handbooks are the primary instructions. The [documentation index](docs/README.md) points to examples and the separate review JSON protocol; older tutorials and configuration pages have been consolidated rather than added as competing reading paths.
 
+**Resume extension on the 0.10.0 base:** this branch adds `tasklist run --resume-task` and `tasklist run --resume-review`. Both apply only to the exact open task selected by `--start`; later tasks in the selected range run normally. See [resume the selected start task](docs/guides/operator-guide.en.md#resume-run). The existing `v0.10.0` tag and release ZIP do not acquire these flags automatically.
+
 ## Requirements and first check
 
 The core uses Python 3.11+ and its standard library, plus a separately installed and authenticated agent CLI. `--backend codex` is the default; `--backend claude-code` selects Claude Code for the entire run, including review and Decide, without a Codex installation or fallback. Keep the ARQUILO installation, host tools, project workspace and private state separate. Agent/Git executables and their resolved targets must lie outside model-writable workspaces. Provider/authentication settings remain with the selected runtime; do not paste credentials into a task list. Git is optional unless using Git installation/update or explicitly enabling publication.

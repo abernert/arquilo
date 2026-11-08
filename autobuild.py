@@ -264,6 +264,7 @@ class AutoBuildSummary:
     git_review: Optional[Dict[str, Any]] = None
     git_publication_error: Optional[Dict[str, str]] = None
     backend: str = "codex"
+    entry_mode: str = "normal"
 
 
 def run_result_error(result: RunResult, phase: str) -> Optional[Dict[str, Any]]:
@@ -353,6 +354,7 @@ class SummaryDocument(TypedDict, total=False):
     status: str
     review_required: bool
     backend: str
+    entry_mode: str
     git_review: Dict[str, Any]
     git_publication_error: Dict[str, str]
 
@@ -620,6 +622,7 @@ def build_summary_document(summary: AutoBuildSummary) -> SummaryDocument:
     if isinstance(summary.review_classification, dict):
         payload["review_classification"] = dict(summary.review_classification)
     payload["backend"] = getattr(summary, "backend", "codex")
+    payload["entry_mode"] = getattr(summary, "entry_mode", "normal")
     if summary.model:
         payload["model"] = summary.model
     if summary.reasoning_effort:
@@ -958,6 +961,11 @@ def start(
     if decision_settings is not None and decision_settings.backend != backend:
         raise ValueError("Decision backend must match the run-wide backend; no implicit fallback.")
     prompts = options.prompt_config
+    # Render from the frozen catalog before any model call. History is quoted
+    # data, not a replacement for the current accepted task or permissions.
+    entry_note = (prompts.render(context.entry_mode.replace("-", "_"),
+                    context=json.dumps({"historical_context": context.resume_context}, ensure_ascii=False))
+                  if context.entry_mode != "normal" else "")
     sandbox, network_access = options.sandbox, options.network_access
     config_profile = options.config_profile
     base_extra_args = list(options.extra_arg)
@@ -1142,12 +1150,15 @@ def start(
 
     original_task = task_text
     active_decision_run_id = decision_run_id if decision_run_id is not None else f"autobuild-{uuid4().hex}"
-    current_prompt = original_task
+    current_prompt = original_task + ("\n\n" + entry_note if context.entry_mode == "resume-task" else "")
     auftrag_runs = 0
     review_runs = 0
-    max_iterations = max(1, max_steps)
+    # max_steps bounds real production/correction calls. An initial direct
+    # review is an additional cycle, never a fictional production step.
+    review_entry = context.entry_mode == "resume-review"
+    max_iterations = max(1, max_steps) + int(review_entry)
     completed = False
-    last_answer = ""
+    last_answer = entry_note if review_entry else ""
     auftrag_history: List[RunResult] = []
     review_history: List[RunResult] = []
     process_stop_triggered = False
@@ -1201,6 +1212,7 @@ def start(
     while attempt_runs < max_iterations:
         attempt_runs += 1
         decision_payload = None  # A previous choice cannot describe a failed new attempt.
+        initial_review = review_entry and attempt_runs == 1
         stage_name = "auftrag" if attempt_runs == 1 else "fix"
         # Capture before this production attempt can edit the shared ToDo file.
         # This changes only Decide evidence, never the production/reference prompt.
@@ -1247,41 +1259,42 @@ def start(
             runtime_error["input_error"] = exc.to_dict()
             break
 
-        try:
-            result = one_run(current_prompt, stage=stage_name)
-        except BudgetExhausted as exc:
-            budget_exhausted = exc.details
-            break
-        auftrag_runs += 1
-        auftrag_history.append(result)
-        record_run(result, "task", len(auftrag_history))
-        runtime_error = run_result_error(result, stage_name)
-        if runtime_error:
-            last_answer = runtime_error["message"]
-            completed = False
-            break
-        last_answer = result.end_answer
+        if not initial_review:
+            try:
+                result = one_run(current_prompt, stage=stage_name)
+            except BudgetExhausted as exc:
+                budget_exhausted = exc.details
+                break
+            auftrag_runs += 1
+            auftrag_history.append(result)
+            record_run(result, "task", len(auftrag_history))
+            runtime_error = run_result_error(result, stage_name)
+            if runtime_error:
+                last_answer = runtime_error["message"]
+                completed = False
+                break
+            last_answer = result.end_answer
 
-        if result.process_stop_triggered:
-            note = (
-                result.process_stop_details
-                or "process_stop-Datei signalisiert manuellen Eingriff."
-            )
-            append(
-                pretty_log,
-                f"[{ts()}] [process_stop] Lauf wird beendet: {note}\n",
-            )
-            completed = False
-            last_answer = note
-            break
-
-        if readonly_mode and readonly_result_path:
-            write_text(readonly_result_path, last_answer)
-            if not readonly_written:
-                sys.stdout.write(
-                    f"[AutoBuild] Read-only result saved to {readonly_result_path}.\n"
+            if result.process_stop_triggered:
+                note = (
+                    result.process_stop_details
+                    or "process_stop-Datei signalisiert manuellen Eingriff."
                 )
-                readonly_written = True
+                append(
+                    pretty_log,
+                    f"[{ts()}] [process_stop] Lauf wird beendet: {note}\n",
+                )
+                completed = False
+                last_answer = note
+                break
+
+            if readonly_mode and readonly_result_path:
+                write_text(readonly_result_path, last_answer)
+                if not readonly_written:
+                    sys.stdout.write(
+                        f"[AutoBuild] Read-only result saved to {readonly_result_path}.\n"
+                    )
+                    readonly_written = True
 
         try:
             # Restore from controller memory after production, before the
@@ -1493,11 +1506,11 @@ def start(
         process_stop_triggered = True
         process_stop_details = reason
         completed = False
-    if not completed and runtime_error is None and auftrag_runs >= max_iterations:
-        max_msg_pretty = f"[{ts()}] MAX ITERATIONS REACHED ({max_iterations}).\n"
+    if not completed and runtime_error is None and auftrag_runs >= max_steps:
+        max_msg_pretty = f"[{ts()}] MAX ITERATIONS REACHED ({max_steps} production/correction steps).\n"
         max_msg_console = (
             f"{_console_prefix(todo_identifier)} MAX ITERATIONS REACHED "
-            f"({max_iterations}).\n"
+            f"({max_steps} production/correction steps).\n"
         )
         append(pretty_log, max_msg_pretty)
         sys.stderr.write(f"[AutoBuild] {max_msg_console}")
@@ -1555,6 +1568,7 @@ def start(
     summary_obj.process_stop_triggered = process_stop_triggered
     summary_obj.process_stop_details = process_stop_details
     summary_obj.backend = backend
+    summary_obj.entry_mode = context.entry_mode
     summary_obj.model = model
     summary_obj.reasoning_effort = reasoning_effort
     summary_obj.decision = decision_payload

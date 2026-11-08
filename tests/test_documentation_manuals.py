@@ -86,7 +86,7 @@ class HandbookConsolidationTests(unittest.TestCase):
             with self.subTest(profile_field=key): self.assertIn('`'+key+'`', self.operator)
 
     def test_every_prompt_element_and_required_placeholder_is_documented(self):
-        self.assertEqual(len(PROMPT_PLACEHOLDERS), 53)
+        self.assertEqual(len(PROMPT_PLACEHOLDERS), 55)
         for name, parameters in PROMPT_PLACEHOLDERS.items():
             with self.subTest(element=name):
                 self.assertIn('| `'+name+'` |', self.operator)

@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — explicit task and review resume on the 0.10.0 base
+
+- Add mutually exclusive `tasklist run --resume-task` and `--resume-review`
+  flags. Both require an explicit open `--start` task and apply only to that
+  exact task; remaining tasks in the selected range use the ordinary runner.
+- `--resume-task` instructs the producer to inspect and build on existing work.
+  `--resume-review` enters the normal read-only review directly, with zero
+  initial production calls. Valid local-fix findings use the existing bounded
+  correction/review loop; technical failures do not authorize automatic repair.
+- Keep accepted plans, task-specific resources, STOPs, persistent call budgets,
+  result archival and controller acceptance gates. The initial review consumes
+  its actual model-call budget but no production/correction step. Serialize the
+  resumed task before later parallel work and reject an explicit parent resume
+  while descendants lack DONE or saved child-continuation evidence is invalid.
+- Require neither a completed old capture nor reconstruction of a previous
+  production prompt. Do not add recursive workspace hashing, repository
+  discovery or historical test-STOP discovery to the resume path. Missing old
+  logs do not prevent a fresh review; current task requirements and evidence
+  still govern acceptance.
+- Add localized resume prompt elements, operator/user guidance and offline
+  regressions. This branch starts at `v0.10.0`; it does not incorporate the
+  superseded network/review hotfix branch or change the existing release tag.
+
 ## 0.10.0 — 2026-10-25 (public preview; Claude Code and reviewed Git delivery)
 
 ### Claude Code execution backend

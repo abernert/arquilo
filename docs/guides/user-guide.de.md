@@ -97,7 +97,7 @@ Der folgende Befehl startet echte Produktion und den verpflichtenden Review und 
 python3 -B arquilo.py tasklist run --backend claude-code --workdir /path/to/project --todo-file /path/to/project/tasks.md --mcp none --review-mcp none --prompt-config en --max-calls 12 --process-stop-policy controller-only
 ```
 
-Der Claude-Adapter akzeptiert `--mcp none` und `--review-mcp none`; **benannte MCP-Server sind nicht unterstützt**, und auch bei weggelassener Option werden keine nativen MCPs aktiviert. Explizite ARQUILO-Skills binden Text und Hashes; native Claude-Skills, Plugins und Subagenten werden nicht aktiviert. Der Reviewer darf Read/Glob/Grep verwenden, hat aber **keine Bash- oder Schreibwerkzeuge**. Produktion/Korrektur muss deshalb die Nachweise ausgeführter Tests erzeugen. `--agent`/`CFG agent` und Codex-Provider-/Profil-Overrides werden für Claude nicht unterstützt. Die reine Review-Wiederaufnahme nach Reconnect bleibt Codex-spezifisch. Genaue Berechtigungen und Protokollkompatibilität stehen in der [Claude-Qualifikation](../claude-code-backend.md).
+Der Claude-Adapter akzeptiert `--mcp none` und `--review-mcp none`; **benannte MCP-Server sind nicht unterstützt**, und auch bei weggelassener Option werden keine nativen MCPs aktiviert. Explizite ARQUILO-Skills binden Text und Hashes; native Claude-Skills, Plugins und Subagenten werden nicht aktiviert. Der Reviewer darf Read/Glob/Grep verwenden, hat aber **keine Bash- oder Schreibwerkzeuge**. Produktion/Korrektur muss deshalb die Nachweise ausgeführter Tests erzeugen. `--agent`/`CFG agent` und Codex-Provider-/Profil-Overrides werden für Claude nicht unterstützt. Der alte Archivbefehl zur Review-Wiederaufnahme nach Reconnect bleibt Codex-spezifisch; die neuen Schalter --resume-task/--resume-review an tasklist run unterstützen beide Backends. Genaue Berechtigungen und Protokollkompatibilität stehen in der [Claude-Qualifikation](../claude-code-backend.md).
 
 <a id="preview"></a>
 ## 4. Die erste sichere Vorschau
@@ -246,6 +246,8 @@ Die Optionen des Aufgabenläufers stehen **nach `tasklist run`**. Die folgende T
 | `--max-calls N` | Aufrufversuche je oberstem Aufgabenbaum begrenzen. | **0 = unbegrenzt**; für einen begrenzten Versuch einen positiven Wert verwenden. |
 | `--max-steps N` | Produktions-/Korrekturschritte begrenzen. | 3; der Aufgabenläufer kombiniert dies mit `--max-retries` (Standard 2). |
 | `--start ID` / `--stop ID` | Startaufgabe und Grenze nach einer abgenommenen Aufgabe festlegen. | Alle verbleibenden ausgewählten Aufgaben; kein sofortiger Abbruch. |
+| `--resume-task` | Die genaue offene `--start`-Aufgabe auf vorhandener Arbeit aufsetzen lassen; danach normaler Review. | Aus; schließt `--resume-review` aus. Folgeaufgaben laufen regulär. |
+| `--resume-review` | Die genaue offene `--start`-Aufgabe direkt mit einem neuen Review des vorhandenen Stands beginnen. | Aus; lokal behebbare Reviewmängel können die normale Korrektur mit erneutem Review auslösen. |
 | `--dry-run` | Anweisungen ohne Modellaufruf vorab ansehen. | Aus. Prüft keine Anmeldung oder Rechte externer Werkzeuge. |
 | `--dry-run-file DATEI` | Vorschauziel festlegen. | `run_todos_dry_run.md`; neue Datei wählen, weil Überschreiben abgewiesen wird. |
 | `--project-id NAME` | Lesbaren Namen für die Loggruppe vergeben. | Automatische Identität; ein anderer Logname setzt kein Budget zurück. |
@@ -336,7 +338,57 @@ Starte mit **demselben Workspace, Aufgabenpfad und State-Verzeichnis**, dem beab
 
 Lösche keinen State, benenne keinen Plan für ein neues Budget um und setze `DONE` nicht manuell zur Fehlerbehebung. Historische DONE-Werte, die als erste Eigentümervorgabe eingelesen wurden, beweisen keinen früheren Review. Version 0.10.0 repariert historisch falsch akzeptierte Läufe nicht automatisch.
 
-Es gibt ein eng begrenztes, Codex-spezifisches [Verfahren zur reinen Review-Wiederaufnahme](operator-guide.en.md#recovery-reference): für einen abgeschlossenen Produktionslauf, der früher ausschließlich wegen einer fälschlich als fatal behandelten, tatsächlich überwundenen Reconnect-Meldung abgewiesen wurde. Es verlangt vollständige passende Nachweise und einen neuen Review. Das ist kein allgemeiner Force-resume-Schalter; verwende das Verfahren nur unter seinen dokumentierten Voraussetzungen.
+### Die Einstiegsphase ausdrücklich wählen
+
+Dieser Branch ergänzt auf der Quellbasis von 0.10.0 zwei Optionen für den
+normalen Befehl `tasklist run`. Das unveränderte Release-ZIP von `v0.10.0`
+enthält sie nicht. Ergänze genau eine Variante in deinem gewohnten Startbefehl:
+
+```text
+--start 135 --stop 137 --resume-task
+```
+
+Damit erhält Task 135 den Auftrag, vorhandene Ergebnisse zu prüfen, brauchbare
+Arbeit zu übernehmen und verbleibende Anforderungen zu erfüllen. Danach folgt
+der normale unabhängige Review. Es ist ein neuer Aufruf, keine wiederhergestellte
+Modellsitzung. Frühere Erfolgsmeldungen sind zu prüfende Nachweise, keine Abnahme
+des gegenwärtigen Dateistands.
+
+```text
+--start 135 --stop 137 --resume-review
+```
+
+Damit beginnt Task 135 direkt mit dem normalen lesenden Reviewer. Bei PASS kann
+der Controller ohne vorherigen Produktionsaufruf abnehmen. Ein gültiger Review
+mit lokal behebbaren Mängeln kann eine begrenzte Korrektur mit anschließendem
+neuen Review auslösen. Ein technischer Reviewfehler, eine ungültige Antwort oder
+ein aktiver STOP löst keine automatische Produktion aus. Der erste Review zählt
+zum Aufrufbudget, verbraucht aber keinen Produktions-/Korrekturschritt.
+
+In beiden Fällen gilt der Resume-Modus **nur für Task 135**. Nach deren Abnahme
+laufen 136 und 137 regulär. `--start` muss eine vorhandene, offene und ausführbare
+Aufgabe benennen; bei DONE oder OBSOLETE wandert Resume nicht zu 136 weiter. Die
+beiden Schalter lassen sich nicht kombinieren. Eine Elternaufgabe wird
+abgewiesen, solange Nachkommen nicht DONE sind; auch OBSOLETE ersetzt keinen
+abgenommenen Unterauftrag. Fehlende Kinder oder ein ungültiger gespeicherter
+Zerlegungsplan bleiben klärungsbedürftig. Setze eine gültige bestehende Zerlegung
+zunächst mit dem normalen Runner fort, statt Ergebnisse stillschweigend
+abzunehmen oder Kinder pauschal erneut zu bearbeiten.
+
+Workspace, Arbeits-Taskliste und State-Verzeichnis bleiben gleich; Modell,
+Policy, Ressourcen und Budgets wählst du wie beim normalen Lauf. Ein
+Capture-Verzeichnis oder vollständige alte Logs sind nicht erforderlich.
+Fehlende historische Berichte können fachlich trotzdem blockieren, wenn die
+Aufgabe diese Nachweise verlangt. Vorhandene Berichte werden durch die normale
+Eingabeprotokollierung archiviert. Resume ergänzt keinen rekursiven Scan aller
+Workspace-Dateien oder Git-Repositories und garantiert keine einmalige
+Ausführung externer Aktionen.
+
+Details zu Ablauf, Grenzen und Ressourcen stehen unter
+[Selected-start resume](operator-guide.en.md#resume-run). Der separate
+Codex-Befehl [`tasklist resume-review`](operator-guide.en.md#recovery-reference)
+behält seine eng begrenzten historischen Archivvoraussetzungen. Er ist nicht
+der neue Schalter `--resume-review` an `tasklist run`.
 
 <a id="plan-changes"></a>
 ## 13. Einen bestehenden Plan absichtlich ändern

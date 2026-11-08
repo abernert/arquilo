@@ -9,7 +9,7 @@ translated or reinterpreted as templates.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 from pathlib import Path
@@ -25,7 +25,9 @@ MAX_ELEMENT_BYTES = 128 * 1024
 BUILTIN_DIRECTORY = Path(__file__).resolve().parent / "prompts"
 TOKEN = re.compile(r"\{\{([^{}]*)\}\}")
 
-# Names and parameter contracts, not prompt text. All catalogs must be complete.
+# Existing v1 elements remain mandatory. Only the additive resume elements may
+# be filled from the language-matched builtin when loading an older catalog.
+OPTIONAL_RESUME_ELEMENTS = frozenset({"resume_task", "resume_review"})
 PROMPT_PLACEHOLDERS = {
     'review_policy_rules': (),
     'reviewer_role': ('latest_answer', 'original_task'),
@@ -80,6 +82,8 @@ PROMPT_PLACEHOLDERS = {
     'decision_result_complete': (),
     'decision_result_incomplete': ('count',),
     'doctor_question': (),
+    'resume_task': ('context',),
+    'resume_review': ('context',),
 }
 
 
@@ -102,7 +106,8 @@ def _validate_metadata(identifier: str, version: str, language: str) -> None:
 
 
 def _validate_texts(texts: dict[str, str]) -> None:
-    missing, unknown = set(PROMPT_PLACEHOLDERS) - set(texts), set(texts) - set(PROMPT_PLACEHOLDERS)
+    missing = set(PROMPT_PLACEHOLDERS) - OPTIONAL_RESUME_ELEMENTS - set(texts)
+    unknown = set(texts) - set(PROMPT_PLACEHOLDERS)
     if missing or unknown:
         raise PromptConfigError("Prompt element mismatch; missing=" + ",".join(sorted(missing))
                                 + "; unknown=" + ",".join(sorted(unknown)))
@@ -182,19 +187,40 @@ class PromptConfig:
         return {**self.metadata(), "texts": [list(row) for row in self.texts]}
 
 
+def _with_resume_defaults(config: PromptConfig) -> PromptConfig:
+    """Freeze additive defaults into old v1 catalogs, never at prompt rendering.
+
+    The original source digest still identifies the selected file. The effective
+    content digest and worker snapshot include the exact added texts. Existing
+    fields are not changed and an omitted mandatory field still fails closed.
+    """
+    texts = dict(config.texts)
+    missing = OPTIONAL_RESUME_ELEMENTS - set(texts)
+    if not missing:
+        return config
+    language = config.language if config.language in ("de", "en") else "default"
+    defaults = _load_prompt_file(BUILTIN_DIRECTORY / (language + ".toml"))
+    for key in missing:
+        texts[key] = defaults.template(key)
+    return replace(config, texts=tuple(texts.items()),
+                   content_sha256=_digest({**config._content(), "prompts": texts}))
+
+
 def load_prompt_config(selection: PromptConfig | dict | str | Path | None = None) -> PromptConfig:
     """Load default/de/en, an explicit file, or a validated worker snapshot.
 
     No environment or workspace is searched implicitly. CLI callers may select
     an environment default themselves; Python APIs use the explicit argument.
     A supplied snapshot is validated without rereading its former source path.
+    Missing additive resume elements in an older v1 catalog/snapshot are frozen
+    from the matching builtin. Complete snapshots never reread builtin files.
     """
     if isinstance(selection, PromptConfig):
         selection.__post_init__()
-        return selection
+        return _with_resume_defaults(selection)
     if isinstance(selection, dict):
         try:
-            return PromptConfig(**selection)
+            return _with_resume_defaults(PromptConfig(**selection))
         except TypeError as exc:
             raise PromptConfigError("Invalid prompt snapshot fields") from exc
     if selection is None:
@@ -202,6 +228,11 @@ def load_prompt_config(selection: PromptConfig | dict | str | Path | None = None
     if not isinstance(selection, (str, Path)) or not str(selection).strip():
         raise PromptConfigError("Select default, de, en, or a TOML file path")
     path = BUILTIN_DIRECTORY / (selection + ".toml") if isinstance(selection, str) and selection in ("default", "de", "en") else Path(selection).expanduser()
+    return _with_resume_defaults(_load_prompt_file(path))
+
+
+def _load_prompt_file(path: Path) -> PromptConfig:
+    """Parse and validate one catalog before optional additive normalization."""
     try:
         path = path.resolve(strict=True)
         if not path.is_file() or not stat.S_ISREG(path.stat().st_mode):

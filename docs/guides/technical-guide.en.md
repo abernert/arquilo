@@ -5,6 +5,10 @@
 
 > **ARQUILO 0.10.0 — public preview.** This edition includes Claude Code support, state-I/O repairs, separate task acceptance and Git publication, and the consolidated handbooks. See the [release basis and remaining limits](../integration-status.md). Older release ZIPs retain their original contents.
 
+> **Branch addition:** explicit selected-start task/review resume extends this
+> 0.10.0 base. It is implemented in the ordinary runner and AutoBuild loop; the
+> existing release tag and assets remain unchanged.
+
 This guide explains the implementation and its trust boundaries for developers and technically advanced integrators. Version 0.10.0 combines the Claude Code backend from PR #30, state-I/O repairs from PR #35, and the reviewed Git publication and consolidated handbooks from PR #37. Source inputs and remaining limits are recorded in the [release basis](../integration-status.md). The release tag identifies the complete versioned source; validation evidence must refer to that exact source tree.
 
 ## Contents
@@ -38,6 +42,7 @@ An external state directory is a logical trust boundary only when actual host pe
 | --- | --- | --- |
 | Public command routing | [arquilo.py](../../arquilo.py) | Dispatch of tasklist, doctor, capabilities, package and compatibility aliases. |
 | Task-list orchestration | [run_todos.py](../../run_todos.py) | Selection, scope, WAIT/STOP, child scheduling, parent acceptance, worker collection and final state changes. |
+| Resume entry and context | [task_resume.py](../../task_resume.py), `run_todos.py`, `autobuild.py` | Exact open start-task selection, bounded historical references and a normal task/review phase entry. No recursive candidate scanner. |
 | Task grammar/context | `todo_syntax.py`, `todo_lint.py`, `todo_context.py`, `todo_ids.py`, `todo_template.py` | Visible task headers, directives, original preamble, IDs and no-overwrite initialization. |
 | Task execution loop | [autobuild.py](../../autobuild.py) | Production, review, corrections, decisions and summary generation. |
 | Call/result boundary | [autobuild_contract.py](../../autobuild_contract.py), `runtime_contracts.py`, `runtime_failure.py` | Validated options/context, serialized worker calls, consistent results and failure precedence. |
@@ -67,16 +72,36 @@ The runner checks physical stop state before executable preflights. Profile pref
 
 Selection honors the owner's `--start`/`--stop` range. A Markdown STOP barrier is considered before status/depth filtering within that range, so a DONE or too-deep task cannot hide a barrier from later work. WAIT evaluates defined dependency state; it is not an independent background scheduler.
 
+`--resume-task` and `--resume-review` require an exact open `--start` target.
+Selection is validated before dispatch and does not slide to the next open task.
+Parents whose descendants lack DONE are refused for explicit resume; OBSOLETE
+is not accepted child work. A saved breakdown plan must still be valid and its
+recorded children present. Ordinary child/parent continuation remains available. The target is serialized ahead of
+later selected work, including when it has a parallel-group directive. Once its
+normal acceptance completes, later tasks use their ordinary entry and scheduling.
+The resume mode is not inherited by task helpers or subsequent tasks.
+
 ### Capture, execute and review
 
 The controller captures the original task and effective context before granting the producer access to mutable files. The task/preamble evidence used for copied worker requests must match that accepted source. AutoBuild executes production under the selected workspace-write policy, then performs a separate read-only review against the captured original request.
 
+An `AutoBuildContext.entry_mode` of `resume-task` adds the selected catalog's
+continuation instruction to the first producer call. `resume-review` instead
+starts at the existing review block with informational context about current
+artifacts. It does not synthesize a successful producer result. The existing
+review parser, decision gates and fix-prompt construction govern the rest of
+the attempt; a technical review failure cannot become a repair instruction.
+The serialized context carries this entry choice through the Python-worker
+boundary, with `normal` remaining the default for existing callers.
+
 ```mermaid
 flowchart TD
-    Request["Accepted original task"] --> Production["Production or correction"]
+    Request["Accepted original task"] --> Entry{"Initial phase"}
+    Entry -->|Normal or resume-task| Production["Production or correction"]
+    Entry -->|resume-review| Review["Separate mandatory review"]
     Production --> Technical{"Usable result without stop?"}
     Technical -->|No| Incomplete["Retain evidence; no completion"]
-    Technical -->|Yes| Review["Separate mandatory review"]
+    Technical -->|Yes| Review
     Review --> Verdict{"Valid review?"}
     Verdict -->|Invalid or missing| Incomplete
     Verdict -->|FAIL| Repair["Correction, decomposition or stop"]
@@ -86,6 +111,12 @@ flowchart TD
 ```
 
 This is a conceptual flow, not a list of literal persisted status names. A successfully executed reviewer can legitimately reject its subject. Separate this from a reviewer process failure. A fixed artifact must receive another review; a previous pass is not reusable authorization for arbitrary new content.
+
+In review entry, the initial review uses the actual shared call budget but no
+production/correction iteration. With one allowed correction step, the sequence
+can therefore be review, fix, review. A PASS on the first review reports zero
+production calls and one review. `execution_attempts` contains only calls that
+actually ran; the summary's `entry_mode` identifies the selected entry behavior.
 
 ### Decomposition and final acceptance
 
@@ -116,6 +147,18 @@ An approved transition records its pending target, writes the authorized plan by
 Child adoption likewise persists the exact bytes that passed validation. Original contracts are captured from accepted task evidence. These mechanisms do not create a general transaction across the entire filesystem or make all recovery corruption cases solved.
 
 `--accept-plan-changes` is an explicit owner baseline-adoption action. It archives the previous plan and retains budgets; it is not automatic error recovery. `--allow-todo-modifications` is a separate per-invocation opt-in to observe and adopt valid mutable plan changes. Original current-task review requirements remain captured, but future scheduling can intentionally change. Mutation records identify this as observation rather than independent verification.
+
+Resume does not recover a model session, reconstruct an old production prompt or
+reuse a historical PASS as acceptance. `task_resume.resume_sources()` supplies
+the exact current result path, its normal archived input copy where present,
+and bounded references to matching task records in at most 128 recent immediate
+run directories. Each optional JSON record is size-bounded; wrong plan,
+workspace or controller-state identities are ignored. Missing/corrupt optional
+logs remain unavailable evidence, while mandatory plan/lock/budget failures
+still block execution. No whole-workspace traversal, nested Git discovery or
+recursive STOP detection is added. A task's requirements for diffs, hashes and
+test evidence remain review requirements. Explicit Git selections keep their
+normal snapshot and acceptance checks.
 
 Keep state and path identities during upgrades. Do not change key calculation to an inode or content hash: atomic file replacement changes an inode, and an ordinary status transition changes the content. Either could accidentally create fresh budgets. [Controller-state guidance](#controller-reference)
 
@@ -192,7 +235,7 @@ Claude rejects named MCP selections before model work and does not inherit nativ
 
 `SkillCatalog` binds selected `SKILL.md` instruction snapshots and hashes. Helper scripts and references remain external files. Prompt instructions do not create authority to widen a sandbox, set controller state or skip review. Native implicit discovery is a separate mechanism.
 
-`PromptConfig` loads complete catalogs, validates metadata/elements/placeholders and captures an immutable snapshot passed across Python workers. Both source and effective-content digests assist reproducibility. Rendering is a literal single pass, not expression evaluation. User content is not recursively rendered or translated.
+`PromptConfig` loads catalogs, validates metadata/elements/placeholders and captures an immutable snapshot passed across Python workers. The original 53 elements remain required. The additive `resume_task` and `resume_review` elements may be omitted by an older v1 catalog: the loader freezes their built-in texts in the catalog's language (`mixed` uses `default`) into the effective snapshot before execution. Existing elements are never replaced. Both the original source digest and the effective-content digest assist reproducibility. A complete worker snapshot needs no former catalog path. Rendering is a literal single pass, not expression evaluation. User content is not recursively rendered or translated.
 
 Runtime profiles are JSON-based domain extensions and trusted preflights. Some prompt slots are replacements; others are additive lists/guards. Do not treat the current loader as a complete universal unknown-field-rejecting schema or treat a profile name as a permission ceiling. Keep executable invariants in code regardless of wording. [Prompt reference](operator-guide.en.md#prompts) · [Profile API](operator-guide.en.md#profiles)
 
@@ -226,12 +269,12 @@ Object construction uses the private publisher and frozen output bytes, not new 
 
 `project_logs` adds readable project/run/phase organization without relocating the authoritative plan key. Default runner logs are external. Workspace log mode is opt-in and makes those diagnostic files model-writable; private worker IPC and control records remain external.
 
-The Codex-specific review-only recovery validates complete archived production evidence, matching prompt/task/workspace identity and the narrow recovered-reconnect failure condition. It substitutes that matching completed production result once, then starts a fresh review. It is not a universal replay API, does not repair arbitrary archives and does not waive operator review of current artifacts. [Exact recovery requirements](operator-guide.en.md#recovery-reference)
+The normal runner's [`--resume-task` and `--resume-review`](operator-guide.en.md#resume-run) flags work with either configured backend and inspect the current accepted task and existing artifacts. Old reports are not control authority. They do not depend on the separate legacy Codex-specific `tasklist resume-review` command, which retains its complete archived-production checks and narrow recovered-reconnect condition. [Legacy recovery requirements](operator-guide.en.md#recovery-reference)
 
 <a id="interfaces"></a>
 ## 13. Supported entry points versus internal APIs
 
-For external programs prefer the CLI plus `capabilities`, which reports versioned feature contracts. Backend selection is supported on task execution, AutoBuild and doctor. Model-free `git status`/`git retry` operate on retained publication records. The compatibility `run` alias emits a migration notice; `tasklist resume-review` retains its narrow Codex-only scope. Team, general pipeline and MCP-service selectors are not implemented.
+For external programs prefer the CLI plus `capabilities`, which reports versioned feature contracts. Backend selection is supported on task execution, AutoBuild and doctor. Task-list runs accept `--resume-task` or `--resume-review` together with an explicit open `--start`; the selected target alone gets the different entry phase. Model-free `git status`/`git retry` operate on retained publication records. The compatibility `run` alias emits a migration notice; the separate `tasklist resume-review` command retains its narrow Codex-only scope. Team, general pipeline and MCP-service selectors are not implemented.
 
 For Python integrations, `autobuild.start()` accepts exactly one of `task`/`task_file` and one of `workdir`/`file`, with validated `AutoBuildOptions` and `AutoBuildContext`. A configuration-only example is:
 

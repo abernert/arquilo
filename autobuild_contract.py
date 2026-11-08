@@ -86,8 +86,23 @@ class AutoBuildContext:
     launcher_workspace: str | Path | None = None
     git_review: dict | None = None
     git_review_optional: bool = False
+    entry_mode: str = "normal"
+    resume_context: str | None = None
 
     def __post_init__(self):
+        if self.entry_mode not in ("normal", "resume-task", "resume-review"):
+            raise ValueError("entry_mode must be normal, resume-task or resume-review")
+        if self.resume_context is not None:
+            if not isinstance(self.resume_context, str) or "\0" in self.resume_context:
+                raise ValueError("resume_context must be text without NUL")
+            try:
+                context_size = len(self.resume_context.encode("utf-8"))
+            except UnicodeError as exc:
+                raise ValueError("resume_context must be valid UTF-8 text") from exc
+            if context_size > 1024 * 1024:
+                raise ValueError("resume_context exceeds the 1 MiB context limit")
+            if self.entry_mode == "normal" and self.resume_context:
+                raise ValueError("resume_context requires an explicit resume entry_mode")
         if type(self.git_review_optional) is not bool:
             raise ValueError("git_review_optional must be bool")
         if self.git_review is not None:
@@ -216,6 +231,8 @@ def validate_result(payload: Any, *, process_exit_code: int | None = None) -> di
     """Validate the same summary at the in-process and Python-worker boundaries."""
     if not isinstance(payload, dict):
         raise AutoBuildResultError("AutoBuild summary must be an object")
+    if payload.get("entry_mode", "normal") not in ("normal", "resume-task", "resume-review"):
+        raise AutoBuildResultError("Invalid AutoBuild entry_mode")
     try:
         backend = agent_backend.validate_backend(payload.get("backend", "codex"))
     except ValueError as exc:

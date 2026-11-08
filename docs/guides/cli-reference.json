@@ -182,7 +182,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Start selection at this task ID, for example 3 or 3.1. Already terminal tasks are not rerun. Earlier tasks lie outside the explicitly selected scope."
+        "description": "Start selection at this task ID, for example 3 or 3.1. Without a resume flag, already terminal tasks are skipped. With --resume-task or --resume-review, this exact task must be open and eligible; resume never moves silently to a later task."
       },
       {
         "names": [
@@ -196,6 +196,32 @@
         "repeatable": false,
         "flag": false,
         "description": "Stop scheduling after this task and its required acceptance. It is not cancellation of the current model call."
+      },
+      {
+        "names": [
+          "--resume-task"
+        ],
+        "destination": "resume_mode",
+        "default": "normal",
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Begin the exact open --start task with an explicit instruction to inspect and build on existing results. Mutually exclusive with --resume-review. Later selected tasks run normally; no old capture directory or whole-workspace scan is required."
+      },
+      {
+        "names": [
+          "--resume-review"
+        ],
+        "destination": "resume_mode",
+        "default": "normal",
+        "choices": null,
+        "required": false,
+        "nargs": 0,
+        "repeatable": false,
+        "flag": true,
+        "description": "Begin the exact open --start task with the ordinary read-only review of existing work, without an initial production call. A valid local-fix finding enters normal bounded correction/review; technical errors and STOPs still stop. Later selected tasks run normally."
       },
       {
         "names": [
@@ -306,7 +332,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget."
+        "description": "Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. The initial --resume-review review does not consume a production/correction step."
       },
       {
         "names": [
@@ -1379,7 +1405,7 @@
         "nargs": null,
         "repeatable": false,
         "flag": false,
-        "description": "Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget."
+        "description": "Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. The initial --resume-review review does not consume a production/correction step."
       },
       {
         "names": [
