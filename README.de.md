@@ -18,6 +18,8 @@ ARQUILO bearbeitet Aufgaben aus einer Markdown-Liste in einem Projekt-Workspace.
 
 Die Handbücher sind die maßgeblichen Anleitungen. Die [Dokumentationsübersicht](docs/README.md) führt außerdem zu Beispielen und zum separaten Review-JSON-Protokoll. Frühere Tutorials, Cookbook- und Konfigurationsseiten sind in die Handbücher eingearbeitet und bilden keinen zusätzlichen Lesepfad mehr.
 
+**Resume-Erweiterung auf Basis von 0.10.0:** Dieser Branch ergänzt `tasklist run --resume-task` und `tasklist run --resume-review`. Beide gelten nur für die ausdrücklich mit `--start` ausgewählte offene Aufgabe; danach laufen die weiteren ausgewählten Aufgaben regulär. Siehe [Fortsetzen nach einer Unterbrechung](docs/guides/user-guide.de.md#continuing). Der bestehende Tag `v0.10.0` und sein Release-ZIP erhalten diese Schalter nicht automatisch.
+
 ## Voraussetzungen und erster Check
 
 Der Kern benötigt Python 3.11+ mit Standardbibliothek und eine separat installierte, angemeldete Agenten-CLI. Standard ist `--backend codex`; `--backend claude-code` verwendet Claude Code für den gesamten Lauf einschließlich Review und Decide, ohne Codex-Installation oder Fallback. Trenne ARQUILO-Installation, Hostprogramme, Projekt-Workspace und privaten Steuerzustand. Agenten-/Git-Programme und ihre tatsächlichen ausführbaren Ziele müssen außerhalb der von Aufgaben beschreibbaren Workspaces liegen. Provider und Anmeldung bleiben bei der gewählten Laufzeit; Zugangsdaten gehören nicht in Aufgabenlisten. Git wird nur für Git-basierte Installation/Updates oder ausdrücklich aktivierte Veröffentlichung benötigt.

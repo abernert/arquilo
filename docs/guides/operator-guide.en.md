@@ -5,13 +5,15 @@
 
 > **ARQUILO 0.10.0 — public preview.** This edition includes Claude Code support, state-I/O repairs, separate task acceptance and Git publication, and the consolidated handbooks. See the [release basis and remaining limits](../integration-status.md). Older release ZIPs retain their original contents.
 
+> **Branch addition:** the selected-start resume flags below extend the 0.10.0 source base. They are available in this branch, not in the unchanged `v0.10.0` release artifact.
+
 Use this handbook to configure, run, diagnose and integrate ARQUILO. Part I follows the operating workflow. Part II is the complete reference for public commands, environment settings, task directives, runtime-profile fields and prompt catalogs in this version. Follow the [User Guide](user-guide.en.md) for installation and the first run. Native Codex and Claude provider settings are separate configuration layers, not additional ARQUILO parameters.
 
 ## Part I — operating procedures
 
 ### Contents
 
-[Operating contract](#operating-contract) · [Configuration layers](#configuration) · [Task design](#tasks) · [Resources](#resources) · [Parallel work and WAIT](#parallel) · [Breakdown](#breakdown) · [Planning pause](#planning) · [Runtime profiles](#profiles) · [Prompt catalogs](#prompts) · [Budgets and stops](#budgets) · [State and diagnosis](#state) · [Git](#git) · [Integration](#integration) · [Limitations](#limitations) · [Operating checklist](#checklist)
+[Operating contract](#operating-contract) · [Configuration layers](#configuration) · [Task design](#tasks) · [Resources](#resources) · [Parallel work and WAIT](#parallel) · [Breakdown](#breakdown) · [Planning pause](#planning) · [Runtime profiles](#profiles) · [Prompt catalogs](#prompts) · [Budgets and stops](#budgets) · [State and diagnosis](#state) · [Resume](#resume-run) · [Git](#git) · [Integration](#integration) · [Limitations](#limitations) · [Operating checklist](#checklist)
 
 <a id="operating-contract"></a>
 ## 1. Establish the operating contract
@@ -316,9 +318,14 @@ Python 3.11's standard `tomllib` is sufficient; no new package is required.
 | `de` | [de.toml](../../prompts/de.toml) | German built-in instructions. |
 | `en` | [en.toml](../../prompts/en.toml) | English built-in instructions. |
 
-Each file contains all 53 elements. The files have the same keys and placeholder
+Each supplied file contains 55 elements: the original 53 required elements plus
+`resume_task` and `resume_review`. The files have the same keys and placeholder
 contracts, so an editor or translation program can work element by element.
-There is no silent fallback from a missing German element to an English default.
+Older v1 custom catalogs may omit these two additive resume elements. The loader
+freezes their built-in wording in the catalog's language (`mixed` uses
+`default`) into the effective snapshot. Existing supplied texts are unchanged;
+any missing original required element remains an error. Include both new
+elements explicitly when all resume wording must be operator-controlled.
 
 ### Select a catalog
 
@@ -400,7 +407,7 @@ attribute access, shell expansion, template includes or executable code. Values
 are inserted once: braces inside a task, source text or model answer are not
 interpreted again as template syntax.
 
-Validation rejects unknown/missing elements, malformed TOML, unsupported schema,
+Validation rejects unknown elements, missing original required elements, malformed TOML, unsupported schema,
 invalid placeholder sets, empty texts, NUL bytes and oversized catalogs. Limits
 are 512 KiB per file/combined text and 128 KiB per element. Nothing is silently
 truncated. UTF-8 with an optional leading BOM and LF/CRLF is accepted.
@@ -501,7 +508,7 @@ See [task directives](#task-directive-reference),
 
 ### Complete prompt-catalog field reference
 
-The TOML top level contains exactly `schema_version`, `id`, `version`, `language` and `prompts`. `schema_version` is `arquilo.prompts.v1`; `id` is a portable identifier of 1–128 characters; `version` is a nonempty string of at most 64 characters; `language` is `mixed`, `de` or `en`. Each `prompts.NAME` table has exactly a `text` string. All 53 named elements below are required; unknown/missing elements and invalid placeholder sets are errors. Their actual wording belongs in the selected TOML file, not in a second copy of the manual.
+The TOML top level contains exactly `schema_version`, `id`, `version`, `language` and `prompts`. `schema_version` is `arquilo.prompts.v1`; `id` is a portable identifier of 1–128 characters; `version` is a nonempty string of at most 64 characters; `language` is `mixed`, `de` or `en`. Each `prompts.NAME` table has exactly a `text` string. The original 53 named elements below are required. Only the additive `resume_task` and `resume_review` elements may be omitted, using the documented language-matched defaults at load time. Unknown elements, missing original elements and invalid placeholder sets are errors. Actual wording belongs in the selected TOML file, not in a second copy of the manual.
 
 | Element (`prompts.NAME.text`) | Required placeholders |
 | --- | --- |
@@ -558,6 +565,8 @@ The TOML top level contains exactly `schema_version`, `id`, `version`, `language
 | `decision_result_complete` | None |
 | `decision_result_incomplete` | `{{count}}` |
 | `doctor_question` | None |
+| `resume_task` | `{{context}}` |
+| `resume_review` | `{{context}}` |
 
 <a id="budgets"></a>
 ## 10. Budgets, deadlines and stops are different controls
@@ -581,11 +590,100 @@ A named project groups logs, while plan-specific directories retain authority. `
 
 `--logs-in-workdir` moves diagnostic logs into the workspace but not plan journals, budgets, breakdown state or private worker request/results. Public summaries are not control input. A hard kill can leave nonterminal logs; absence of a failure message is not proof of successful completion. Use run identity, exit status, review validity and actual artifacts together.
 
-For diagnosis, preserve the original error, exact versions and invocation without secrets. Distinguish technical failure, invalid review, domain FAIL, deliberate stop, unmet WAIT and integrity refusal. Inspect side effects before replay. Ordinary restart may reexecute an open task; the narrow [review-only recovery](#recovery-reference) path has stronger, specific prerequisites.
+For diagnosis, preserve the original error, exact versions and invocation without secrets. Distinguish technical failure, invalid review, domain FAIL, deliberate stop, unmet WAIT and integrity refusal. Inspect side effects before replay. Ordinary restart may reexecute an open task; the [selected-start resume flags](#resume-run) explicitly choose a continuation or review entry. The separate [legacy archive-recovery command](#recovery-reference) retains its narrow historical prerequisites.
 
 Raw archives are not encrypted, append-only evidence stores or sanitized support bundles. Share a reviewed minimal diagnostic extract, not the whole state root. [Project logs](#logs-reference) · [Controller safety](technical-guide.en.md#controller-reference)
 
 `run.json` reports `publication_required`, `publication_status` and `publication_records` separately from task completion. The aggregate publication status is `not_requested`, `complete` or `pending`; a verified no-change publication is successful. A pending/blocked delivery can coexist with DONE tasks. Private pending receipts and blocked obligations remain visible when a later run has no unfinished tasks; merely restarting does not mark them delivered. An obligation records an unmet delivery request without authorizing publication. Only an accepted private receipt authorizes model-free retry; mutable run summaries do not.
+
+<a id="resume-run"></a>
+### Resume the selected start task
+
+Add exactly one of `--resume-task` or `--resume-review` to the ordinary
+`tasklist run` invocation. An explicit `--start ID` is required. That exact
+task must exist, be open and fall within the selected execution depth. A DONE,
+OBSOLETE, missing or ineligible start task is an error; the resume mode never
+moves silently to a later open task. Resuming a parent while any descendant lacks DONE is also refused: an open
+or OBSOLETE child is not accepted work. Finish or reconcile that existing child
+work through the ordinary runner first. A missing child or invalid saved
+breakdown plan also remains an error; no child completion is inferred.
+
+| Mode | First selected task | Subsequent selected tasks |
+| --- | --- | --- |
+| No resume flag | Ordinary production, then review. | Ordinary execution. |
+| `--resume-task` | Inspect existing results and perform the remaining work, then review. | Ordinary execution after the first task is accepted. |
+| `--resume-review` | Start with a fresh read-only review of the existing work. | Ordinary execution after the first task is accepted. |
+
+For a plan containing tasks 135 through 137, these are alternative invocations.
+Replace the example paths and preserve the resource, profile and budget options
+appropriate to the original project; `32` is only the example's chosen call
+limit. Do not run both alternatives at once.
+
+```sh
+python3 -B arquilo.py tasklist run \
+  --workdir /path/to/project --todo-file /path/to/project/tasks.md \
+  --state-dir /path/to/private-state --max-calls 32 \
+  --start 135 --stop 137 --resume-task
+```
+
+```sh
+python3 -B arquilo.py tasklist run \
+  --workdir /path/to/project --todo-file /path/to/project/tasks.md \
+  --state-dir /path/to/private-state --max-calls 32 \
+  --start 135 --stop 137 --resume-review
+```
+
+Only task 135 receives the selected resume mode. Task 136 and task 137 retain
+their ordinary production/review flow. The resumed target executes before later
+tasks even if its CFG belongs to a parallel group; later eligible tasks retain
+their ordinary scheduling. WAIT, Markdown STOP barriers, active root/peer stops
+and the explicit `--stop` boundary still apply.
+
+`--resume-task` is a new model invocation with a continuation instruction, not
+a restored model session. It asks the producer to examine existing result and
+test reports, reuse valid work, verify that old evidence still matches the
+current files, and investigate potentially completed external actions before
+repeating them. This instruction cannot guarantee exactly-once external
+effects. The ordinary input archive retains prior result files before the new
+attempt can change them. For a resumed subworkspace, existing local reports and
+questions are preserved; primary and local copies are retained before dispatch
+instead of overwriting newer local evidence with a stale primary copy.
+
+`--resume-review` does not create or count a replacement production attempt.
+A completed passing initial review has `Aufträge: 0, Prüfungen: 1`; the normal
+controller acceptance gates still decide DONE. A valid review with repairable
+local findings enters the ordinary correction/review loop. Each correction is
+reviewed again. Other blockers follow ordinary runner handling; a technical
+review failure, invalid review, exhausted budget or active STOP does not
+authorize production. This flag is an entry mode for a normal run, not a
+guarantee that the whole invocation remains read-only.
+
+The initial review consumes its actual shared call budget, but does not consume
+a production/correction step. For example, `--max-steps 1 --max-retries 1` allows
+the initial review plus at most one correction and its review, subject to the
+shared call limit and other gates. Usage already charged to the task tree is
+retained. As for ordinary runs, re-specify a finite `--max-calls` when needed;
+omission selects the normal unlimited default rather than restoring an old cap.
+
+Both modes use the current accepted task, current policy and current normal
+resource configuration. Existing artifacts and reports are evidence to inspect;
+their old PASS/DONE claims do not authorize acceptance. No `--capture-dir`, exact
+old prompt, successful old model exit or complete historical log is required.
+If old reports are missing, the reviewer can inspect current artifacts and
+report missing required evidence as a blocker. Corrupt authoritative controller
+state or an unaccepted plan change still stops the run.
+
+Resume adds no recursive workspace snapshot, nested Git discovery or search for
+arbitrary descendant `process_stop` filenames. Requirements for relevant diffs,
+file hashes and evidence still belong to the task's review contract. Existing
+explicit Git-publication selections keep their normal integrity checks. This
+separation lets an unrelated historical test cache remain unrelated to the task
+being reviewed.
+
+The new flags work with both configured backends. They do not widen tools,
+skills, MCP selections or network permissions and do not erase STOPs or reset
+state. `tasklist run --resume-review` is distinct from the legacy
+`tasklist resume-review --capture-dir ...` command below.
 
 <a id="git"></a>
 ## 12. Automatic Git: acceptance and publication are separate
@@ -716,8 +814,10 @@ Use `python3 -B arquilo.py tasklist run OPTIONS`. The table lists every public r
 | `--todo-file` | Not set | Working UTF-8 Markdown task list. Required for execution; not needed for help/capabilities. An existing list is resumed, not replaced. |
 | `--todo-template` | Not set | Initialize a missing task list from this local template. Never overwrite an existing list. The destination must be inside the workspace. Explicit initialization also writes in dry-run mode. |
 | `--workdir` | Not set | Workspace. In the task runner, defaults to the task-list directory; Doctor uses the task-list directory or current directory. Use a narrow project directory, not your entire home. |
-| `--start` | Not set | Start selection at this task ID, for example 3 or 3.1. Already terminal tasks are not rerun. Earlier tasks lie outside the explicitly selected scope. |
+| `--start` | Not set | Start selection at this task ID, for example 3 or 3.1. Without a resume flag, already terminal tasks are skipped. With --resume-task or --resume-review, this exact task must be open and eligible; resume never moves silently to a later task. |
 | `--stop` | Not set | Stop scheduling after this task and its required acceptance. It is not cancellation of the current model call. |
+| `--resume-task` | On | Begin the exact open --start task with an explicit instruction to inspect and build on existing results. Mutually exclusive with --resume-review. Later selected tasks run normally; no old capture directory or whole-workspace scan is required. |
+| `--resume-review` | On | Begin the exact open --start task with the ordinary read-only review of existing work, without an initial production call. A valid local-fix finding enters normal bounded correction/review; technical errors and STOPs still stop. Later selected tasks run normally. |
 | `--max-depth` | `3` | Maximum numeric task depth; 3 includes IDs such as 2.1.1. This does not disable a STOP barrier. |
 | `--max-retries` | `2` | Continuation multiplier for production/correction steps: max-steps times max-retries. It is not whole-task replay after a technical failure. |
 | `--max-calls` | `0` | Persistent invocation budget per top-level task tree, shared with descendants/reviews/Decide; 0 means unlimited. Counts attempts, not tokens, money or all internal provider requests. |
@@ -725,7 +825,7 @@ Use `python3 -B arquilo.py tasklist run OPTIONS`. The table lists every public r
 | `--breakdown-max-children` | `4` | Maximum direct children in minimal decomposition. Valid range: 1 to 12. |
 | `--breakdown-max-rounds` | `2` | Maximum focused decomposition/repair rounds including the first child wave. Valid range: 1 to 8. |
 | `--process-stop-policy` | `model`; one of `model`, `controller-only` | model allows the task to request a stop; controller-only instructs it to return structured feedback and leave stop decisions to the controller. Existing stop signals still apply. |
-| `--max-steps` | `3` | Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. |
+| `--max-steps` | `3` | Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. The initial --resume-review review does not consume a production/correction step. |
 | `--sandbox` | `workspace-write`; one of `workspace-write` | Explicit execution policy. The task runner only accepts workspace-write; standalone AutoBuild also accepts read-only. Mandatory review/Decide remain read-only. |
 | `--network-access` | Off | Grant shell-network access within workspace-write. A task may restrict this grant, not create it. Does not control provider, MCP or web-search traffic. |
 | `--model` | Not set | Explicit model/deployment identifier. Task runs: CLI, selected-backend environment (ARQUILO_CODEX_MODEL or ARQUILO_CLAUDE_CODE_MODEL), CFG model, native configuration. Doctor overrides require --check-decide. |
@@ -778,7 +878,7 @@ Use `python3 -B arquilo.py doctor OPTIONS`. Model/provider/profile/effort/timeou
 <a id="cli-resume"></a>
 ### `tasklist resume-review`
 
-Use `python3 -B arquilo.py tasklist resume-review --todo ID --capture-dir DIR -- tasklist run ORIGINAL_OPTIONS`. Recovery requires `--start ID --stop ID` after the separator; the original workspace/task contract must match. All following runner options are listed above.
+Legacy narrow Codex archive recovery: `python3 -B arquilo.py tasklist resume-review --todo ID --capture-dir DIR -- tasklist run ORIGINAL_OPTIONS`. It requires `--start ID --stop ID` after the separator and a matching original workspace/task contract. For a fresh review of existing work and normal range continuation, use `tasklist run --start ID --resume-review` instead.
 
 | Parameter / argument | Value / default | Meaning |
 | --- | --- | --- |
@@ -851,7 +951,7 @@ Use `python3 -B autobuild.py OPTIONS`. Exactly one task source (`--task` or `--t
 | `--todo-identifier` | Not set | Task identity attached to standalone diagnostics and decision context, when integrating with a controller. |
 | `--decision-todo-file` | Not set | Task-list reference for standalone decision context; not permission to replace the original task contract. |
 | `--decision-run-id` | Not set | Run identity for standalone decision context; does not create a new shared budget. |
-| `--max-steps` | `3` | Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. |
+| `--max-steps` | `3` | Production/correction-step limit for AutoBuild. The task runner combines this with max-retries; mandatory reviews also use call budget. The initial --resume-review review does not consume a production/correction step. |
 | `--max-calls` | `0` | Persistent invocation budget per top-level task tree, shared with descendants/reviews/Decide; 0 means unlimited. Counts attempts, not tokens, money or all internal provider requests. |
 | `--auto-continue` | Off | Compatibility/progress flag: in this implementation it adds an automatic-continuation log message; it does not change the correction loop or require/skip a confirmation. Mandatory review and limits remain in force. |
 | `--print-end-answer` | Off | Also print the final standalone assistant answer. |
@@ -1748,6 +1848,11 @@ acceptance; an offline test is not proof of either.
 <a id="recovery-reference"></a>
 ## 24. Verified review-only recovery
 
+This is the legacy archive-reuse command retained from the 0.10.0 base. For a
+fresh review of an existing work state, including an interrupted attempt, use
+[`tasklist run --start ID --resume-review`](#resume-run). The new flag does not
+depend on this legacy procedure or its original-capture layout.
+
 This procedure is Codex-specific. Claude session recovery and cross-backend reuse are not implemented; a Claude request is not converted into Codex recovery.
 
 **Generic ARQUILO behavior** (independent of provider, proxy or employer).
@@ -2091,6 +2196,10 @@ For a generator task that writes the rest of the same task file, use
 [operator controls](#operator-controls-reference).
 
 ### Interrupted streams and review-only recovery
+
+For an explicit ordinary-run continuation, choose
+[`--resume-task` or `--resume-review`](#resume-run) with the exact open start
+task. These modes reuse existing work, not an earlier process session.
 
 A well-formed Codex `Reconnecting... n/m (stream disconnected before completion: ...)` is an interim diagnostic, not a terminal result. It remains visible in logs. Real `turn.failed`, unknown errors, missing `turn.completed` or nonzero exits still stop the run. For a known historical case where production completed with Codex exit 0 but an older controller stopped before mandatory review, see [guarded review-only recovery](#recovery-reference). Recovery is explicit, single-task, proof-checked and **does not bypass review or replay production**.
 

@@ -97,7 +97,7 @@ The following command starts a real producer and mandatory review and may consum
 python3 -B arquilo.py tasklist run --backend claude-code --workdir /path/to/project --todo-file /path/to/project/tasks.md --mcp none --review-mcp none --prompt-config en --max-calls 12 --process-stop-policy controller-only
 ```
 
-The Claude adapter accepts `--mcp none` and `--review-mcp none`; **named MCP servers are unsupported**, and omission also enables no native MCPs. Explicit ARQUILO skills bind text and hashes; native Claude skills, plugins and subagents are not enabled. Its reviewer can Read/Glob/Grep but has **no Bash or write tools**, so production/fix must create the evidence of any executed tests. `--agent`/`CFG agent` and Codex provider/profile overrides are not supported for Claude. Review-only reconnect recovery remains Codex-specific. For exact permissions and protocol compatibility, see [Claude qualification](../claude-code-backend.md).
+The Claude adapter accepts `--mcp none` and `--review-mcp none`; **named MCP servers are unsupported**, and omission also enables no native MCPs. Explicit ARQUILO skills bind text and hashes; native Claude skills, plugins and subagents are not enabled. Its reviewer can Read/Glob/Grep but has **no Bash or write tools**, so production/fix must create the evidence of any executed tests. `--agent`/`CFG agent` and Codex provider/profile overrides are not supported for Claude. The legacy archived-reconnect recovery command remains Codex-specific; the new tasklist run --resume-task/--resume-review flags support either backend. For exact permissions and protocol compatibility, see [Claude qualification](../claude-code-backend.md).
 
 <a id="preview"></a>
 ## 4. First safe preview
@@ -246,6 +246,8 @@ Place runner options **after `tasklist run`**. The following table is a working 
 | `--max-calls N` | Limit attempts in each top-level task tree. | **0 = unlimited**; use a positive limit for a bounded trial. |
 | `--max-steps N` | Bound production/correction steps. | 3; the runner combines this with `--max-retries` (default 2). |
 | `--start ID` / `--stop ID` | Select a starting task and a boundary after an accepted task. | All remaining selected tasks; not immediate cancellation. |
+| `--resume-task` | Ask the exact open `--start` task to build on existing work before its normal review. | Off; mutually exclusive with `--resume-review`. Later tasks run normally. |
+| `--resume-review` | Start the exact open `--start` task with a fresh review of existing work. | Off; local-fix findings may enter the normal correction/review loop. |
 | `--dry-run` | Preview instructions without model execution. | Off. Does not verify authentication or remote-tool permissions. |
 | `--dry-run-file FILE` | Choose the preview output. | `run_todos_dry_run.md`; choose a new filename, because overwrite is refused. |
 | `--project-id NAME` | Give the log group a readable name. | Automatic identity; changing log names does not reset budgets. |
@@ -336,7 +338,53 @@ Run with the **same workspace, task-file path and state root**, plus the intende
 
 Do not delete state, rename the plan to obtain a new budget, or manually set `DONE` to resolve an error. Historical DONE values supplied as an initial owner baseline are not retrospective proof of a review. Version 0.10.0 does not automatically repair incorrectly accepted historical runs.
 
-There is a narrow Codex-only [review-only recovery procedure](operator-guide.en.md#recovery-reference) for a completed production turn formerly rejected solely because a recovered reconnect was misclassified. It requires complete matching evidence and a fresh review. It is not a general force-resume switch; use the dedicated procedure only when its conditions hold.
+### Choose the entry phase explicitly
+
+This branch adds two options to the ordinary `tasklist run` command on the
+0.10.0 source base. They are not present in the unchanged `v0.10.0` release ZIP.
+Add exactly one to your usual project invocation:
+
+```text
+--start 135 --stop 137 --resume-task
+```
+
+This asks task 135 to inspect existing results, reuse valid work, complete the
+remaining requirements and receive the normal independent review. It is a new
+invocation, not a restored model session. Existing success claims are evidence
+to check, not proof that the current files satisfy the task.
+
+```text
+--start 135 --stop 137 --resume-review
+```
+
+This starts task 135 directly with the ordinary read-only reviewer. A PASS can
+lead to normal controller acceptance without an initial production call. A
+valid review with locally repairable findings can lead to a bounded correction
+and another review. A technical review failure, invalid response or active STOP
+does not trigger automatic production. The initial review uses the call budget
+but no production/correction step.
+
+In both cases **only task 135 receives resume behavior**. After its acceptance,
+136 and 137 run normally. `--start` must name an existing open, eligible task;
+DONE or OBSOLETE does not shift the resume to 136. The flags cannot be combined.
+A parent whose descendants lack DONE is refused rather than silently accepting
+or replaying child work. OBSOLETE is not a completed child. A missing child or
+invalid saved breakdown plan still needs investigation; use the ordinary runner
+to finish a valid child continuation.
+
+Keep the same workspace, working task list and state root, and retain the
+intended model, policy, resource and budget options. No capture directory or
+complete old logs are required. Missing historical reports may still be a
+review blocker if the task requires their evidence. Existing reports are
+archived through the normal input logging. Resume adds no recursive workspace
+hashing or repository discovery. It cannot guarantee that an external action
+will be executed exactly once.
+
+See [selected-start resume](operator-guide.en.md#resume-run) for scheduling,
+limits and resource details. The separate Codex-only
+[`tasklist resume-review` archive-reuse command](operator-guide.en.md#recovery-reference)
+retains its narrow historical conditions; it is not the new `--resume-review`
+flag on `tasklist run`.
 
 <a id="plan-changes"></a>
 ## 13. Deliberately changing an established plan

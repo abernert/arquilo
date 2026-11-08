@@ -61,7 +61,7 @@ class CatalogTests(unittest.TestCase):
             p = pc.load_prompt_config(language)
             self.assertEqual(p.language, expected)
             self.assertEqual(set(dict(p.texts)), set(pc.PROMPT_PLACEHOLDERS))
-            self.assertEqual(len(p.texts), 53)
+            self.assertEqual(len(p.texts), 53 + len(pc.OPTIONAL_RESUME_ELEMENTS))
             for key, fields in pc.PROMPT_PLACEHOLDERS.items():
                 rendered = p.render(key, **{v: f'VALUE-{v}' for v in fields})
                 self.assertNotIn('{{', rendered)
@@ -71,7 +71,8 @@ class CatalogTests(unittest.TestCase):
     def test_default_elements_are_original_080_bytes(self):
         fixture=json.loads((ROOT/'tests/fixtures/prompt_default_v080.json').read_text())
         p=pc.load_prompt_config()
-        self.assertEqual({k:digest(v) for k,v in p.texts},fixture['elements'])
+        self.assertEqual({k:digest(v) for k,v in p.texts if k not in pc.OPTIONAL_RESUME_ELEMENTS},
+                         fixture['elements'])
 
     def test_default_builders_are_original_080_bytes(self):
         issue={'id':'I-1','type':'local_fix','summary':'A finding','requirement':'A requirement',

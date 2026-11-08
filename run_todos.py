@@ -82,6 +82,7 @@ from decision_request import read_input_text, snapshot_todo
 from todo_lint import lint_todo_file
 from todo_template import initialize_todo_template
 from todo_ids import extract_todo_id
+from task_resume import validate_selection as validate_resume_selection, resume_sources
 from runtime_profile import (
     ARQUILO_CODEX_MODEL_ENV,
     ARQUILO_CODEX_REASONING_EFFORT_ENV,
@@ -156,8 +157,10 @@ def arquilo_capabilities_payload() -> Dict[str, Any]:
         "operator_controls": {
             "default_max_calls": DEFAULT_MAX_CALLS, "unlimited_max_calls": 0,
             "default_logs_in_workdir": False, "default_allow_todo_modifications": False,
+            "resume_modes": ["resume-task", "resume-review"], "resume_scope": "explicit-open-start-task",
         },
         "features": {
+            "run_todos.resume": 1,
             "run_todos.operator_controls": 1,
             "run_todos.todo_template": 1,
             "run_todos.resources": 1,
@@ -809,6 +812,7 @@ class TodoRunner:
         skill_dirs: Sequence[Path] = (),
         agent: Optional[str] = None,
         prompt_config: PromptConfig | str | Path | None = None,
+        resume_mode: str = "normal",
         **removed_options: Any,
     ) -> None:
         if removed_positional_options:
@@ -847,6 +851,13 @@ class TodoRunner:
         self.agent = agent
         self.skill_catalog = SkillCatalog(workdir=self.workdir, roots=skill_dirs, backend=self.backend)
         self.initial_resource_plan = read_utf8(self.todo_file) if self.todo_file.is_file() else ""
+        validate_resume_selection(self.initial_resource_plan, mode=resume_mode,
+                                  start_id=start_id, stop_id=stop_id, max_depth=max_depth)
+        self.resume_mode = resume_mode
+        self.resume_target_id = start_id if resume_mode != "normal" else None
+        self._resume_consumed = False
+        self._resume_result_paths: set[Path] = set()
+        self._resume_group_peers: dict[str, set[str]] = {}
         self.resource_mode = False
         for resource_id in plan_resources(self.initial_resource_plan)[1]:
             resource = resolve_task_resources(self.initial_resource_plan, resource_id, **self.resource_caps)
@@ -957,6 +968,14 @@ class TodoRunner:
                                             accept_changes=accept_plan_changes,
                                             allow_modifications=allow_todo_modifications,
                                             workspace=self.workdir)
+        try:
+            # An external source plan can have an existing working copy. Check
+            # that actual accepted copy under its lock, not just the source.
+            validate_resume_selection(self.plan_authority.snapshot(), mode=resume_mode,
+                                      start_id=start_id, stop_id=stop_id, max_depth=max_depth)
+        except BaseException:
+            self.close()
+            raise
         if not self.dry_run:
             try:
                 self.project_logs = project_logs(self.state_dir, self.workdir,
@@ -1260,6 +1279,9 @@ class TodoRunner:
 
 
     def run(self) -> None:
+        if getattr(self, "resume_target_id", None) is not None:
+            print(f"[resume] Modus: {self.resume_mode}; Starttask: {self.resume_target_id}; "
+                  f"Stop: {self.stop_id or 'Listenende'}. Folgeaufgaben laufen regulär.")
         if self.project_id:
             print(f"[info] Projekt: {self.project_id}")
         if self.project_logs is not None:
@@ -1316,7 +1338,11 @@ class TodoRunner:
                     self.stop_triggered = True
                     break
                 parallel_group = todo.config.get("parallel")
-                if parallel_group:
+                if parallel_group and self._resume_entry_for(todo.identifier) != "normal":
+                    self._resume_group_peers[parallel_group] = {
+                        peer.identifier for peer in self._collect_parallel_group_batch(todo)
+                        if peer.identifier != todo.identifier}
+                if parallel_group and self._resume_entry_for(todo.identifier) == "normal":
                     should_stop = self._run_parallel_group(seed_todo=todo)
                     if should_stop:
                         break
@@ -1471,6 +1497,10 @@ class TodoRunner:
         record.input_sources.extend(sorted(todo_file.parent.glob("todo_result_*.md")))
         if result_file is not None:
             record.input_sources.append(result_file)
+        if self._resume_entry_for(identifier) != "normal" and workspace != self.workdir:
+            # Preserve both copies before a new review or later synchronization.
+            record.input_sources.extend(sorted(self._resume_result_paths))
+            record.input_sources.append(self.questions_file)
         record.payload = {"schema_version": "arquilo.task_log.v1", "run_id": self.run_id,
                           "identifier": identifier, "status": "preparing", "completed": False}
         if not self.dry_run:
@@ -2175,6 +2205,10 @@ class TodoRunner:
         return unique[0]
 
     def _resolve_result_file_reference(self, result_file: Path) -> Path:
+        if result_file in getattr(self, "_resume_result_paths", ()):
+            # Missing selected reports stay missing; do not substitute a newer
+            # same-named file from an unrelated historical test workspace.
+            return result_file
         if result_file.exists():
             return result_file
         workspace_copy = self._locate_workspace_result_file(result_file)
@@ -2386,6 +2420,10 @@ class TodoRunner:
         sync_back: bool = True,
     ) -> Tuple[TaskOutcome, TodoExecutionContext, Path]:
         context = self._build_todo_execution_context(todo)
+        if self._resume_entry_for(todo.identifier) != "normal":
+            self._resume_result_paths.add(context.result_file)
+            if context.target_result_file is not None:
+                self._resume_result_paths.add(context.target_result_file)
         primary_result_file = context.target_result_file or self._result_file_for_todo(
             todo.identifier
         )
@@ -2663,28 +2701,44 @@ class TodoRunner:
                     completed=False, message="Gespeicherter Breakdown-Plan ist ungültig oder ein Kind fehlt.",
                     execution_error=execution_error("Gespeicherten Breakdown-Plan und Kinder prüfen; kein automatisches Parent-Replay.",
                                                     code="invalid_breakdown_resume", phase="continuation")))
-            resume_context = self._build_todo_execution_context(todo)
-            if not self.dry_run:
-                task_text = augment_with_preamble(
-                    self._todo_task_prompt(todo, resume_context),
-                    resume_context.todo_file, mode=self.todo_preamble, prompt_config=self.prompts,
-                )
-                self._capture_original_contract(
-                    todo.identifier, task_text, resume_context.todo_file,
-                    self.run_dir / "todo" / self._sanitize_identifier(todo.identifier) / "continuation",
-                )
-            result_file = resume_context.target_result_file or resume_context.result_file
-            self.pending_reviews[todo.identifier] = (result_file, self._path_for_prompt(result_file))
-            self.review_seen_children[todo.identifier] = True
-            self.breakdown_rounds[todo.identifier] = self._infer_breakdown_round(todo.identifier, fallback=1)
-            print(f"[info] Fortsetzung von {todo.identifier}: vorhandene Kinder und Parent-Abnahme, kein Produktions-Replay.")
-            return TaskOutcome(completed=False, message="Validierten Breakdown mit bestehenden Kindern fortsetzen.")
+            if self._resume_entry_for(todo.identifier) == "normal":
+                resume_context = self._build_todo_execution_context(todo)
+                if not self.dry_run:
+                    task_text = augment_with_preamble(
+                        self._todo_task_prompt(todo, resume_context),
+                        resume_context.todo_file, mode=self.todo_preamble, prompt_config=self.prompts,
+                    )
+                    self._capture_original_contract(
+                        todo.identifier, task_text, resume_context.todo_file,
+                        self.run_dir / "todo" / self._sanitize_identifier(todo.identifier) / "continuation",
+                    )
+                result_file = resume_context.target_result_file or resume_context.result_file
+                self.pending_reviews[todo.identifier] = (result_file, self._path_for_prompt(result_file))
+                self.review_seen_children[todo.identifier] = True
+                self.breakdown_rounds[todo.identifier] = self._infer_breakdown_round(todo.identifier, fallback=1)
+                print(f"[info] Fortsetzung von {todo.identifier}: vorhandene Kinder und Parent-Abnahme, kein Produktions-Replay.")
+                return TaskOutcome(completed=False, message="Validierten Breakdown mit bestehenden Kindern fortsetzen.")
         outcome, context, result_file = self._execute_todo_autobuild(todo)
         if outcome.execution_error:
             return self._stop_for_execution_error(todo.identifier, outcome)
         if outcome.abort or outcome.process_stop_triggered:
             return replace(outcome, completed=False)
         if outcome.completed:
+            if (todo.identifier == getattr(self, "resume_target_id", None)
+                    and self.allow_todo_modifications and not self.dry_run):
+                frozen = self.review_contracts.get(todo.identifier)
+                original = json.loads(frozen[1]) if frozen is not None else None
+                live = self.plan_authority.snapshot()
+                current = (snapshot_todo(live, task_id=todo.identifier,
+                    reference_prompt=original["original_request"],
+                    attempt_prompt=original["original_request"], source=str(self.todo_file))
+                    if original is not None and todo.identifier in _todo_line_map(live) else None)
+                if current is None or current.task_text != original["task_text"]:
+                    return self._stop_for_execution_error(todo.identifier, replace(outcome,
+                        completed=False, execution_error=execution_error(
+                            "Resume target changed during execution; the reviewed original does not "
+                            "accept a changed/removed task. Inspect the plan before continuing.",
+                            code="resume_target_changed", phase="acceptance")))
             self._finalize_post_todo_log(outcome)
             self._verify_git_acceptance(outcome, todo=todo)
             if not self._mark_todo_as_done(todo):
@@ -2693,7 +2747,7 @@ class TodoRunner:
             self.incomplete.discard(todo.identifier)
             self.failed.discard(todo.identifier)
             self._maybe_git_commit(todo, outcome)
-            if context.parallel_group:
+            if context.parallel_group and self._resume_group_complete(todo, context.parallel_group):
                 self.completed_parallel_groups.add(context.parallel_group)
             if context.agent:
                 self.completed_agents.add(context.agent)
@@ -2726,7 +2780,7 @@ class TodoRunner:
                 }]}, result_file=result_file, task_outcome=outcome,
             )
 
-        if context.parallel_group:
+        if context.parallel_group and self._resume_group_complete(todo, context.parallel_group):
             self.completed_parallel_groups.add(context.parallel_group)
         if context.workdir != self.workdir:
             return self._write_final_failure_process_stop(
@@ -3364,6 +3418,11 @@ class TodoRunner:
         config_profile: Optional[str] = None,
         sandbox_override: Optional[str] = None,
     ) -> TaskOutcome:
+        entry_mode = self._resume_entry_for(identifier)
+        if entry_mode != "normal":
+            validate_resume_selection(self.plan_authority.snapshot(), mode=entry_mode,
+                                      start_id=identifier, stop_id=self.stop_id,
+                                      max_depth=self.max_depth)
         codex_policy.validate_start_policy(sandbox=self.sandbox, network_access=self.network_access)
         active_network_access = self.network_access
         if network_access_override is not None:
@@ -3441,6 +3500,17 @@ class TodoRunner:
         todo_id, log_record, log_dir = self._prepare_task_log(
             identifier, session_stamp, active_workdir, active_todo_file,
             result_file=result_file_override or self._result_file_for_todo(todo_id=self._derive_todo_id_from_identifier(identifier)))
+        entry_sources = None
+        if entry_mode != "normal":
+            entry_sources = resume_sources(mode=entry_mode, task_id=identifier,
+                workspace=self.workdir, task_workspace=active_workdir,
+                todo_file=self.todo_file, state_dir=self.state_dir, runs_dir=self.runs_dir,
+                current_run=self.run_dir,
+                result_file=result_file_override or self._result_file_for_todo(todo_id),
+                archived_inputs=log_record.inputs)
+            if not self.dry_run:
+                write_log_json(log_dir / "resume_context.json", entry_sources)
+            self._resume_consumed = True
         if not self.dry_run:
             write_log_text(log_dir / "prompt.md", task_text)
             self._capture_original_contract(todo_id, task_text, active_todo_file, log_dir)
@@ -3452,7 +3522,8 @@ class TodoRunner:
             f"model={active_model!r}, reasoning_effort={active_reasoning_effort!r}, "
             f"mcp={resources.mcp!r}, review_mcp={resources.review_mcp!r}, skills={resources.skills!r}, "
             f"max_steps={self.max_steps * self.max_retries}, max_calls={self.max_calls}, summary_json={str(preview_summary)!r}), "
-            f"context=AutoBuildContext(task_source='todo', todo_identifier={identifier!r}))"
+            f"context=AutoBuildContext(task_source='todo', todo_identifier={identifier!r}"
+            + (f", entry_mode={entry_mode!r}" if entry_mode != "normal" else "") + "))"
         )
         if self.dry_run:
             marker = (
@@ -3464,6 +3535,10 @@ class TodoRunner:
                 marker,
                 "Vollständiger AutoBuild-Auftrag:\n\n" + task_text,
             ]
+            if entry_sources is not None:
+                historical_context = json.dumps(entry_sources, ensure_ascii=False, indent=2)
+                note_lines.append(self.prompts.render(entry_mode.replace("-", "_"),
+                    context=json.dumps({"historical_context": historical_context}, ensure_ascii=False)))
             note = "\n".join(note_lines)
             self.recorder.record(identifier, command_preview, note=note)
             completed = identifier not in self.simulated_incomplete
@@ -3509,7 +3584,11 @@ class TodoRunner:
             pretty_log, raw_log, summary_json = self._attempt_log_paths(
                 log_dir, attempt=attempt, ensure_directories=True
             )
-            print(f"[exec] (1/1, Fortsetzungsschritte={self.max_steps * self.max_retries}) {task_text}")
+            if entry_mode != "normal":
+                print(f"[resume] Task {identifier}: {entry_mode}; "
+                      + ("direkter unabhängiger Review, kein Produktionsaufruf."
+                         if entry_mode == "resume-review" else "Bearbeitung auf vorhandenem Stand."))
+            print(f"[exec] (1/1, Einstieg={entry_mode}, Fortsetzungsschritte={self.max_steps * self.max_retries}) {task_text}")
             options = AutoBuildOptions(
                 backend=self.backend,
                 sandbox=active_sandbox, network_access=active_network_access,
@@ -3546,6 +3625,9 @@ class TodoRunner:
                 process_stop_paths=(self.process_stop_path, *getattr(self, "_active_parallel_stop_paths", ())),
                 launcher_workspace=self.workdir, git_review=git_request,
                 git_review_optional=True,
+                entry_mode=entry_mode,
+                resume_context=(json.dumps(entry_sources, ensure_ascii=False, indent=2)
+                                if entry_sources is not None else None),
             )
             try:
                 if use_cli_subprocess:
@@ -3720,6 +3802,8 @@ class TodoRunner:
             },
             "start_id": self.start_id,
             "stop_id": self.stop_id,
+            "entry_mode": getattr(self, "resume_mode", "normal"),
+            "resume_task_id": getattr(self, "resume_target_id", None),
             "simulated_incomplete": sorted(self.simulated_incomplete),
             "python_version": self.python_version,
             "questions_file": str(self.questions_file),
@@ -4005,7 +4089,8 @@ class TodoRunner:
         merged += f"\n### Sync-Ergebnis ({label})\n\n{fallback}\n"
         self._atomic_write_text(target, merged)
 
-    def _sync_workspace_support_files(self, workspace: Path) -> Tuple[Path, Path, Path]:
+    def _sync_workspace_support_files(self, workspace: Path, *,
+                                      preserve_existing_results: bool = False) -> Tuple[Path, Path, Path]:
         if workspace == self.workdir:
             return self.todo_file, self.questions_file, self.policy_workspace_file
         todo_rel = self._relative_to_workspace(self.todo_file)
@@ -4016,12 +4101,12 @@ class TodoRunner:
         safe_io.write_bytes(todo_target, safe_io.read_bytes(self.todo_file))
 
         for result_file in sorted(self.workspace_todo_dir.glob("todo_result_*.md")):
-            self._copy_file_if_exists(
-                result_file, todo_target.parent / result_file.name
-            )
-        self._copy_file_if_exists(
-            self.questions_file, todo_target.parent / "todo_fragen.md"
-        )
+            destination = todo_target.parent / result_file.name
+            if not preserve_existing_results or not os.path.lexists(destination):
+                self._copy_file_if_exists(result_file, destination)
+        questions_target = todo_target.parent / "todo_fragen.md"
+        if not preserve_existing_results or not os.path.lexists(questions_target):
+            self._copy_file_if_exists(self.questions_file, questions_target)
 
         policy_rel = self._relative_to_workspace(self.policy_workspace_file)
         if policy_rel == self.policy_workspace_file:
@@ -4058,13 +4143,16 @@ class TodoRunner:
         if "workspace" in cfg and cfg["workspace"].strip():
             workdir = self._resolve_directive_workspace(cfg["workspace"])
             safe_io.mkdir(workdir)
-        todo_file, questions_file, policy_file = self._sync_workspace_support_files(
-            workdir
-        )
+        preserve_existing = self._resume_entry_for(todo.identifier) != "normal" and workdir != self.workdir
         target_result_file = self._result_file_for_todo_context(todo, cfg)
+        primary_result_seed = self._read_text_file_if_exists(target_result_file) if preserve_existing else None
+        primary_questions_seed = self._read_text_file_if_exists(self.questions_file) if preserve_existing else None
+        todo_file, questions_file, policy_file = self._sync_workspace_support_files(
+            workdir, **({"preserve_existing_results": True} if preserve_existing else {})
+        )
         result_file = todo_file.parent / target_result_file.name
-        result_seed_content = self._read_text_file_if_exists(result_file)
-        questions_seed_content = self._read_text_file_if_exists(questions_file)
+        result_seed_content = primary_result_seed if preserve_existing else self._read_text_file_if_exists(result_file)
+        questions_seed_content = primary_questions_seed if preserve_existing else self._read_text_file_if_exists(questions_file)
         process_stop_path = self.process_stop_path
         if workdir != self.workdir:
             process_stop_path = workdir / "process_stop"
@@ -4210,8 +4298,28 @@ class TodoRunner:
                 return position
         return None
 
+    def _resume_entry_for(self, identifier: str) -> str:
+        if (identifier == getattr(self, "resume_target_id", None)
+                and not getattr(self, "_resume_consumed", False)):
+            return self.resume_mode
+        return "normal"
+
+    def _resume_group_complete(self, todo: TodoItem, group: str) -> bool:
+        if todo.identifier != getattr(self, "resume_target_id", None):
+            return True
+        # A serialized resume target is only one member of a parallel group.
+        # Its success must not satisfy WAIT group=... while peers remain open.
+        statuses = self._todo_status_map()
+        return all(statuses.get(identifier) == "DONE"
+                   for identifier in self._resume_group_peers.get(group, ()))
+
     def _next_todo(self) -> Optional[TodoItem]:
         todos = self._parse_todo_file()
+        if (getattr(self, "resume_target_id", None) is not None
+                and not self._resume_consumed):
+            validate_resume_selection(read_utf8(self.todo_file), mode=self.resume_mode,
+                                      start_id=self.resume_target_id, stop_id=self.stop_id,
+                                      max_depth=self.max_depth)
         ordered = list(_todo_line_map(read_utf8(self.todo_file)))
         if self.start_id and not self.start_reached:
             if self.start_id not in ordered:
@@ -4233,6 +4341,13 @@ class TodoRunner:
                 continue
             if item.depth > self.max_depth:
                 continue
+            target = getattr(self, "resume_target_id", None)
+            if (target is not None and (target not in self.completed or (
+                    not self.dry_run and self._todo_status_map().get(target) != "DONE"))
+                    and item.identifier != target and not item.identifier.startswith(target + ".")):
+                print(f"[resume] Task {target} ist noch nicht abgenommen; Folgeaufgaben bleiben gesperrt.")
+                self.exit_code = EXIT_INCOMPLETE
+                return None
             return item
         if barrier is not None:
             self.stop_marker_triggered = self.stop_triggered = True
@@ -4696,6 +4811,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=None,
         help="Stoppt die Ausführung nach Abschluss des angegebenen ToDos (z. B. 4 oder 4.2).",
     )
+    resume = parser.add_mutually_exclusive_group()
+    resume.add_argument("--resume-task", dest="resume_mode", action="store_const", const="resume-task",
+                        help="Nur die offene --start-Task mit Fortsetzungsauftrag auf vorhandenem Stand bearbeiten; Folgeaufgaben regulär.")
+    resume.add_argument("--resume-review", dest="resume_mode", action="store_const", const="resume-review",
+                        help="Nur die offene --start-Task direkt reviewen; danach normale begrenzte Korrekturen und Folgeaufgaben.")
+    parser.set_defaults(resume_mode="normal")
     parser.add_argument(
         "--max-depth",
         type=int,
@@ -4842,7 +4963,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                         help="TOML prompt catalog: built-in default, de, en or an explicit file.")
     add_resource_arguments(parser)
     parser.add_argument("--agent", help="Default Codex profile/agent hint; a task CFG agent may override it.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.resume_mode != "normal" and not args.start_id:
+        parser.error("--resume-task / --resume-review requires an explicit --start task ID.")
+    return args
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -4913,6 +5037,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         # capability preflight. Dispatch still captures the live file afresh.
         try:
             validate_removed_directives(read_utf8(todo_path))
+            validate_resume_selection(read_utf8(todo_path), mode=args.resume_mode,
+                                      start_id=args.start_id, stop_id=args.stop_id,
+                                      max_depth=args.max_depth)
             augment_with_preamble("", todo_path, mode=args.todo_preamble, prompt_config=prompts)
         except (RuntimeError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
@@ -4968,6 +5095,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 todo_preamble=args.todo_preamble,
                 mcp=args.mcp, review_mcp=args.review_mcp, skills=args.skills,
                 skill_dirs=args.skill_dirs, agent=args.agent, prompt_config=prompts,
+                resume_mode=args.resume_mode,
             )
         except (GitIntegrationError, ReviewedGitError, PlanIntegrityError, OSError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
